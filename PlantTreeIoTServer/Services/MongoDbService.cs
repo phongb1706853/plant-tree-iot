@@ -9,8 +9,9 @@ public class MongoDbService
 
     public MongoDbService(IConfiguration configuration)
     {
-        // Railway MongoDB plugin injects MONGODB_URL; fallback to appsettings
-        var connectionString = Environment.GetEnvironmentVariable("MONGODB_URL")
+        // Railway MongoDB plugin injects MONGO_URL or MONGODB_URL
+        var connectionString = Environment.GetEnvironmentVariable("MONGO_URL")
+            ?? Environment.GetEnvironmentVariable("MONGODB_URL")
             ?? configuration.GetValue<string>("MongoDbSettings:ConnectionString")
             ?? "mongodb://localhost:27017";
         var databaseName = configuration.GetValue<string>("MongoDbSettings:DatabaseName") ?? "PlantTreeIoT";
