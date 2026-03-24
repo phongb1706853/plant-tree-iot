@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find c:/my-project/plant-tree -type f \\\\\\(-name *.sql -o -name *.js -o -name *.py -o -name *rule* -o -name *engine* \\\\\\))",
+      "Bash(grep -r \"MQTT\\\\|mqtt\\\\|signal\\\\|rule\\\\|engine\" c:/my-project/plant-tree --include=*.cs --include=*.json --include=*.md)",
+      "Bash(find c:/my-project/plant-tree -type f -name *.html -o -name *.tsx -o -name *.jsx -o -name *.ts -o -name *.js)"
+    ]
+  }
+}

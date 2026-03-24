@@ -1,0 +1,54 @@
+# .NET
+**/bin/
+**/obj/
+**/out/
+**/*.user
+**/*.tmp
+**/packages/
+
+# IDEs
+**/.vs/
+**/.vscode/
+**/*.swp
+**/*.suo
+
+# OS
+**/.DS_Store
+**/Thumbs.db
+
+# Logs
+**/logs/
+**/*.log
+
+# Azure
+**/.azure/
+**/azure-pipelines.yml.bak
+**/deploy-azure*.sh
+**/setup-azure*.sh
+
+# Environment files
+**/appsettings.Development.json
+**/appsettings.Local.json
+.env
+.env.local
+.env.production
+
+# Docker volumes (uncomment if you want to ignore)
+# mongodb_data/
+# nginx_logs/
+
+# Nginx logs
+**/nginx/logs/
+
+# Docker
+**/.dockerignore
+
+# Deployment
+**/publish/
+**/*.publishproj
+
+# MongoDB data (if running locally)
+**/mongodb_data/
+
+# Backups
+**/backups/

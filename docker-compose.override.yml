@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  planttreeiotserver:
+    ports:
+      - "5000:80" # HTTP port for development
+      - "5001:443" # HTTPS port for development
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    volumes:
+      - ./PlantTreeIoTServer/appsettings.Development.json:/app/appsettings.Development.json:ro
+
+  mongodb:
+    ports:
+      - "27017:27017"

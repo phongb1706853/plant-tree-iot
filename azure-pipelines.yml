@@ -1,0 +1,111 @@
+# Azure Pipelines CI/CD for Plant Tree IoT Server
+# https://aka.ms/yaml
+
+trigger:
+  - main
+  - develop
+
+pool:
+  vmImage: "ubuntu-latest"
+
+variables:
+  buildConfiguration: "Release"
+  dockerRegistryServiceConnection: "planttree-acr-connection"
+  imageRepository: "planttree-iot"
+  containerRegistry: "planttreeacr.azurecr.io"
+  dockerfilePath: "**/PlantTreeIoTServer/Dockerfile"
+  tag: "$(Build.BuildId)"
+
+stages:
+  - stage: Build
+    displayName: "Build and Push Docker Image"
+    jobs:
+      - job: Build
+        displayName: "Build job"
+        steps:
+          - task: Docker@2
+            displayName: "Build and push Docker image"
+            inputs:
+              command: buildAndPush
+              repository: $(imageRepository)
+              dockerfile: $(dockerfilePath)
+              containerRegistry: $(dockerRegistryServiceConnection)
+              tags: |
+                $(tag)
+                latest
+
+  - stage: DeployDev
+    displayName: "Deploy to Development"
+    dependsOn: Build
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'))
+    jobs:
+      - deployment: DeployDev
+        displayName: "Deploy to Dev Environment"
+        environment: "development"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: "Deploy to Azure Container Instances (Dev)"
+                  inputs:
+                    azureSubscription: "azure-subscription"
+                    scriptType: "bash"
+                    scriptLocation: "inlineScript"
+                    inlineScript: |
+                      az container create \
+                        --resource-group planttree-dev-rg \
+                        --name planttree-iot-dev \
+                        --image $(containerRegistry)/$(imageRepository):$(tag) \
+                        --cpu 1 \
+                        --memory 1.5 \
+                        --registry-login-server $(containerRegistry) \
+                        --registry-username $(az acr credential show --name planttreeacr --query username -o tsv) \
+                        --registry-password $(az acr credential show --name planttreeacr --query passwords[0].value -o tsv) \
+                        --dns-name-label planttree-iot-dev-$(Build.BuildId) \
+                        --ports 80 443 \
+                        --environment-variables ASPNETCORE_ENVIRONMENT=Development \
+                        --overwrite
+
+  - stage: DeployProd
+    displayName: "Deploy to Production"
+    dependsOn: Build
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: DeployProd
+        displayName: "Deploy to Production Environment"
+        environment: "production"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: "Deploy to Azure Container Instances (Prod)"
+                  inputs:
+                    azureSubscription: "azure-subscription"
+                    scriptType: "bash"
+                    scriptLocation: "inlineScript"
+                    inlineScript: |
+                      az container create \
+                        --resource-group planttree-rg \
+                        --name planttree-iot-server \
+                        --image $(containerRegistry)/$(imageRepository):$(tag) \
+                        --cpu 2 \
+                        --memory 3.5 \
+                        --registry-login-server $(containerRegistry) \
+                        --registry-username $(az acr credential show --name planttreeacr --query username -o tsv) \
+                        --registry-password $(az acr credential show --name planttreeacr --query passwords[0].value -o tsv) \
+                        --dns-name-label planttree-iot-server \
+                        --ports 80 443 \
+                        --environment-variables ASPNETCORE_ENVIRONMENT=Production \
+                        --overwrite
+
+                - task: AzureCLI@2
+                  displayName: "Update Traffic Manager (if using)"
+                  inputs:
+                    azureSubscription: "azure-subscription"
+                    scriptType: "bash"
+                    scriptLocation: "inlineScript"
+                    inlineScript: |
+                      # Update traffic manager endpoint if needed
+                      echo "Production deployment completed successfully!"

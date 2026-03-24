@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  planttreeiotserver:
+    build:
+      context: ./PlantTreeIoTServer
+      dockerfile: Dockerfile
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
+      - ASPNETCORE_URLS=${ASPNETCORE_URLS}
+    depends_on:
+      - mongodb
+    networks:
+      - planttree-network
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7.0
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-PlantTreeIoT}
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d
+    networks:
+      - planttree-network
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+
+networks:
+  planttree-network:
+    driver: bridge
