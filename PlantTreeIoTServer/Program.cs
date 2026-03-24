@@ -1,6 +1,9 @@
 using PlantTreeIoTServer.Services;
 
+// Support Railway's dynamic PORT environment variable
+var port = Environment.GetEnvironmentVariable("PORT") ?? "80";
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.UseUrls($"http://+:{port}");
 
 // Add services to the container.
 builder.Services.AddControllers();
