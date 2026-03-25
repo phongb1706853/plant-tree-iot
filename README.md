@@ -230,6 +230,127 @@ echo "web: ./PlantTreeIoTServer --urls http://+:$PORT" > Procfile
 git push heroku main
 ```
 
+## Quick Reference — Railway Deployment
+
+> Base URL: `https://plant-tree-iot-production.up.railway.app`
+
+### Devices
+
+```bash
+# Dang ky thiet bi
+curl -X POST https://plant-tree-iot-production.up.railway.app/api/devices/register \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "esp32-001", "name": "Cay phong khach", "plantType": "Cactus", "location": "Phong khach"}'
+
+# Xem tat ca thiet bi
+curl https://plant-tree-iot-production.up.railway.app/api/devices
+
+# Xem thiet bi cu the
+curl https://plant-tree-iot-production.up.railway.app/api/devices/esp32-001
+```
+
+### Sensor Data
+
+```bash
+# Gui du lieu cam bien (server tu dong check rule va tra ve lenh)
+curl -X POST https://plant-tree-iot-production.up.railway.app/api/sensordata/upload \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "esp32-001", "soilMoisture": 20, "lightLevel": 15, "temperature": 28, "humidity": 65}'
+
+# Xem du lieu moi nhat
+curl https://plant-tree-iot-production.up.railway.app/api/sensordata/latest/esp32-001
+
+# Xem lich su (50 ban ghi gan nhat)
+curl https://plant-tree-iot-production.up.railway.app/api/sensordata/history/esp32-001?limit=50
+```
+
+### Rules — Do am (Moisture)
+
+```bash
+# Tao rule tuoi nuoc: tuoi khi do am < 30%, dung khi > 70%
+curl -X POST https://plant-tree-iot-production.up.railway.app/api/rules/moisture \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "esp32-001", "name": "Tuoi tu dong", "minMoisture": 30, "maxMoisture": 70, "waterDurationMs": 5000, "cooldownMinutes": 30}'
+
+# Xem rules do am
+curl https://plant-tree-iot-production.up.railway.app/api/rules/moisture/esp32-001
+
+# Cap nhat rule (thay {ruleId} bang id that)
+curl -X PUT https://plant-tree-iot-production.up.railway.app/api/rules/moisture/{ruleId} \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Tuoi tu dong", "minMoisture": 25, "maxMoisture": 70, "waterDurationMs": 8000, "isEnabled": true, "cooldownMinutes": 30}'
+
+# Xoa rule
+curl -X DELETE https://plant-tree-iot-production.up.railway.app/api/rules/moisture/{ruleId}
+```
+
+### Rules — Anh sang (Light)
+
+```bash
+# Tao rule den: bat den khi anh sang < 25, tat khi > 60
+curl -X POST https://plant-tree-iot-production.up.railway.app/api/rules/light \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "esp32-001", "name": "Den chieu sang", "minLight": 25, "maxLight": 60, "isEnabled": true, "cooldownMinutes": 10}'
+
+# Xem rules anh sang
+curl https://plant-tree-iot-production.up.railway.app/api/rules/light/esp32-001
+
+# Cap nhat rule
+curl -X PUT https://plant-tree-iot-production.up.railway.app/api/rules/light/{ruleId} \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Den chieu sang", "minLight": 20, "maxLight": 70, "isEnabled": true, "cooldownMinutes": 10}'
+
+# Xoa rule
+curl -X DELETE https://plant-tree-iot-production.up.railway.app/api/rules/light/{ruleId}
+```
+
+### Control — Dieu khien thu cong
+
+```bash
+# Bat may bom nuoc thu cong
+curl -X POST https://plant-tree-iot-production.up.railway.app/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "esp32-001", "command": "WATER_ON", "parameters": {"duration": 5000}}'
+
+# Tat may bom nuoc
+curl -X POST https://plant-tree-iot-production.up.railway.app/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "esp32-001", "command": "WATER_OFF"}'
+
+# Bat den
+curl -X POST https://plant-tree-iot-production.up.railway.app/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "esp32-001", "command": "LIGHT_ON"}'
+
+# Tat den
+curl -X POST https://plant-tree-iot-production.up.railway.app/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "esp32-001", "command": "LIGHT_OFF"}'
+
+# Xem lenh dang cho (ESP32 polling)
+curl https://plant-tree-iot-production.up.railway.app/api/control/commands/esp32-001
+
+# Bao da thuc hien lenh (thay {commandId} bang id that)
+curl -X POST https://plant-tree-iot-production.up.railway.app/api/control/commands/{commandId}/executed
+```
+
+### MQTT Topics (HiveMQ)
+
+| Topic | Huong | Mo ta |
+|-------|-------|-------|
+| `planttree/{deviceId}/sensors` | ESP32 → Server | ESP32 gui du lieu cam bien |
+| `planttree/{deviceId}/commands` | Server → ESP32 | Server gui lenh dieu khien |
+
+```json
+// Payload ESP32 publish len sensors topic
+{"soilMoisture": 25, "lightLevel": 15, "temperature": 28, "humidity": 65}
+
+// Payload server publish xuong commands topic
+{"command": "WATER_ON", "commandId": "...", "parameters": {"duration": 5000}}
+```
+
+---
+
 ## API Documentation
 
 ### 1. Quản lý thiết bị (Devices)
