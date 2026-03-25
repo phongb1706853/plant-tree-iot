@@ -11,6 +11,9 @@ builder.Services.AddControllers();
 // Register MongoDB service
 builder.Services.AddSingleton<MongoDbService>();
 
+// Register MQTT background service
+builder.Services.AddHostedService<PlantTreeIoTServer.Services.MqttBackgroundService>();
+
 // Configure CORS for ESP32 communication
 builder.Services.AddCors(options =>
 {
