@@ -48,8 +48,10 @@ public class SensorDataController : ControllerBase
 
             _logger.LogInformation("Sensor data uploaded from device {DeviceId}", request.DeviceId);
 
-            // Evaluate moisture rules and collect triggered commands
-            var triggeredCommands = await EvaluateMoistureRulesAsync(request.DeviceId, request.SoilMoisture);
+            // Evaluate rules and collect triggered commands
+            var triggeredCommands = new List<object>();
+            triggeredCommands.AddRange(await EvaluateMoistureRulesAsync(request.DeviceId, request.SoilMoisture));
+            triggeredCommands.AddRange(await EvaluateLightRulesAsync(request.DeviceId, request.LightLevel));
 
             return Ok(new
             {
@@ -138,6 +140,76 @@ public class SensorDataController : ControllerBase
                 await _mongoDbService.InsertControlCommandAsync(command);
                 await _mongoDbService.UpdateRuleLastTriggeredAsync(rule.Id!);
 
+                triggered.Add(new
+                {
+                    commandId = command.Id,
+                    command = command.Command,
+                    parameters = command.Parameters
+                });
+            }
+        }
+
+        return triggered;
+    }
+
+    private async Task<List<object>> EvaluateLightRulesAsync(string deviceId, double? lightLevel)
+    {
+        var triggered = new List<object>();
+        if (lightLevel == null) return triggered;
+
+        var rules = await _mongoDbService.GetLightRulesAsync(deviceId);
+        var now = DateTime.UtcNow;
+
+        foreach (var rule in rules)
+        {
+            if (!rule.IsEnabled) continue;
+            if (rule.LastTriggeredAt.HasValue &&
+                (now - rule.LastTriggeredAt.Value).TotalMinutes < rule.CooldownMinutes)
+                continue;
+
+            ControlCommand? command = null;
+
+            if (lightLevel < rule.MinLight)
+            {
+                command = new ControlCommand
+                {
+                    DeviceId = deviceId,
+                    Command = "LIGHT_ON",
+                    Parameters = new Dictionary<string, object>
+                    {
+                        { "reason", "light_rule" },
+                        { "ruleId", rule.Id! },
+                        { "ruleName", rule.Name },
+                        { "threshold", rule.MinLight },
+                        { "currentLight", lightLevel }
+                    },
+                    Executed = false,
+                    CreatedAt = now
+                };
+            }
+            else if (lightLevel >= rule.MaxLight)
+            {
+                command = new ControlCommand
+                {
+                    DeviceId = deviceId,
+                    Command = "LIGHT_OFF",
+                    Parameters = new Dictionary<string, object>
+                    {
+                        { "reason", "light_rule" },
+                        { "ruleId", rule.Id! },
+                        { "ruleName", rule.Name },
+                        { "threshold", rule.MaxLight },
+                        { "currentLight", lightLevel }
+                    },
+                    Executed = false,
+                    CreatedAt = now
+                };
+            }
+
+            if (command != null)
+            {
+                await _mongoDbService.InsertControlCommandAsync(command);
+                await _mongoDbService.UpdateLightRuleLastTriggeredAsync(rule.Id!);
                 triggered.Add(new
                 {
                     commandId = command.Id,

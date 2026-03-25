@@ -133,6 +133,103 @@ public class RulesController : ControllerBase
     }
 }
 
+    [HttpGet("light/{deviceId}")]
+    public async Task<IActionResult> GetLightRules(string deviceId)
+    {
+        try
+        {
+            var rules = await _mongoDbService.GetLightRulesAsync(deviceId);
+            return Ok(rules);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting light rules for device {DeviceId}", deviceId);
+            return StatusCode(500, "Internal server error");
+        }
+    }
+
+    [HttpPost("light")]
+    public async Task<IActionResult> CreateLightRule([FromBody] LightRuleRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.DeviceId))
+                return BadRequest("DeviceId is required");
+
+            if (request.MinLight >= request.MaxLight)
+                return BadRequest("MinLight must be less than MaxLight");
+
+            var rule = new LightRule
+            {
+                DeviceId = request.DeviceId,
+                Name = request.Name,
+                MinLight = request.MinLight,
+                MaxLight = request.MaxLight,
+                IsEnabled = request.IsEnabled,
+                CooldownMinutes = request.CooldownMinutes,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _mongoDbService.InsertLightRuleAsync(rule);
+            _logger.LogInformation("Light rule created for device {DeviceId}: min={Min}, max={Max}",
+                request.DeviceId, request.MinLight, request.MaxLight);
+
+            return Created($"/api/rules/light/rule/{rule.Id}", rule);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating light rule");
+            return StatusCode(500, "Internal server error");
+        }
+    }
+
+    [HttpPut("light/{ruleId}")]
+    public async Task<IActionResult> UpdateLightRule(string ruleId, [FromBody] LightRuleRequest request)
+    {
+        try
+        {
+            if (request.MinLight >= request.MaxLight)
+                return BadRequest("MinLight must be less than MaxLight");
+
+            var updated = new LightRule
+            {
+                Name = request.Name,
+                MinLight = request.MinLight,
+                MaxLight = request.MaxLight,
+                IsEnabled = request.IsEnabled,
+                CooldownMinutes = request.CooldownMinutes
+            };
+
+            var success = await _mongoDbService.UpdateLightRuleAsync(ruleId, updated);
+            if (!success) return NotFound($"Rule {ruleId} not found");
+
+            return Ok(new { message = "Rule updated successfully" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating light rule {RuleId}", ruleId);
+            return StatusCode(500, "Internal server error");
+        }
+    }
+
+    [HttpDelete("light/{ruleId}")]
+    public async Task<IActionResult> DeleteLightRule(string ruleId)
+    {
+        try
+        {
+            var success = await _mongoDbService.DeleteLightRuleAsync(ruleId);
+            if (!success) return NotFound($"Rule {ruleId} not found");
+
+            return Ok(new { message = "Rule deleted successfully" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting light rule {RuleId}", ruleId);
+            return StatusCode(500, "Internal server error");
+        }
+    }
+}
+
 public class MoistureRuleRequest
 {
     public string DeviceId { get; set; } = string.Empty;
@@ -142,4 +239,14 @@ public class MoistureRuleRequest
     public int WaterDurationMs { get; set; } = 5000;
     public bool IsEnabled { get; set; } = true;
     public int CooldownMinutes { get; set; } = 30;
+}
+
+public class LightRuleRequest
+{
+    public string DeviceId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public double MinLight { get; set; } = 25.0;
+    public double MaxLight { get; set; } = 60.0;
+    public bool IsEnabled { get; set; } = true;
+    public int CooldownMinutes { get; set; } = 10;
 }

@@ -112,6 +112,42 @@ public class MoistureRule
 }
 
 [BsonIgnoreExtraElements]
+public class LightRule
+{
+    [BsonId]
+    [BsonRepresentation(BsonType.ObjectId)]
+    public string? Id { get; set; }
+
+    [BsonElement("deviceId")]
+    public string DeviceId { get; set; } = string.Empty;
+
+    [BsonElement("name")]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Bat den khi lightLevel xuong duoi nguong nay</summary>
+    [BsonElement("minLight")]
+    public double MinLight { get; set; } = 25.0;
+
+    /// <summary>Tat den khi lightLevel vuot nguong nay</summary>
+    [BsonElement("maxLight")]
+    public double MaxLight { get; set; } = 60.0;
+
+    [BsonElement("isEnabled")]
+    public bool IsEnabled { get; set; } = true;
+
+    [BsonElement("cooldownMinutes")]
+    public int CooldownMinutes { get; set; } = 10;
+
+    [BsonElement("lastTriggeredAt")]
+    [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
+    public DateTime? LastTriggeredAt { get; set; }
+
+    [BsonElement("createdAt")]
+    [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+[BsonIgnoreExtraElements]
 public class ControlCommand
 {
     [BsonId]

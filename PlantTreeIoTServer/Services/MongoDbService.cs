@@ -119,6 +119,39 @@ public class MongoDbService
         return result.DeletedCount > 0;
     }
 
+    // Light Rule Operations
+    public IMongoCollection<LightRule> LightRules => _database.GetCollection<LightRule>("LightRules");
+
+    public async Task<List<LightRule>> GetLightRulesAsync(string deviceId)
+        => await LightRules.Find(r => r.DeviceId == deviceId).ToListAsync();
+
+    public async Task InsertLightRuleAsync(LightRule rule)
+        => await LightRules.InsertOneAsync(rule);
+
+    public async Task<bool> UpdateLightRuleAsync(string ruleId, LightRule updated)
+    {
+        var update = Builders<LightRule>.Update
+            .Set(r => r.Name, updated.Name)
+            .Set(r => r.MinLight, updated.MinLight)
+            .Set(r => r.MaxLight, updated.MaxLight)
+            .Set(r => r.IsEnabled, updated.IsEnabled)
+            .Set(r => r.CooldownMinutes, updated.CooldownMinutes);
+        var result = await LightRules.UpdateOneAsync(r => r.Id == ruleId, update);
+        return result.ModifiedCount > 0;
+    }
+
+    public async Task UpdateLightRuleLastTriggeredAsync(string ruleId)
+    {
+        var update = Builders<LightRule>.Update.Set(r => r.LastTriggeredAt, DateTime.UtcNow);
+        await LightRules.UpdateOneAsync(r => r.Id == ruleId, update);
+    }
+
+    public async Task<bool> DeleteLightRuleAsync(string ruleId)
+    {
+        var result = await LightRules.DeleteOneAsync(r => r.Id == ruleId);
+        return result.DeletedCount > 0;
+    }
+
     // Control Command Operations
     public async Task<List<ControlCommand>> GetPendingCommandsAsync(string deviceId)
     {

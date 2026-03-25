@@ -123,8 +123,8 @@ public class MqttBackgroundService : BackgroundService
             await _mongoDbService.InsertSensorDataAsync(sensorData);
             await _mongoDbService.UpdateDeviceLastSeenAsync(deviceId);
 
-            // Evaluate moisture rules and publish commands
-            await EvaluateAndPublishCommandsAsync(deviceId, data.SoilMoisture);
+            // Evaluate rules and publish commands
+            await EvaluateAndPublishCommandsAsync(deviceId, data.SoilMoisture, data.LightLevel);
         }
         catch (Exception ex)
         {
@@ -132,86 +132,90 @@ public class MqttBackgroundService : BackgroundService
         }
     }
 
-    private async Task EvaluateAndPublishCommandsAsync(string deviceId, double? soilMoisture)
+    private async Task EvaluateAndPublishCommandsAsync(string deviceId, double? soilMoisture, double? lightLevel)
     {
-        if (soilMoisture == null) return;
-
-        var rules = await _mongoDbService.GetMoistureRulesAsync(deviceId);
         var now = DateTime.UtcNow;
+        var commands = new List<ControlCommand>();
 
-        foreach (var rule in rules)
+        // Moisture rules
+        if (soilMoisture != null)
         {
-            if (!rule.IsEnabled) continue;
-
-            if (rule.LastTriggeredAt.HasValue &&
-                (now - rule.LastTriggeredAt.Value).TotalMinutes < rule.CooldownMinutes)
-                continue;
-
-            ControlCommand? command = null;
-
-            if (soilMoisture < rule.MinMoisture)
+            var moistureRules = await _mongoDbService.GetMoistureRulesAsync(deviceId);
+            foreach (var rule in moistureRules)
             {
-                command = new ControlCommand
-                {
-                    DeviceId = deviceId,
-                    Command = "WATER_ON",
-                    Parameters = new Dictionary<string, object>
-                    {
-                        { "duration", rule.WaterDurationMs },
-                        { "reason", "moisture_rule" },
-                        { "ruleId", rule.Id! },
-                        { "currentMoisture", soilMoisture }
-                    },
-                    Executed = false,
-                    CreatedAt = now
-                };
+                if (!rule.IsEnabled) continue;
+                if (rule.LastTriggeredAt.HasValue &&
+                    (now - rule.LastTriggeredAt.Value).TotalMinutes < rule.CooldownMinutes) continue;
 
-                _logger.LogInformation("Rule '{Name}' triggered WATER_ON for {DeviceId} (moisture={M}%)",
-                    rule.Name, deviceId, soilMoisture);
+                ControlCommand? cmd = null;
+                if (soilMoisture < rule.MinMoisture)
+                    cmd = new ControlCommand { DeviceId = deviceId, Command = "WATER_ON",
+                        Parameters = new Dictionary<string, object> { { "duration", rule.WaterDurationMs }, { "reason", "moisture_rule" }, { "ruleId", rule.Id! }, { "currentMoisture", soilMoisture } },
+                        Executed = false, CreatedAt = now };
+                else if (soilMoisture >= rule.MaxMoisture)
+                    cmd = new ControlCommand { DeviceId = deviceId, Command = "WATER_OFF",
+                        Parameters = new Dictionary<string, object> { { "reason", "moisture_rule" }, { "ruleId", rule.Id! }, { "currentMoisture", soilMoisture } },
+                        Executed = false, CreatedAt = now };
+
+                if (cmd != null)
+                {
+                    await _mongoDbService.InsertControlCommandAsync(cmd);
+                    await _mongoDbService.UpdateRuleLastTriggeredAsync(rule.Id!);
+                    commands.Add(cmd);
+                    _logger.LogInformation("Moisture rule triggered {Command} for {DeviceId}", cmd.Command, deviceId);
+                }
             }
-            else if (soilMoisture >= rule.MaxMoisture)
+        }
+
+        // Light rules
+        if (lightLevel != null)
+        {
+            var lightRules = await _mongoDbService.GetLightRulesAsync(deviceId);
+            foreach (var rule in lightRules)
             {
-                command = new ControlCommand
+                if (!rule.IsEnabled) continue;
+                if (rule.LastTriggeredAt.HasValue &&
+                    (now - rule.LastTriggeredAt.Value).TotalMinutes < rule.CooldownMinutes) continue;
+
+                ControlCommand? cmd = null;
+                if (lightLevel < rule.MinLight)
+                    cmd = new ControlCommand { DeviceId = deviceId, Command = "LIGHT_ON",
+                        Parameters = new Dictionary<string, object> { { "reason", "light_rule" }, { "ruleId", rule.Id! }, { "currentLight", lightLevel } },
+                        Executed = false, CreatedAt = now };
+                else if (lightLevel >= rule.MaxLight)
+                    cmd = new ControlCommand { DeviceId = deviceId, Command = "LIGHT_OFF",
+                        Parameters = new Dictionary<string, object> { { "reason", "light_rule" }, { "ruleId", rule.Id! }, { "currentLight", lightLevel } },
+                        Executed = false, CreatedAt = now };
+
+                if (cmd != null)
                 {
-                    DeviceId = deviceId,
-                    Command = "WATER_OFF",
-                    Parameters = new Dictionary<string, object>
-                    {
-                        { "reason", "moisture_rule" },
-                        { "ruleId", rule.Id! },
-                        { "currentMoisture", soilMoisture }
-                    },
-                    Executed = false,
-                    CreatedAt = now
-                };
-
-                _logger.LogInformation("Rule '{Name}' triggered WATER_OFF for {DeviceId} (moisture={M}%)",
-                    rule.Name, deviceId, soilMoisture);
+                    await _mongoDbService.InsertControlCommandAsync(cmd);
+                    await _mongoDbService.UpdateLightRuleLastTriggeredAsync(rule.Id!);
+                    commands.Add(cmd);
+                    _logger.LogInformation("Light rule triggered {Command} for {DeviceId} (light={L})", cmd.Command, deviceId, lightLevel);
+                }
             }
+        }
 
-            if (command != null)
+        // Publish all commands via MQTT
+        foreach (var command in commands)
+        {
+            var payload = JsonSerializer.Serialize(new
             {
-                await _mongoDbService.InsertControlCommandAsync(command);
-                await _mongoDbService.UpdateRuleLastTriggeredAsync(rule.Id!);
+                command = command.Command,
+                commandId = command.Id,
+                parameters = command.Parameters
+            });
 
-                // Publish command to ESP32 via MQTT
-                var commandPayload = JsonSerializer.Serialize(new
-                {
-                    command = command.Command,
-                    commandId = command.Id,
-                    parameters = command.Parameters
-                });
+            var message = new MqttApplicationMessageBuilder()
+                .WithTopic($"planttree/{deviceId}/commands")
+                .WithPayload(payload)
+                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                .WithRetainFlag(false)
+                .Build();
 
-                var message = new MqttApplicationMessageBuilder()
-                    .WithTopic($"planttree/{deviceId}/commands")
-                    .WithPayload(commandPayload)
-                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-                    .WithRetainFlag(false)
-                    .Build();
-
-                await _mqttClient!.PublishAsync(message);
-                _logger.LogInformation("Published {Command} to {DeviceId} via MQTT", command.Command, deviceId);
-            }
+            await _mqttClient!.PublishAsync(message);
+            _logger.LogInformation("Published {Command} to {DeviceId} via MQTT", command.Command, deviceId);
         }
     }
 }
