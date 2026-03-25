@@ -131,7 +131,6 @@ public class RulesController : ControllerBase
             return StatusCode(500, "Internal server error");
         }
     }
-}
 
     [HttpGet("light/{deviceId}")]
     public async Task<IActionResult> GetLightRules(string deviceId)
