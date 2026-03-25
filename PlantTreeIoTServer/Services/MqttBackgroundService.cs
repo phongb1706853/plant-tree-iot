@@ -72,9 +72,10 @@ public class MqttBackgroundService : BackgroundService
 
                     var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
                         .WithTopicFilter("planttree/+/sensors")
+                        .WithTopicFilter("xmini/sensor_data")
                         .Build();
                     await _mqttClient.SubscribeAsync(subscribeOptions, stoppingToken);
-                    _logger.LogInformation("Subscribed to planttree/+/sensors");
+                    _logger.LogInformation("Subscribed to planttree/+/sensors and xmini/sensor_data");
                 }
             }
             catch (Exception ex)
@@ -96,35 +97,62 @@ public class MqttBackgroundService : BackgroundService
             var topic = e.ApplicationMessage.Topic;
             var payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
 
-            // Extract deviceId from: planttree/{deviceId}/sensors
-            var parts = topic.Split('/');
-            if (parts.Length < 3) return;
-            var deviceId = parts[1];
+            string? deviceId;
+            double? soilMoisture;
+            double? lightLevel;
+            double? temperature;
+            double? humidity;
+            string commandTopic;
 
-            _logger.LogInformation("MQTT received from {DeviceId}: {Payload}", deviceId, payload);
-
-            var data = JsonSerializer.Deserialize<MqttSensorPayload>(payload,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (data == null) return;
-
-            // Save sensor data to MongoDB
-            var sensorData = new SensorData
+            if (topic == "xmini/sensor_data")
             {
-                DeviceId = deviceId,
-                Timestamp = DateTime.UtcNow,
-                Temperature = data.Temperature,
-                Humidity = data.Humidity,
-                SoilMoisture = data.SoilMoisture,
-                LightLevel = data.LightLevel,
-                WaterLevel = data.WaterLevel,
-                PhLevel = data.PhLevel
-            };
+                // Parse xmini board payload
+                var xmini = JsonSerializer.Deserialize<XminiSensorPayload>(payload,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (xmini?.DeviceId == null) return;
 
-            await _mongoDbService.InsertSensorDataAsync(sensorData);
+                deviceId    = xmini.DeviceId;
+                lightLevel  = xmini.LightLux;
+                soilMoisture = null;
+                temperature = xmini.TemperatureC;
+                humidity    = xmini.HumidityPercent;
+                commandTopic = "xmini/control";
+            }
+            else
+            {
+                // Parse planttree/{deviceId}/sensors payload
+                var parts = topic.Split('/');
+                if (parts.Length < 3) return;
+                deviceId = parts[1];
+
+                var data = JsonSerializer.Deserialize<MqttSensorPayload>(payload,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (data == null) return;
+
+                soilMoisture = data.SoilMoisture;
+                lightLevel   = data.LightLevel;
+                temperature  = data.Temperature;
+                humidity     = data.Humidity;
+                commandTopic = $"planttree/{deviceId}/commands";
+            }
+
+            _logger.LogInformation("MQTT received from {DeviceId} (topic={Topic}): light={Light}, moisture={Moisture}",
+                deviceId, topic, lightLevel, soilMoisture);
+
+            // Save to MongoDB
+            await _mongoDbService.InsertSensorDataAsync(new SensorData
+            {
+                DeviceId     = deviceId,
+                Timestamp    = DateTime.UtcNow,
+                Temperature  = temperature,
+                Humidity     = humidity,
+                SoilMoisture = soilMoisture,
+                LightLevel   = lightLevel
+            });
             await _mongoDbService.UpdateDeviceLastSeenAsync(deviceId);
 
             // Evaluate rules and publish commands
-            await EvaluateAndPublishCommandsAsync(deviceId, data.SoilMoisture, data.LightLevel);
+            await EvaluateAndPublishCommandsAsync(deviceId, soilMoisture, lightLevel, commandTopic);
         }
         catch (Exception ex)
         {
@@ -132,7 +160,7 @@ public class MqttBackgroundService : BackgroundService
         }
     }
 
-    private async Task EvaluateAndPublishCommandsAsync(string deviceId, double? soilMoisture, double? lightLevel)
+    private async Task EvaluateAndPublishCommandsAsync(string deviceId, double? soilMoisture, double? lightLevel, string commandTopic = "")
     {
         var now = DateTime.UtcNow;
         var commands = new List<ControlCommand>();
@@ -198,6 +226,7 @@ public class MqttBackgroundService : BackgroundService
         }
 
         // Publish all commands via MQTT
+        var topic = string.IsNullOrEmpty(commandTopic) ? $"planttree/{deviceId}/commands" : commandTopic;
         foreach (var command in commands)
         {
             var payload = JsonSerializer.Serialize(new
@@ -208,14 +237,14 @@ public class MqttBackgroundService : BackgroundService
             });
 
             var message = new MqttApplicationMessageBuilder()
-                .WithTopic($"planttree/{deviceId}/commands")
+                .WithTopic(topic)
                 .WithPayload(payload)
                 .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
                 .WithRetainFlag(false)
                 .Build();
 
             await _mqttClient!.PublishAsync(message);
-            _logger.LogInformation("Published {Command} to {DeviceId} via MQTT", command.Command, deviceId);
+            _logger.LogInformation("Published {Command} to topic {Topic}", command.Command, topic);
         }
     }
 }
@@ -228,4 +257,25 @@ public class MqttSensorPayload
     public double? LightLevel { get; set; }
     public double? WaterLevel { get; set; }
     public double? PhLevel { get; set; }
+}
+
+public class XminiSensorPayload
+{
+    [System.Text.Json.Serialization.JsonPropertyName("device_id")]
+    public string? DeviceId { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("temperature_c")]
+    public double? TemperatureC { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("humidity_percent")]
+    public double? HumidityPercent { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("light_lux")]
+    public double? LightLux { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("pressure_hpa")]
+    public double? PressureHpa { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("altitude_m")]
+    public double? AltitudeM { get; set; }
 }
