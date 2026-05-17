@@ -2,51 +2,117 @@
 
 Python MCP server connecting Ollama to Plant Tree IoT REST API.
 
-## Setup on Mac Mini
+---
 
-### 1. Install dependencies
+## Checklist cho Mac Mini (làm theo thứ tự)
+
+### Bước 1 — Clone repo
 
 ```bash
-cd mcp-server
-python -m venv venv
+git clone https://github.com/phongb1706853/plant-tree-iot.git
+cd plant-tree-iot
+```
+
+### Bước 2 — Cài .NET 10 Runtime (nếu chưa có)
+
+```bash
+# Kiểm tra xem đã có chưa
+dotnet --version
+
+# Nếu chưa có, tải tại: https://dotnet.microsoft.com/download/dotnet/10.0
+# Chọn: macOS - Arm64 (nếu Mac M1/M2/M3) hoặc x64 (nếu Mac Intel)
+```
+
+### Bước 3 — Cài Python 3.11+ (nếu chưa có)
+
+```bash
+# Kiểm tra
+python3 --version
+
+# Nếu chưa có
+brew install python@3.11
+```
+
+### Bước 4 — Cài dependencies MCP server
+
+```bash
+cd plant-tree-iot/mcp-server
+python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Run tests
+### Bước 5 — Chạy tests để verify
 
 ```bash
 pytest tests/ -v
 ```
 
-Expected: 13 passed
+Expected: **13 passed**
 
-### 3. Start .NET REST API
+### Bước 6 — Cập nhật config MQTT (bỏ HiveMQ, dùng Mosquitto local)
 
-```bash
-# In plant-tree/PlantTreeIoTServer
-dotnet run
-# API runs on http://localhost:5000
+Mở file `PlantTreeIoTServer/appsettings.json`, đổi MQTT settings:
+
+```json
+{
+  "Mqtt": {
+    "Broker": "192.168.88.126",
+    "Port": 1883,
+    "UseTls": false,
+    "Username": "",
+    "Password": ""
+  }
+}
 ```
 
-### 4. Connect to Ollama
+### Bước 7 — Chạy .NET REST API
 
-Add to your Ollama MCP config (location depends on your Ollama UI — Open WebUI, Msty, AnythingLLM, etc.):
+```bash
+cd plant-tree-iot/PlantTreeIoTServer
+dotnet run
+# API chạy tại http://localhost:5000
+# Verify: curl http://localhost:5000/api/devices
+```
+
+### Bước 8 — Kết nối Ollama với MCP server
+
+Tìm đường dẫn tuyệt đối trước:
+
+```bash
+# Lấy đường dẫn python trong venv
+which python   # phải đang activate venv
+
+# Lấy đường dẫn server.py
+pwd   # chạy trong thư mục mcp-server
+```
+
+Thêm vào Ollama MCP config (tùy UI đang dùng: Open WebUI, Msty, AnythingLLM...):
 
 ```json
 {
   "mcpServers": {
     "plant-tree": {
-      "command": "/absolute/path/to/venv/bin/python",
+      "command": "/absolute/path/to/mcp-server/venv/bin/python",
       "args": ["/absolute/path/to/mcp-server/server.py"]
     }
   }
 }
 ```
 
-Replace `/absolute/path/to/` with the actual path on Mac Mini.
+Ví dụ nếu clone vào `/Users/phong/plant-tree-iot`:
+```json
+{
+  "mcpServers": {
+    "plant-tree": {
+      "command": "/Users/phong/plant-tree-iot/mcp-server/venv/bin/python",
+      "args": ["/Users/phong/plant-tree-iot/mcp-server/server.py"]
+    }
+  }
+}
+```
 
-### 5. Test with Ollama
+### Bước 9 — Test với Ollama
 
 ```
 >>> Liệt kê tất cả thiết bị IoT đang có
@@ -55,14 +121,18 @@ Replace `/absolute/path/to/` with the actual path on Mac Mini.
 >>> Đặt rule tự động tưới khi độ ẩm đất < 25%
 ```
 
-## Startup Order
+---
+
+## Thứ tự khởi động hàng ngày
 
 ```
-1. Docker (Mosquitto)    → runs automatically
-2. dotnet run            → REST API on port 5000
-3. ollama serve          → AI model on port 11434
-4. MCP server            → starts automatically when Ollama needs it
+1. Docker (Mosquitto 192.168.88.126:1883)  → đã chạy sẵn
+2. dotnet run (PlantTreeIoTServer)          → REST API port 5000
+3. ollama serve                             → AI model port 11434
+4. MCP server                               → tự khởi động khi Ollama cần
 ```
+
+---
 
 ## Tools Available (12 total)
 
@@ -72,6 +142,8 @@ Replace `/absolute/path/to/` with the actual path on Mac Mini.
 | Sensors | `get_latest_sensor`, `get_sensor_history` |
 | Control | `send_command`, `get_pending_commands`, `auto_water`, `auto_light` |
 | Rules | `get_moisture_rule`, `set_moisture_rule`, `get_light_rule`, `set_light_rule` |
+
+---
 
 ## Upgrade Path
 
