@@ -57,40 +57,11 @@ curl https://<new-url>.trycloudflare.com/api/devices
 
 ### Phần A — IoT team gọi HTTP từ bên ngoài (5 phút)
 
-Từ máy Windows / Postman, demo các endpoint chính:
+Mọi lệnh ở phần 9 bên dưới (Curl Library). Highlight cho demo:
 
-```bash
-# Đăng ký device
-curl -X POST https://<tunnel-url>/api/devices/register \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"esp32-001","name":"Cay demo","plantType":"Cactus","location":"Phong hop"}'
+1. Đăng ký device → 2. Gửi sensor data (payload IoT team đang dùng, snake_case) → 3. Tạo light rule trigger → 4. Gửi lại sensor data, response có `triggeredCommands` chứa `LIGHT_ON`.
 
-# Xem device
-curl https://<tunnel-url>/api/devices
-
-# Gửi sensor data
-curl -X POST https://<tunnel-url>/api/sensordata/upload \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"esp32-001","soilMoisture":20,"lightLevel":15,"temperature":28,"humidity":65}'
-
-# Xem sensor data
-curl https://<tunnel-url>/api/sensordata/latest/esp32-001
-
-# Tạo rule tự động tưới
-curl -X POST https://<tunnel-url>/api/rules/moisture \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"esp32-001","name":"Tuoi tu dong","minMoisture":30,"maxMoisture":70,"waterDurationMs":5000,"cooldownMinutes":30}'
-
-# Gửi command thủ công
-curl -X POST https://<tunnel-url>/api/control/commands \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"esp32-001","command":"WATER_ON","parameters":{"duration":5000}}'
-
-# ESP32 lấy pending commands
-curl https://<tunnel-url>/api/control/commands/esp32-001
-```
-
-→ Chứng minh: **API public hoạt động đầy đủ, IoT team dùng được**.
+→ Chứng minh: **API public hoạt động đầy đủ, rule engine real-time, accept payload IoT team đang gửi**.
 
 ### Phần B — Ollama gọi MCP tool đúng chuẩn (5 phút)
 
@@ -194,12 +165,6 @@ Trong UI hỏi: "Liệt kê thiết bị" → AI phải tự gọi tool `list_de
 # Xem tất cả container đang chạy
 docker ps
 
-# Xem logs .NET API
-# (đang chạy foreground trong terminal 1, nhìn trực tiếp output)
-
-# Xem logs cloudflared
-# (đang chạy foreground trong terminal 2)
-
 # Restart toàn bộ stack (sau reboot)
 docker start mongodb mosquitto
 cd ~/plant-tree-iot/PlantTreeIoTServer && dotnet run        # Terminal 1
@@ -207,4 +172,188 @@ cloudflared tunnel --url http://localhost:80                # Terminal 2
 
 # IP LAN của Mac (ESP32 cùng LAN dùng IP này)
 ipconfig getifaddr en0
+```
+
+---
+
+## 9. Curl Library — tất cả endpoint
+
+> Đặt biến trước (Mac/Linux):
+> ```bash
+> export API=https://crawford-super-vista-bytes.trycloudflare.com   # đổi sang URL tunnel mới
+> export DEVICE=ESP32S3_Zone1
+> ```
+> Windows PowerShell:
+> ```powershell
+> $API="https://crawford-super-vista-bytes.trycloudflare.com"
+> $DEVICE="ESP32S3_Zone1"
+> ```
+
+### 9.1 Devices
+
+```bash
+# Đăng ký device
+curl -X POST $API/api/devices/register \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Zone 1","plantType":"Mixed","location":"IoT lab"}'
+
+# Xem tất cả
+curl $API/api/devices
+
+# Xem 1 device
+curl $API/api/devices/$DEVICE
+
+# Heartbeat (ESP32 gọi định kỳ để báo còn sống)
+curl -X POST $API/api/devices/$DEVICE/heartbeat
+```
+
+### 9.2 Sensor Data — payload IoT team (snake_case, đã support)
+
+```bash
+# Upload sensor (server tự eval rule, trả triggeredCommands)
+curl -X POST $API/api/sensordata/upload \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_id":"ESP32S3_Zone1",
+    "temperature_c":28.4,
+    "pressure_hpa":1008.6,
+    "altitude_m":38.2,
+    "light_lux":420.5,
+    "soil_moisture_percent":61.8,
+    "soil_moisture_raw":2540,
+    "relay_on":false
+  }'
+
+# Test scenario "đất khô" (trigger WATER_ON nếu có moisture rule)
+curl -X POST $API/api/sensordata/upload \
+  -H "Content-Type: application/json" \
+  -d '{"device_id":"ESP32S3_Zone1","temperature_c":30,"soil_moisture_percent":20,"light_lux":500}'
+
+# Test scenario "thiếu sáng" (trigger LIGHT_ON nếu có light rule)
+curl -X POST $API/api/sensordata/upload \
+  -H "Content-Type: application/json" \
+  -d '{"device_id":"ESP32S3_Zone1","temperature_c":25,"soil_moisture_percent":60,"light_lux":50}'
+
+# Xem dữ liệu mới nhất
+curl $API/api/sensordata/latest/$DEVICE
+
+# Xem 50 record gần nhất
+curl "$API/api/sensordata/history/$DEVICE?limit=50"
+
+# Xem theo khoảng thời gian
+curl "$API/api/sensordata/range/$DEVICE?startDate=2026-05-24T00:00:00Z&endDate=2026-05-25T00:00:00Z"
+```
+
+### 9.3 Rules — Độ ẩm (Moisture)
+
+```bash
+# Tạo rule tưới: tưới khi < 30%, dừng khi > 70%, mỗi lần 5 giây, cooldown 30 phút
+curl -X POST $API/api/rules/moisture \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Tuoi tu dong","minMoisture":30,"maxMoisture":70,"waterDurationMs":5000,"cooldownMinutes":30}'
+
+# Tạo rule cố tình trigger với soil hiện tại (61.8%): min=70 → sẽ tưới
+curl -X POST $API/api/rules/moisture \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tuoi","minMoisture":70,"maxMoisture":80,"waterDurationMs":5000,"cooldownMinutes":1}'
+
+# Xem rules
+curl $API/api/rules/moisture/$DEVICE
+
+# Cập nhật rule (thay <ruleId>)
+curl -X PUT $API/api/rules/moisture/<ruleId> \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Tuoi tu dong","minMoisture":25,"maxMoisture":70,"waterDurationMs":8000,"isEnabled":true,"cooldownMinutes":30}'
+
+# Xoá rule
+curl -X DELETE $API/api/rules/moisture/<ruleId>
+```
+
+### 9.4 Rules — Ánh sáng (Light)
+
+```bash
+# Tạo rule đèn: bật khi lux < 25, tắt khi > 60
+curl -X POST $API/api/rules/light \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Den chieu sang","minLight":25,"maxLight":60,"isEnabled":true,"cooldownMinutes":10}'
+
+# Rule cố tình trigger LIGHT_ON với light hiện tại (420.5 lux): min=500
+curl -X POST $API/api/rules/light \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMinutes":1}'
+
+# Rule cố tình trigger LIGHT_OFF với light hiện tại: max=400
+curl -X POST $API/api/rules/light \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tat den","minLight":100,"maxLight":400,"isEnabled":true,"cooldownMinutes":1}'
+
+# Xem rules
+curl $API/api/rules/light/$DEVICE
+
+# Cập nhật
+curl -X PUT $API/api/rules/light/<ruleId> \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Den chieu sang","minLight":20,"maxLight":70,"isEnabled":true,"cooldownMinutes":10}'
+
+# Xoá
+curl -X DELETE $API/api/rules/light/<ruleId>
+```
+
+### 9.5 Control — Điều khiển thủ công
+
+```bash
+# Bật máy bơm 5 giây
+curl -X POST $API/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","command":"WATER_ON","parameters":{"duration":5000}}'
+
+# Tắt bơm
+curl -X POST $API/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","command":"WATER_OFF"}'
+
+# Bật đèn
+curl -X POST $API/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","command":"LIGHT_ON"}'
+
+# Tắt đèn
+curl -X POST $API/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","command":"LIGHT_OFF"}'
+
+# ESP32 polling: lấy lệnh đang chờ
+curl $API/api/control/commands/$DEVICE
+
+# ESP32 báo đã thực hiện xong
+curl -X POST $API/api/control/commands/<commandId>/executed
+
+# Auto-water (ép tưới nếu soil < threshold)
+curl -X POST "$API/api/control/auto-water/$DEVICE?threshold=30.0"
+
+# Auto-light (ép bật đèn nếu light < threshold)
+curl -X POST "$API/api/control/auto-light/$DEVICE?threshold=200.0"
+```
+
+### 9.6 Demo flow gợi ý (chạy theo thứ tự)
+
+```bash
+# 1. Đăng ký device
+curl -X POST $API/api/devices/register -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Zone 1","plantType":"Mixed","location":"IoT lab"}'
+
+# 2. Gửi sensor data lần 1 (không có rule → triggeredCommands rỗng)
+curl -X POST $API/api/sensordata/upload -H "Content-Type: application/json" \
+  -d '{"device_id":"ESP32S3_Zone1","temperature_c":28.4,"light_lux":420.5,"soil_moisture_percent":61.8}'
+
+# 3. Tạo rule light cố tình trigger
+curl -X POST $API/api/rules/light -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMinutes":1}'
+
+# 4. Gửi lại sensor data → response có triggeredCommands: [LIGHT_ON]
+curl -X POST $API/api/sensordata/upload -H "Content-Type: application/json" \
+  -d '{"device_id":"ESP32S3_Zone1","temperature_c":28.4,"light_lux":420.5,"soil_moisture_percent":61.8}'
+
+# 5. ESP32 polling lấy lệnh
+curl $API/api/control/commands/$DEVICE
 ```

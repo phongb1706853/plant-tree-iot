@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plant Tree IoT — Demo Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    line-height: 1.6;
+  }
+  header {
+    background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+    padding: 24px 32px;
+    border-bottom: 2px solid #10b981;
+  }
+  h1 { font-size: 28px; font-weight: 700; }
+  h1 span { font-size: 14px; opacity: 0.8; margin-left: 12px; font-weight: 400; }
+  .meta {
+    display: flex;
+    gap: 24px;
+    margin-top: 8px;
+    font-size: 13px;
+    opacity: 0.85;
+  }
+  .meta code {
+    background: rgba(0,0,0,0.3);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .layout { display: flex; min-height: calc(100vh - 88px); }
+  nav {
+    width: 240px;
+    background: #1e293b;
+    padding: 16px 0;
+    border-right: 1px solid #334155;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  nav button {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: #cbd5e1;
+    padding: 12px 24px;
+    font-size: 14px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all 0.15s;
+  }
+  nav button:hover { background: #334155; color: #fff; }
+  nav button.active {
+    background: #0f172a;
+    color: #10b981;
+    border-left-color: #10b981;
+    font-weight: 600;
+  }
+  nav .group-label {
+    padding: 12px 24px 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #64748b;
+    margin-top: 8px;
+  }
+
+  main {
+    flex: 1;
+    padding: 32px 48px;
+    max-width: 1200px;
+  }
+  section { display: none; }
+  section.active { display: block; }
+  section h2 {
+    font-size: 24px;
+    margin-bottom: 20px;
+    color: #10b981;
+    border-bottom: 1px solid #334155;
+    padding-bottom: 12px;
+  }
+  section h3 {
+    font-size: 18px;
+    margin: 28px 0 12px;
+    color: #5eead4;
+  }
+  section h4 { font-size: 15px; margin: 16px 0 8px; color: #94a3b8; }
+  section p { margin-bottom: 12px; color: #cbd5e1; }
+  section ul, section ol { margin: 8px 0 16px 24px; }
+  section li { margin-bottom: 6px; }
+
+  .code-block {
+    background: #020617;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 12px 0;
+    position: relative;
+    overflow-x: auto;
+    font-family: "Menlo", "Monaco", "Cascadia Code", "Consolas", monospace;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .code-block pre { color: #e2e8f0; white-space: pre; }
+  .code-block .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #475569;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .code-block .copy-btn:hover { background: #10b981; color: #fff; border-color: #10b981; }
+  .code-block .copy-btn.copied { background: #22c55e; color: #fff; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid #334155;
+  }
+  th { background: #1e293b; color: #5eead4; font-weight: 600; }
+  td code { background: #1e293b; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .badge.get { background: #1e40af; color: #fff; }
+  .badge.post { background: #15803d; color: #fff; }
+  .badge.put { background: #b45309; color: #fff; }
+  .badge.delete { background: #b91c1c; color: #fff; }
+
+  .alert {
+    background: rgba(251, 191, 36, 0.1);
+    border-left: 3px solid #fbbf24;
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  .alert.danger { background: rgba(239, 68, 68, 0.1); border-left-color: #ef4444; }
+  .alert.success { background: rgba(34, 197, 94, 0.1); border-left-color: #22c55e; }
+  .alert.info { background: rgba(59, 130, 246, 0.1); border-left-color: #3b82f6; }
+
+  .stack-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .stack-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .stack-card h4 { color: #5eead4; margin-bottom: 4px; }
+  .stack-card .port { font-family: monospace; color: #fbbf24; font-size: 13px; }
+  .stack-card .desc { font-size: 12px; color: #94a3b8; margin-top: 6px; }
+
+  .endpoint {
+    background: #1e293b;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    font-family: monospace;
+    font-size: 13px;
+    border-left: 3px solid #475569;
+  }
+  .endpoint.get { border-left-color: #3b82f6; }
+  .endpoint.post { border-left-color: #22c55e; }
+  .endpoint.put { border-left-color: #f59e0b; }
+  .endpoint.delete { border-left-color: #ef4444; }
+
+  .url-input {
+    background: #020617;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: #e2e8f0;
+    font-family: monospace;
+    font-size: 13px;
+    width: 100%;
+    max-width: 600px;
+    margin-bottom: 16px;
+  }
+  .url-label { font-size: 12px; color: #94a3b8; margin-bottom: 4px; display: block; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌱 Plant Tree IoT — Demo Dashboard <span>v1.0 · 2026-05-25</span></h1>
+  <div class="meta">
+    <div>Stack: <code>.NET 10 + MongoDB + Mosquitto + MCP</code></div>
+    <div>Public: <code>Cloudflare Quick Tunnel</code></div>
+  </div>
+</header>
+
+<div class="layout">
+  <nav>
+    <div class="group-label">Overview</div>
+    <button class="nav-btn active" data-target="intro">Giới thiệu</button>
+    <button class="nav-btn" data-target="arch">Kiến trúc</button>
+    <button class="nav-btn" data-target="features">Chức năng</button>
+
+    <div class="group-label">Vận hành</div>
+    <button class="nav-btn" data-target="setup">Setup mỗi lần chạy</button>
+    <button class="nav-btn" data-target="demo">Kịch bản demo</button>
+
+    <div class="group-label">API Reference</div>
+    <button class="nav-btn" data-target="api-config">URL Config</button>
+    <button class="nav-btn" data-target="api-devices">Devices</button>
+    <button class="nav-btn" data-target="api-sensors">Sensor Data</button>
+    <button class="nav-btn" data-target="api-rules-moisture">Rules — Moisture</button>
+    <button class="nav-btn" data-target="api-rules-light">Rules — Light</button>
+    <button class="nav-btn" data-target="api-control">Control</button>
+
+    <div class="group-label">Khác</div>
+    <button class="nav-btn" data-target="troubleshoot">Troubleshooting</button>
+  </nav>
+
+  <main>
+
+<section id="intro" class="active">
+  <h2>Giới thiệu</h2>
+  <p><strong>Plant Tree IoT</strong> là hệ thống quản lý vườn cây thông minh dùng ESP32 + .NET + MongoDB. Server tự động đánh giá rule (độ ẩm, ánh sáng) và sinh lệnh điều khiển (tưới nước, bật đèn) gửi xuống ESP32.</p>
+
+  <h3>Thành phần chính</h3>
+  <div class="stack-grid">
+    <div class="stack-card">
+      <h4>ESP32</h4>
+      <div class="port">MQTT / HTTP</div>
+      <div class="desc">Thu thập sensor (nhiệt độ, độ ẩm, ánh sáng, áp suất), nhận lệnh điều khiển</div>
+    </div>
+    <div class="stack-card">
+      <h4>.NET 10 API</h4>
+      <div class="port">port 80</div>
+      <div class="desc">REST API + MQTT background service, eval rule engine</div>
+    </div>
+    <div class="stack-card">
+      <h4>MongoDB</h4>
+      <div class="port">port 27017</div>
+      <div class="desc">Lưu device, sensor history, rules, control commands</div>
+    </div>
+    <div class="stack-card">
+      <h4>Mosquitto MQTT</h4>
+      <div class="port">port 1883</div>
+      <div class="desc">Broker MQTT local cho ESP32 LAN</div>
+    </div>
+    <div class="stack-card">
+      <h4>MCP Server</h4>
+      <div class="port">stdio</div>
+      <div class="desc">12 tools cho Ollama AI tự gọi (devices, sensors, control, rules)</div>
+    </div>
+    <div class="stack-card">
+      <h4>Cloudflare Tunnel</h4>
+      <div class="port">HTTPS public</div>
+      <div class="desc">Expose API ra ngoài cho IoT team test</div>
+    </div>
+  </div>
+
+  <h3>Yêu cầu leader</h3>
+  <ul>
+    <li>✅ Test HTTP từ bộ phận IoT (bên ngoài LAN)</li>
+    <li>✅ Ollama AI gọi tool đúng chuẩn MCP (không phải prompt hack)</li>
+  </ul>
+</section>
+
+<section id="arch">
+  <h2>Kiến trúc</h2>
+  <div class="code-block">
+    <pre>┌─────────────────────┐         ┌──────────────────────┐         ┌──────────────────────┐
+│ Máy có Ollama       │         │ Cloudflare Tunnel    │         │ Mac Mini (server)    │
+│ (leader / IoT team) │         │ (Free Quick Tunnel)  │         │                      │
+│                     │         │                      │         │ .NET API :80         │
+│  Ollama + MCP server│ ─HTTPS─►│ *.trycloudflare.com  │ ──tcp──►│ MongoDB :27017       │
+│  (stdio transport)  │         │                      │         │ Mosquitto :1883      │
+│  config.py trỏ URL  │         └──────────────────────┘         │ cloudflared          │
+└─────────────────────┘                                          │ MCP server (local)   │
+        ▲                                                        └──────────────────────┘
+        │                                                                  ▲
+   IoT team (curl/Postman)                                                 │ MQTT / HTTP
+   thử api.trycloudflare.com                                               │
+                                                                  ┌───────┴───────┐
+                                                                  │ ESP32 (LAN)   │
+                                                                  └───────────────┘</pre>
+  </div>
+
+  <h3>Vì sao MCP không cần expose ra ngoài</h3>
+  <p>MCP protocol mặc định dùng <code>stdio</code> — Ollama UI spawn MCP server làm subprocess, giao tiếp qua stdin/stdout. MCP server bên trong gọi REST API qua HTTPS tunnel. Đây là cách <strong>chuẩn MCP</strong>, không cần expose port riêng cho MCP.</p>
+</section>
+
+<section id="features">
+  <h2>Chức năng</h2>
+
+  <h3>Devices</h3>
+  <ul>
+    <li>Đăng ký thiết bị mới với metadata (tên cây, vị trí, plant type)</li>
+    <li>Heartbeat tracking — server biết device nào online</li>
+    <li>List, search device</li>
+  </ul>
+
+  <h3>Sensor Data</h3>
+  <ul>
+    <li>Upload telemetry (temperature, humidity, soil moisture, light, pressure, altitude, relay state)</li>
+    <li>Hỗ trợ <strong>cả 2 format payload</strong>: camelCase (<code>soilMoisture</code>) và snake_case (<code>soil_moisture_percent</code>) — accommodate IoT team firmware hiện tại</li>
+    <li>Lấy sensor mới nhất, history, theo khoảng thời gian</li>
+  </ul>
+
+  <h3>Rules Engine (tự động)</h3>
+  <ul>
+    <li><strong>Moisture rule</strong>: tự sinh command WATER_ON khi soil &lt; min, WATER_OFF khi &gt; max</li>
+    <li><strong>Light rule</strong>: tự sinh command LIGHT_ON khi lux &lt; min, LIGHT_OFF khi &gt; max</li>
+    <li>Cooldown chống spam command</li>
+    <li>Server <strong>tự động eval rule</strong> mỗi lần ESP32 upload sensor — không cần ESP32 hỏi</li>
+  </ul>
+
+  <h3>Control</h3>
+  <ul>
+    <li>Gửi lệnh thủ công (WATER_ON/OFF, LIGHT_ON/OFF, FAN_ON/OFF)</li>
+    <li>Pending command queue cho ESP32 polling</li>
+    <li>Báo executed để clear queue</li>
+  </ul>
+
+  <h3>MCP Tools cho AI (12 tools)</h3>
+  <table>
+    <tr><th>Group</th><th>Tools</th></tr>
+    <tr><td>Devices</td><td><code>list_devices</code>, <code>get_device_info</code></td></tr>
+    <tr><td>Sensors</td><td><code>get_latest_sensor</code>, <code>get_sensor_history</code></td></tr>
+    <tr><td>Control</td><td><code>send_command</code>, <code>get_pending_commands</code>, <code>auto_water</code>, <code>auto_light</code></td></tr>
+    <tr><td>Rules</td><td><code>get_moisture_rule</code>, <code>set_moisture_rule</code>, <code>get_light_rule</code>, <code>set_light_rule</code></td></tr>
+  </table>
+</section>
+
+<section id="setup">
+  <h2>Setup mỗi lần chạy</h2>
+
+  <div class="alert">
+    <strong>Cảnh báo</strong>: Quick Tunnel = URL random, đổi mỗi lần restart <code>cloudflared</code>. Tất cả 4 process đều chạy foreground — đóng terminal là chết.
+  </div>
+
+  <h3>Thứ tự khởi động (Mac, sau mỗi lần reboot)</h3>
+
+  <h4>1. Mở Docker Desktop</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>open -a Docker
+# Đợi 20–30s, icon cá voi menubar đứng yên</pre>
+  </div>
+
+  <h4>2. Start MongoDB + Mosquitto containers</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>docker start mongodb mosquitto
+docker ps    # verify cả 2 đang Up</pre>
+  </div>
+
+  <h4>3. Chạy .NET API (Terminal 1 — giữ mở)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>cd ~/plant-tree-iot/PlantTreeIoTServer
+dotnet run
+# Đợi log:
+#   "Connected to MQTT broker: 127.0.0.1:1883"
+#   "Now listening on: http://[::]:80"</pre>
+  </div>
+
+  <h4>4. Chạy Cloudflare Tunnel (Terminal 2 — giữ mở)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>cloudflared tunnel --url http://localhost:80
+# Copy URL "https://xxx-xxx-xxx.trycloudflare.com" từ output
+# URL này MỚI mỗi lần chạy — cập nhật mọi nơi dùng</pre>
+  </div>
+
+  <h4>5. Test (Terminal 3)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl http://localhost/api/devices
+# Phải trả về []
+
+curl https://&lt;new-tunnel-url&gt;/api/devices
+# Phải trả về [] (test public)</pre>
+  </div>
+
+  <h3>Sync code mới (sau khi sửa server)</h3>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># Dừng dotnet (Ctrl+C trong terminal 1)
+cd ~/plant-tree-iot
+git pull
+cd PlantTreeIoTServer
+dotnet run</pre>
+  </div>
+</section>
+
+<section id="demo">
+  <h2>Kịch bản demo</h2>
+
+  <h3>Phần A — IoT team gọi HTTP (5 phút)</h3>
+  <p>Mở Postman / Terminal trên máy Windows, lần lượt:</p>
+  <ol>
+    <li>Đăng ký device <code>ESP32S3_Zone1</code></li>
+    <li>Gửi sensor data bằng payload snake_case (giống IoT team đang dùng)</li>
+    <li>Tạo light rule cố tình trigger (min=500 > current 420.5)</li>
+    <li>Gửi lại sensor data → response trả về <code>triggeredCommands: [LIGHT_ON]</code></li>
+    <li>ESP32 polling <code>/api/control/commands/ESP32S3_Zone1</code> → lấy lệnh</li>
+  </ol>
+  <p>→ <strong>Chứng minh</strong>: API public, accept payload IoT team, rule engine real-time.</p>
+
+  <h3>Phần B — Ollama gọi MCP (5 phút)</h3>
+  <p>Trong Ollama UI đã config MCP server, hỏi tự nhiên:</p>
+  <div class="code-block">
+    <pre>>>> Liệt kê tất cả thiết bị IoT đang có
+>>> Cây ESP32S3_Zone1 hiện tại có cần tưới không?
+>>> Tưới cây esp32-001 trong 10 giây
+>>> Đặt rule tự động tưới khi độ ẩm < 25%
+>>> Cho tôi xem 10 lần đo cảm biến gần nhất</pre>
+  </div>
+  <p>→ <strong>Chứng minh</strong>: AI tự gọi đúng tool MCP, response từ data thật.</p>
+
+  <h3>Full demo flow — copy paste sequence</h3>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>export API=https://&lt;tunnel-url&gt;.trycloudflare.com
+export DEVICE=ESP32S3_Zone1
+
+# 1. Đăng ký device
+curl -X POST $API/api/devices/register -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Zone 1","plantType":"Mixed","location":"IoT lab"}'
+
+# 2. Sensor data lần 1 — chưa rule, triggeredCommands rỗng
+curl -X POST $API/api/sensordata/upload -H "Content-Type: application/json" \
+  -d '{"device_id":"ESP32S3_Zone1","temperature_c":28.4,"light_lux":420.5,"soil_moisture_percent":61.8}'
+
+# 3. Tạo light rule cố tình trigger (min=500 > 420.5)
+curl -X POST $API/api/rules/light -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMinutes":1}'
+
+# 4. Gửi lại sensor → triggeredCommands có LIGHT_ON
+curl -X POST $API/api/sensordata/upload -H "Content-Type: application/json" \
+  -d '{"device_id":"ESP32S3_Zone1","temperature_c":28.4,"light_lux":420.5,"soil_moisture_percent":61.8}'
+
+# 5. ESP32 polling lấy lệnh
+curl $API/api/control/commands/$DEVICE</pre>
+  </div>
+</section>
+
+<section id="api-config">
+  <h2>URL Config</h2>
+  <p>Đặt biến môi trường trước khi chạy các lệnh curl, đỡ phải copy URL nhiều lần.</p>
+
+  <h3>Tunnel URL hiện tại</h3>
+  <label class="url-label">Copy URL từ output cloudflared, paste vào đây để in/copy:</label>
+  <input class="url-input" id="tunnel-url" value="https://crawford-super-vista-bytes.trycloudflare.com">
+
+  <h3>Mac / Linux (zsh, bash)</h3>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>export API=https://crawford-super-vista-bytes.trycloudflare.com
+export DEVICE=ESP32S3_Zone1</pre>
+  </div>
+
+  <h3>Windows PowerShell</h3>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>$API="https://crawford-super-vista-bytes.trycloudflare.com"
+$DEVICE="ESP32S3_Zone1"</pre>
+  </div>
+
+  <h3>Local testing (trên Mac)</h3>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>export API=http://localhost
+export DEVICE=ESP32S3_Zone1</pre>
+  </div>
+</section>
+
+<section id="api-devices">
+  <h2>Devices API</h2>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/devices/register</div>
+  <p>Đăng ký device mới.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/devices/register \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Zone 1","plantType":"Mixed","location":"IoT lab"}'</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/devices</div>
+  <p>Lấy tất cả devices.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl $API/api/devices</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/devices/{deviceId}</div>
+  <p>Lấy 1 device theo ID.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl $API/api/devices/$DEVICE</pre>
+  </div>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/devices/{deviceId}/heartbeat</div>
+  <p>ESP32 gọi định kỳ để cập nhật <code>lastSeen</code>.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/devices/$DEVICE/heartbeat</pre>
+  </div>
+</section>
+
+<section id="api-sensors">
+  <h2>Sensor Data API</h2>
+
+  <div class="alert info">
+    <strong>Payload từ IoT team (snake_case)</strong>: Server đã hỗ trợ map các field <code>device_id</code>, <code>temperature_c</code>, <code>light_lux</code>, <code>soil_moisture_percent</code>, <code>pressure_hpa</code>, <code>altitude_m</code>, <code>soil_moisture_raw</code>, <code>relay_on</code> sang model nội bộ.
+  </div>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/sensordata/upload</div>
+  <p>ESP32 / IoT gửi sensor. Server tự eval rule, trả về <code>triggeredCommands</code>.</p>
+
+  <h4>Payload IoT team đang dùng</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/sensordata/upload \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_id":"ESP32S3_Zone1",
+    "temperature_c":28.4,
+    "pressure_hpa":1008.6,
+    "altitude_m":38.2,
+    "light_lux":420.5,
+    "soil_moisture_percent":61.8,
+    "soil_moisture_raw":2540,
+    "relay_on":false
+  }'</pre>
+  </div>
+
+  <h4>Test scenario "đất khô" (kích moisture rule)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/sensordata/upload \
+  -H "Content-Type: application/json" \
+  -d '{"device_id":"ESP32S3_Zone1","temperature_c":30,"soil_moisture_percent":20,"light_lux":500}'</pre>
+  </div>
+
+  <h4>Test scenario "thiếu sáng" (kích light rule)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/sensordata/upload \
+  -H "Content-Type: application/json" \
+  -d '{"device_id":"ESP32S3_Zone1","temperature_c":25,"soil_moisture_percent":60,"light_lux":50}'</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/latest/{deviceId}</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl $API/api/sensordata/latest/$DEVICE</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/history/{deviceId}?limit=50</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl "$API/api/sensordata/history/$DEVICE?limit=50"</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/range/{deviceId}</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl "$API/api/sensordata/range/$DEVICE?startDate=2026-05-24T00:00:00Z&endDate=2026-05-25T00:00:00Z"</pre>
+  </div>
+</section>
+
+<section id="api-rules-moisture">
+  <h2>Rules — Moisture (Độ ẩm đất)</h2>
+  <p>Server tự sinh <code>WATER_ON</code> khi soil &lt; <code>minMoisture</code>, <code>WATER_OFF</code> khi soil ≥ <code>maxMoisture</code>.</p>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/rules/moisture</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/rules/moisture \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Tuoi tu dong","minMoisture":30,"maxMoisture":70,"waterDurationMs":5000,"cooldownMinutes":30}'</pre>
+  </div>
+
+  <h4>Rule cố tình trigger với soil hiện tại (61.8%): đặt min=70</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/rules/moisture \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tuoi","minMoisture":70,"maxMoisture":80,"waterDurationMs":5000,"cooldownMinutes":1}'</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/rules/moisture/{deviceId}</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl $API/api/rules/moisture/$DEVICE</pre>
+  </div>
+
+  <div class="endpoint put"><span class="badge put">PUT</span> /api/rules/moisture/{ruleId}</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X PUT $API/api/rules/moisture/&lt;ruleId&gt; \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Tuoi tu dong","minMoisture":25,"maxMoisture":70,"waterDurationMs":8000,"isEnabled":true,"cooldownMinutes":30}'</pre>
+  </div>
+
+  <div class="endpoint delete"><span class="badge delete">DELETE</span> /api/rules/moisture/{ruleId}</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X DELETE $API/api/rules/moisture/&lt;ruleId&gt;</pre>
+  </div>
+</section>
+
+<section id="api-rules-light">
+  <h2>Rules — Light (Ánh sáng)</h2>
+  <p>Server tự sinh <code>LIGHT_ON</code> khi lux &lt; <code>minLight</code>, <code>LIGHT_OFF</code> khi lux ≥ <code>maxLight</code>.</p>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/rules/light</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/rules/light \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Den chieu sang","minLight":25,"maxLight":60,"isEnabled":true,"cooldownMinutes":10}'</pre>
+  </div>
+
+  <h4>Trigger LIGHT_ON với light hiện tại (420.5 lux): min=500</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/rules/light \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMinutes":1}'</pre>
+  </div>
+
+  <h4>Trigger LIGHT_OFF với light hiện tại: max=400</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/rules/light \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tat den","minLight":100,"maxLight":400,"isEnabled":true,"cooldownMinutes":1}'</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/rules/light/{deviceId}</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl $API/api/rules/light/$DEVICE</pre>
+  </div>
+
+  <div class="endpoint put"><span class="badge put">PUT</span> /api/rules/light/{ruleId}</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X PUT $API/api/rules/light/&lt;ruleId&gt; \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Den chieu sang","minLight":20,"maxLight":70,"isEnabled":true,"cooldownMinutes":10}'</pre>
+  </div>
+
+  <div class="endpoint delete"><span class="badge delete">DELETE</span> /api/rules/light/{ruleId}</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X DELETE $API/api/rules/light/&lt;ruleId&gt;</pre>
+  </div>
+</section>
+
+<section id="api-control">
+  <h2>Control — Điều khiển thủ công</h2>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/commands</div>
+  <h4>Bật bơm 5 giây</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","command":"WATER_ON","parameters":{"duration":5000}}'</pre>
+  </div>
+
+  <h4>Tắt bơm</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","command":"WATER_OFF"}'</pre>
+  </div>
+
+  <h4>Bật / tắt đèn</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","command":"LIGHT_ON"}'
+
+curl -X POST $API/api/control/commands \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId":"ESP32S3_Zone1","command":"LIGHT_OFF"}'</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/control/commands/{deviceId}</div>
+  <p>ESP32 polling pending command.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl $API/api/control/commands/$DEVICE</pre>
+  </div>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/commands/{commandId}/executed</div>
+  <p>ESP32 báo đã thực hiện xong.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/control/commands/&lt;commandId&gt;/executed</pre>
+  </div>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/auto-water/{deviceId}</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST "$API/api/control/auto-water/$DEVICE?threshold=30.0"</pre>
+  </div>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/auto-light/{deviceId}</div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST "$API/api/control/auto-light/$DEVICE?threshold=200.0"</pre>
+  </div>
+</section>
+
+<section id="troubleshoot">
+  <h2>Troubleshooting</h2>
+
+  <table>
+    <tr><th>Lỗi</th><th>Cách xử lý</th></tr>
+    <tr>
+      <td>Tunnel URL đổi sát giờ demo</td>
+      <td>Cập nhật URL trong <code>mcp-server/config.py</code>, gửi IoT team URL mới</td>
+    </tr>
+    <tr>
+      <td><code>cloudflared</code> bị Cloudflare throttle</td>
+      <td>Ctrl+C dừng, chạy lại <code>cloudflared tunnel --url http://localhost:80</code> → URL mới</td>
+    </tr>
+    <tr>
+      <td>Wi-Fi Mac mất kết nối</td>
+      <td>Demo offline LAN, dùng <code>http://localhost</code> thay vì tunnel</td>
+    </tr>
+    <tr>
+      <td>MongoDB container crash</td>
+      <td><code>docker restart mongodb</code></td>
+    </tr>
+    <tr>
+      <td><code>dotnet run</code> báo port 80 đang dùng</td>
+      <td><code>lsof -i :80</code> xem process; kill hoặc đổi port trong <code>launchSettings.json</code></td>
+    </tr>
+    <tr>
+      <td>Ollama không thấy tool MCP</td>
+      <td>Check log MCP, verify <code>config.py</code> URL đúng, test curl tới URL từ máy Ollama</td>
+    </tr>
+    <tr>
+      <td>"DeviceId is required" khi POST upload</td>
+      <td>Code chưa rebuild — Ctrl+C dotnet, <code>git pull</code>, <code>dotnet run</code> lại</td>
+    </tr>
+    <tr>
+      <td><code>docker: command not found</code> sau reboot</td>
+      <td>Mở Docker.app từ Applications, đợi cá voi menubar đứng yên</td>
+    </tr>
+    <tr>
+      <td><code>docker-credential-desktop not found</code></td>
+      <td><code>echo 'export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"' &gt;&gt; ~/.zshrc && source ~/.zshrc</code></td>
+    </tr>
+  </table>
+
+  <h3>TODO sau demo (nếu leader approve)</h3>
+  <ul>
+    <li>Mua domain rẻ (~$1–10/năm) hoặc xin subdomain công ty</li>
+    <li>Setup Cloudflare Tunnel với domain cố định (thay Quick Tunnel)</li>
+    <li>Tạo <code>launchd</code> plist để auto-start: Docker containers, .NET API, cloudflared</li>
+    <li>Bật firewall macOS, allow chỉ port cần thiết</li>
+    <li>Thêm authentication cho API (API key hoặc OAuth)</li>
+    <li>Backup MongoDB định kỳ</li>
+    <li>ESP32: flash code production, đổi <code>SERVER_URL</code> về domain mới</li>
+    <li>Document URL/credentials cho IoT team trong wiki nội bộ</li>
+  </ul>
+</section>
+
+  </main>
+</div>
+
+<script>
+  // Tab navigation
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.target).classList.add('active');
+      window.scrollTo(0, 0);
+    });
+  });
+
+  // Copy buttons
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pre = btn.parentElement.querySelector('pre');
+      const text = pre.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const old = btn.innerText;
+        btn.innerText = '✓ Copied';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.innerText = old;
+          btn.classList.remove('copied');
+        }, 1500);
+      });
+    });
+  });
+
+  // Tunnel URL replacement
+  const tunnelInput = document.getElementById('tunnel-url');
+  if (tunnelInput) {
+    tunnelInput.addEventListener('input', () => {
+      // Could implement live URL replacement across all code blocks here
+    });
+  }
+</script>
+</body>
+</html>
