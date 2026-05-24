@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using PlantTreeIoTServer.Models;
 using PlantTreeIoTServer.Services;
@@ -40,6 +41,10 @@ public class SensorDataController : ControllerBase
                 LightLevel = request.LightLevel,
                 WaterLevel = request.WaterLevel,
                 PhLevel = request.PhLevel,
+                Pressure = request.Pressure,
+                Altitude = request.Altitude,
+                SoilMoistureRaw = request.SoilMoistureRaw,
+                RelayOn = request.RelayOn,
                 Location = request.Location
             };
 
@@ -294,12 +299,65 @@ public class SensorDataController : ControllerBase
 
 public class SensorDataUploadRequest
 {
+    [JsonPropertyName("deviceId")]
+    [JsonInclude]
     public string DeviceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("device_id")]
+    [JsonInclude]
+    public string? DeviceIdSnake { set => DeviceId = value ?? DeviceId; get => null; }
+
+    [JsonPropertyName("temperature")]
     public double? Temperature { get; set; }
+
+    [JsonPropertyName("temperature_c")]
+    public double? TemperatureC { set => Temperature = value ?? Temperature; get => null; }
+
+    [JsonPropertyName("humidity")]
     public double? Humidity { get; set; }
+
+    [JsonPropertyName("soilMoisture")]
     public double? SoilMoisture { get; set; }
+
+    [JsonPropertyName("soil_moisture_percent")]
+    public double? SoilMoisturePercent { set => SoilMoisture = value ?? SoilMoisture; get => null; }
+
+    [JsonPropertyName("lightLevel")]
     public double? LightLevel { get; set; }
+
+    [JsonPropertyName("light_lux")]
+    public double? LightLux { set => LightLevel = value ?? LightLevel; get => null; }
+
+    [JsonPropertyName("waterLevel")]
     public double? WaterLevel { get; set; }
+
+    [JsonPropertyName("phLevel")]
     public double? PhLevel { get; set; }
+
+    [JsonPropertyName("pressure")]
+    public double? Pressure { get; set; }
+
+    [JsonPropertyName("pressure_hpa")]
+    public double? PressureHpa { set => Pressure = value ?? Pressure; get => null; }
+
+    [JsonPropertyName("altitude")]
+    public double? Altitude { get; set; }
+
+    [JsonPropertyName("altitude_m")]
+    public double? AltitudeM { set => Altitude = value ?? Altitude; get => null; }
+
+    [JsonPropertyName("soilMoistureRaw")]
+    public int? SoilMoistureRaw { get; set; }
+
+    [JsonPropertyName("soil_moisture_raw")]
+    public int? SoilMoistureRawSnake { set => SoilMoistureRaw = value ?? SoilMoistureRaw; get => null; }
+
+    [JsonPropertyName("relayOn")]
+    public bool? RelayOn { get; set; }
+
+    [JsonPropertyName("relay_on")]
+    public bool? RelayOnSnake { set => RelayOn = value ?? RelayOn; get => null; }
+
+    [JsonPropertyName("location")]
     public string? Location { get; set; }
 }

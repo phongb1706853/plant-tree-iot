@@ -35,6 +35,18 @@ public class SensorData
     [BsonElement("phLevel")]
     public double? PhLevel { get; set; }
 
+    [BsonElement("pressure")]
+    public double? Pressure { get; set; }
+
+    [BsonElement("altitude")]
+    public double? Altitude { get; set; }
+
+    [BsonElement("soilMoistureRaw")]
+    public int? SoilMoistureRaw { get; set; }
+
+    [BsonElement("relayOn")]
+    public bool? RelayOn { get; set; }
+
     [BsonElement("location")]
     public string? Location { get; set; }
 }
