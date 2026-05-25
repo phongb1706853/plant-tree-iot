@@ -126,6 +126,37 @@
   .code-block .copy-btn:hover { background: #10b981; color: #fff; border-color: #10b981; }
   .code-block .copy-btn.copied { background: #22c55e; color: #fff; }
 
+  .response-block {
+    background: #052e16;
+    border: 1px solid #166534;
+    border-left: 3px solid #22c55e;
+  }
+  .response-block::before {
+    content: "← Response";
+    display: block;
+    font-size: 11px;
+    color: #4ade80;
+    font-weight: 600;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .response-block.error {
+    background: #450a0a;
+    border-color: #991b1b;
+    border-left-color: #ef4444;
+  }
+  .response-block.error::before {
+    content: "← Error response";
+    color: #fca5a5;
+  }
+  .response-label {
+    font-size: 12px;
+    color: #4ade80;
+    margin: 10px 0 4px;
+    font-weight: 600;
+  }
+
   table {
     width: 100%;
     border-collapse: collapse;
@@ -238,6 +269,9 @@
     <button class="nav-btn" data-target="api-rules-moisture">Rules — Moisture</button>
     <button class="nav-btn" data-target="api-rules-light">Rules — Light</button>
     <button class="nav-btn" data-target="api-control">Control</button>
+
+    <div class="group-label">MCP / AI</div>
+    <button class="nav-btn" data-target="mcp-tools">MCP Tools & Response</button>
 
     <div class="group-label">Khác</div>
     <button class="nav-btn" data-target="troubleshoot">Troubleshooting</button>
@@ -512,11 +546,46 @@ export DEVICE=ESP32S3_Zone1</pre>
   -d '{"deviceId":"ESP32S3_Zone1","name":"Zone 1","plantType":"Mixed","location":"IoT lab"}'</pre>
   </div>
 
+  <div class="response-label">Response — HTTP 201 Created</div>
+  <div class="code-block response-block">
+    <pre>{
+  "id": "65f8a1b2c3d4e5f678901234",
+  "deviceId": "ESP32S3_Zone1",
+  "name": "Zone 1",
+  "location": "IoT lab",
+  "plantType": "Mixed",
+  "isActive": true,
+  "lastSeen": null,
+  "createdAt": "2026-05-24T08:00:00.123456Z"
+}</pre>
+  </div>
+
+  <div class="response-label">Nếu thiếu deviceId hoặc name — HTTP 400</div>
+  <div class="code-block response-block error">
+    <pre>DeviceId and Name are required</pre>
+  </div>
+
   <div class="endpoint get"><span class="badge get">GET</span> /api/devices</div>
   <p>Lấy tất cả devices.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl $API/api/devices</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200 (mảng device)</div>
+  <div class="code-block response-block">
+    <pre>[
+  {
+    "id": "65f8a1b2c3d4e5f678901234",
+    "deviceId": "ESP32S3_Zone1",
+    "name": "Zone 1",
+    "location": "IoT lab",
+    "plantType": "Mixed",
+    "isActive": true,
+    "lastSeen": "2026-05-24T08:17:47Z",
+    "createdAt": "2026-05-24T08:00:00Z"
+  }
+]</pre>
   </div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/devices/{deviceId}</div>
@@ -526,11 +595,38 @@ export DEVICE=ESP32S3_Zone1</pre>
     <pre>curl $API/api/devices/$DEVICE</pre>
   </div>
 
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "id": "65f8a1b2c3d4e5f678901234",
+  "deviceId": "ESP32S3_Zone1",
+  "name": "Zone 1",
+  "location": "IoT lab",
+  "plantType": "Mixed",
+  "isActive": true,
+  "lastSeen": "2026-05-24T08:17:47Z",
+  "createdAt": "2026-05-24T08:00:00Z"
+}</pre>
+  </div>
+
+  <div class="response-label">Device không tồn tại — HTTP 404</div>
+  <div class="code-block response-block error">
+    <pre>Device ESP32S3_Zone1 not found</pre>
+  </div>
+
   <div class="endpoint post"><span class="badge post">POST</span> /api/devices/{deviceId}/heartbeat</div>
   <p>ESP32 gọi định kỳ để cập nhật <code>lastSeen</code>.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/devices/$DEVICE/heartbeat</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Heartbeat received",
+  "timestamp": "2026-05-24T08:20:15.123456Z"
+}</pre>
   </div>
 </section>
 
@@ -561,12 +657,69 @@ export DEVICE=ESP32S3_Zone1</pre>
   }'</pre>
   </div>
 
+  <div class="response-label">Trường hợp KHÔNG có rule (hoặc rule không trigger) — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Data uploaded successfully",
+  "timestamp": "2026-05-24T08:17:47.471989Z",
+  "triggeredCommands": []
+}</pre>
+  </div>
+
+  <div class="response-label">Trường hợp CÓ rule trigger (vd light rule min=500, lux=420.5)</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Data uploaded successfully",
+  "timestamp": "2026-05-24T08:25:12.331020Z",
+  "triggeredCommands": [
+    {
+      "commandId": "65f8a1b2c3d4e5f678901234",
+      "command": "LIGHT_ON",
+      "parameters": {
+        "reason": "light_rule",
+        "ruleId": "65f8a0a0a0a0a0a0a0a0a0a0",
+        "ruleName": "Demo bat den",
+        "threshold": 500,
+        "currentLight": 420.5
+      }
+    }
+  ]
+}</pre>
+  </div>
+
+  <div class="response-label">Nếu thiếu device_id — HTTP 400</div>
+  <div class="code-block response-block error">
+    <pre>DeviceId is required</pre>
+  </div>
+
   <h4>Test scenario "đất khô" (kích moisture rule)</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/sensordata/upload \
   -H "Content-Type: application/json" \
   -d '{"device_id":"ESP32S3_Zone1","temperature_c":30,"soil_moisture_percent":20,"light_lux":500}'</pre>
+  </div>
+
+  <div class="response-label">Response (với moisture rule min=30) — soil=20 &lt; 30 → WATER_ON</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Data uploaded successfully",
+  "timestamp": "2026-05-24T08:30:00.123456Z",
+  "triggeredCommands": [
+    {
+      "commandId": "65f8b2c3d4e5f6789012abcd",
+      "command": "WATER_ON",
+      "parameters": {
+        "duration": 5000,
+        "reason": "moisture_rule",
+        "ruleId": "65f8a1a1a1a1a1a1a1a1a1a1",
+        "ruleName": "Tuoi tu dong",
+        "threshold": 30,
+        "currentMoisture": 20
+      }
+    }
+  ]
+}</pre>
   </div>
 
   <h4>Test scenario "thiếu sáng" (kích light rule)</h4>
@@ -577,16 +730,88 @@ export DEVICE=ESP32S3_Zone1</pre>
   -d '{"device_id":"ESP32S3_Zone1","temperature_c":25,"soil_moisture_percent":60,"light_lux":50}'</pre>
   </div>
 
+  <div class="response-label">Response (light rule min=100, lux=50 &lt; 100) → LIGHT_ON</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Data uploaded successfully",
+  "timestamp": "2026-05-24T08:35:11.987654Z",
+  "triggeredCommands": [
+    {
+      "commandId": "65f8c3d4e5f67890123456ef",
+      "command": "LIGHT_ON",
+      "parameters": {
+        "reason": "light_rule",
+        "ruleId": "65f8a0a0a0a0a0a0a0a0a0a0",
+        "ruleName": "Den chieu sang",
+        "threshold": 100,
+        "currentLight": 50
+      }
+    }
+  ]
+}</pre>
+  </div>
+
   <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/latest/{deviceId}</div>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl $API/api/sensordata/latest/$DEVICE</pre>
   </div>
 
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "id": "65f8a1b2c3d4e5f678901234",
+  "deviceId": "ESP32S3_Zone1",
+  "timestamp": "2026-05-24T08:17:47.471989Z",
+  "temperature": 28.4,
+  "humidity": null,
+  "soilMoisture": 61.8,
+  "lightLevel": 420.5,
+  "waterLevel": null,
+  "phLevel": null,
+  "pressure": 1008.6,
+  "altitude": 38.2,
+  "soilMoistureRaw": 2540,
+  "relayOn": false,
+  "location": null
+}</pre>
+  </div>
+
+  <div class="response-label">Nếu device chưa có data — HTTP 404</div>
+  <div class="code-block response-block error">
+    <pre>No data found for device ESP32S3_Zone1</pre>
+  </div>
+
   <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/history/{deviceId}?limit=50</div>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl "$API/api/sensordata/history/$DEVICE?limit=50"</pre>
+  </div>
+
+  <div class="response-label">Response — mảng SensorData, sort timestamp DESC</div>
+  <div class="code-block response-block">
+    <pre>[
+  {
+    "id": "65f8a1b2...",
+    "deviceId": "ESP32S3_Zone1",
+    "timestamp": "2026-05-24T08:17:47Z",
+    "temperature": 28.4,
+    "soilMoisture": 61.8,
+    "lightLevel": 420.5,
+    "pressure": 1008.6,
+    "altitude": 38.2,
+    "soilMoistureRaw": 2540,
+    "relayOn": false
+  },
+  {
+    "id": "65f8a0a0...",
+    "deviceId": "ESP32S3_Zone1",
+    "timestamp": "2026-05-24T08:15:23Z",
+    "temperature": 28.1,
+    "soilMoisture": 62.1,
+    "lightLevel": 415.2
+  }
+]</pre>
   </div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/range/{deviceId}</div>
@@ -608,6 +833,22 @@ export DEVICE=ESP32S3_Zone1</pre>
   -d '{"deviceId":"ESP32S3_Zone1","name":"Tuoi tu dong","minMoisture":30,"maxMoisture":70,"waterDurationMs":5000,"cooldownMinutes":30}'</pre>
   </div>
 
+  <div class="response-label">Response — HTTP 201 Created (rule mới)</div>
+  <div class="code-block response-block">
+    <pre>{
+  "id": "65f8a1a1a1a1a1a1a1a1a1a1",
+  "deviceId": "ESP32S3_Zone1",
+  "name": "Tuoi tu dong",
+  "minMoisture": 30,
+  "maxMoisture": 70,
+  "waterDurationMs": 5000,
+  "isEnabled": true,
+  "cooldownMinutes": 30,
+  "lastTriggeredAt": null,
+  "createdAt": "2026-05-24T08:10:00.123456Z"
+}</pre>
+  </div>
+
   <h4>Rule cố tình trigger với soil hiện tại (61.8%): đặt min=70</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
@@ -620,6 +861,24 @@ export DEVICE=ESP32S3_Zone1</pre>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl $API/api/rules/moisture/$DEVICE</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200 (mảng rule)</div>
+  <div class="code-block response-block">
+    <pre>[
+  {
+    "id": "65f8a1a1a1a1a1a1a1a1a1a1",
+    "deviceId": "ESP32S3_Zone1",
+    "name": "Tuoi tu dong",
+    "minMoisture": 30,
+    "maxMoisture": 70,
+    "waterDurationMs": 5000,
+    "isEnabled": true,
+    "cooldownMinutes": 30,
+    "lastTriggeredAt": "2026-05-24T08:30:00Z",
+    "createdAt": "2026-05-24T08:10:00Z"
+  }
+]</pre>
   </div>
 
   <div class="endpoint put"><span class="badge put">PUT</span> /api/rules/moisture/{ruleId}</div>
@@ -647,6 +906,21 @@ export DEVICE=ESP32S3_Zone1</pre>
     <pre>curl -X POST $API/api/rules/light \
   -H "Content-Type: application/json" \
   -d '{"deviceId":"ESP32S3_Zone1","name":"Den chieu sang","minLight":25,"maxLight":60,"isEnabled":true,"cooldownMinutes":10}'</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 201 Created</div>
+  <div class="code-block response-block">
+    <pre>{
+  "id": "65f8a0a0a0a0a0a0a0a0a0a0",
+  "deviceId": "ESP32S3_Zone1",
+  "name": "Den chieu sang",
+  "minLight": 25,
+  "maxLight": 60,
+  "isEnabled": true,
+  "cooldownMinutes": 10,
+  "lastTriggeredAt": null,
+  "createdAt": "2026-05-24T08:12:00.123456Z"
+}</pre>
   </div>
 
   <h4>Trigger LIGHT_ON với light hiện tại (420.5 lux): min=500</h4>
@@ -698,6 +972,14 @@ export DEVICE=ESP32S3_Zone1</pre>
   -d '{"deviceId":"ESP32S3_Zone1","command":"WATER_ON","parameters":{"duration":5000}}'</pre>
   </div>
 
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Command sent successfully",
+  "commandId": "65f8b2c3d4e5f6789012abcd"
+}</pre>
+  </div>
+
   <h4>Tắt bơm</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
@@ -725,11 +1007,40 @@ curl -X POST $API/api/control/commands \
     <pre>curl $API/api/control/commands/$DEVICE</pre>
   </div>
 
+  <div class="response-label">Response — HTTP 200 (mảng pending commands)</div>
+  <div class="code-block response-block">
+    <pre>[
+  {
+    "id": "65f8b2c3d4e5f6789012abcd",
+    "deviceId": "ESP32S3_Zone1",
+    "command": "WATER_ON",
+    "parameters": {
+      "duration": 5000,
+      "reason": "moisture_rule",
+      "ruleId": "65f8a1a1a1a1a1a1a1a1a1a1",
+      "ruleName": "Tuoi tu dong",
+      "threshold": 30,
+      "currentMoisture": 20
+    },
+    "executed": false,
+    "executedAt": null,
+    "createdAt": "2026-05-24T08:30:00Z"
+  }
+]</pre>
+  </div>
+
   <div class="endpoint post"><span class="badge post">POST</span> /api/control/commands/{commandId}/executed</div>
   <p>ESP32 báo đã thực hiện xong.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/control/commands/&lt;commandId&gt;/executed</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Command marked as executed"
+}</pre>
   </div>
 
   <div class="endpoint post"><span class="badge post">POST</span> /api/control/auto-water/{deviceId}</div>
@@ -738,10 +1049,211 @@ curl -X POST $API/api/control/commands \
     <pre>curl -X POST "$API/api/control/auto-water/$DEVICE?threshold=30.0"</pre>
   </div>
 
+  <div class="response-label">Response — soil &lt; threshold → tự sinh WATER_ON</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Auto water command sent",
+  "currentMoisture": 20,
+  "threshold": 30,
+  "commandId": "65f8b2c3d4e5f6789012abcd"
+}</pre>
+  </div>
+
+  <div class="response-label">Response — soil đủ ẩm, không tưới</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Soil moisture is adequate, no watering needed",
+  "currentMoisture": 61.8,
+  "threshold": 30
+}</pre>
+  </div>
+
   <div class="endpoint post"><span class="badge post">POST</span> /api/control/auto-light/{deviceId}</div>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST "$API/api/control/auto-light/$DEVICE?threshold=200.0"</pre>
+  </div>
+
+  <div class="response-label">Response — light &lt; threshold → LIGHT_ON; ngược lại LIGHT_OFF</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Auto light command sent: LIGHT_ON",
+  "currentLight": 50,
+  "threshold": 200,
+  "commandId": "65f8c3d4e5f67890123456ef"
+}</pre>
+  </div>
+</section>
+
+<section id="mcp-tools">
+  <h2>MCP Tools — Ollama gọi như thế nào</h2>
+
+  <p>MCP tools là thin wrapper trên REST API. Khi AI gọi <code>list_devices()</code>, MCP server làm <code>GET /api/devices</code> và return JSON nguyên vẹn cho AI. Vì vậy <strong>response shape giống hệt</strong> các endpoint HTTP ở trên.</p>
+
+  <div class="alert info">
+    <strong>Chuẩn MCP</strong>: Tool được gọi qua <code>stdio</code> (JSON-RPC over stdin/stdout). AI không gọi HTTP trực tiếp — nó gọi tool theo tên, MCP server chuyển thành HTTP request, parse JSON, trả về AI dưới dạng tool result.
+  </div>
+
+  <h3>Flow chi tiết</h3>
+  <div class="code-block">
+    <pre>┌──────┐    1. Tool call    ┌────────────┐    2. HTTP     ┌─────────┐
+│ AI   │ ─────────────────► │ MCP server │ ──────────────► │ .NET API│
+│Ollama│   list_devices()   │ (Python)   │  GET /api/...   │  :80    │
+└──────┘                    └────────────┘                 └─────────┘
+   ▲                              │                              │
+   │     4. Tool result           │   3. JSON response           │
+   └──────────────────────────────┴──────────────────────────────┘</pre>
+  </div>
+
+  <h3>1. list_devices()</h3>
+  <p>AI hỏi: <em>"Liệt kê các thiết bị IoT đang có"</em></p>
+  <div class="response-label">MCP server gọi GET /api/devices, trả về cho AI:</div>
+  <div class="code-block response-block">
+    <pre>[
+  {
+    "id": "65f8a1b2c3d4e5f678901234",
+    "deviceId": "ESP32S3_Zone1",
+    "name": "Zone 1",
+    "location": "IoT lab",
+    "plantType": "Mixed",
+    "isActive": true,
+    "lastSeen": "2026-05-24T08:17:47Z",
+    "createdAt": "2026-05-24T08:00:00Z"
+  }
+]</pre>
+  </div>
+  <div class="response-label">AI sẽ format lại cho user, ví dụ:</div>
+  <div class="code-block response-block">
+    <pre>Hiện tại có 1 thiết bị IoT đang hoạt động:
+
+📍 Zone 1 (ID: ESP32S3_Zone1)
+   - Loại: Mixed planting
+   - Vị trí: IoT lab
+   - Trạng thái: Online (hoạt động lần cuối lúc 08:17 hôm nay)</pre>
+  </div>
+
+  <h3>2. get_latest_sensor(device_id)</h3>
+  <p>AI hỏi: <em>"Cây ESP32S3_Zone1 hiện tại thế nào?"</em></p>
+  <div class="response-label">MCP gọi GET /api/sensordata/latest/ESP32S3_Zone1:</div>
+  <div class="code-block response-block">
+    <pre>{
+  "deviceId": "ESP32S3_Zone1",
+  "timestamp": "2026-05-24T08:17:47Z",
+  "temperature": 28.4,
+  "soilMoisture": 61.8,
+  "lightLevel": 420.5,
+  "pressure": 1008.6,
+  "altitude": 38.2,
+  "soilMoistureRaw": 2540,
+  "relayOn": false
+}</pre>
+  </div>
+  <div class="response-label">AI trả lời user:</div>
+  <div class="code-block response-block">
+    <pre>Cây Zone 1 đang ổn:
+🌡️  Nhiệt độ: 28.4°C
+💧 Độ ẩm đất: 61.8% (đủ ẩm, chưa cần tưới)
+☀️  Ánh sáng: 420.5 lux (vừa đủ)
+🔌 Máy bơm: đang TẮT
+
+Dữ liệu cập nhật lúc 08:17 hôm nay.</pre>
+  </div>
+
+  <h3>3. send_command(device_id, command, parameters)</h3>
+  <p>AI nhận lệnh user: <em>"Tưới cây Zone 1 trong 10 giây"</em></p>
+  <div class="response-label">MCP gọi POST /api/control/commands với body:</div>
+  <div class="code-block response-block">
+    <pre>{
+  "deviceId": "ESP32S3_Zone1",
+  "command": "WATER_ON",
+  "parameters": {"duration": 10000}
+}</pre>
+  </div>
+  <div class="response-label">Server response cho MCP:</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Command sent successfully",
+  "commandId": "65f8b2c3d4e5f6789012abcd"
+}</pre>
+  </div>
+  <div class="response-label">AI xác nhận với user:</div>
+  <div class="code-block response-block">
+    <pre>✅ Đã gửi lệnh tưới cây Zone 1 trong 10 giây.
+ESP32 sẽ nhận lệnh ở lần polling tiếp theo (trong vòng ~5 giây).
+Command ID: 65f8b2c3d4e5f6789012abcd</pre>
+  </div>
+
+  <h3>4. set_moisture_rule(device_id, ...)</h3>
+  <p>AI nhận lệnh: <em>"Đặt rule tự động tưới khi độ ẩm dưới 25%"</em></p>
+  <div class="response-label">MCP gọi POST /api/rules/moisture:</div>
+  <div class="code-block response-block">
+    <pre>{
+  "deviceId": "ESP32S3_Zone1",
+  "name": "Auto-set by AI",
+  "minMoisture": 25,
+  "maxMoisture": 75,
+  "waterDurationMs": 5000,
+  "cooldownMinutes": 30
+}</pre>
+  </div>
+  <div class="response-label">Server response:</div>
+  <div class="code-block response-block">
+    <pre>{
+  "id": "65f8a1a1a1a1a1a1a1a1a1a1",
+  "deviceId": "ESP32S3_Zone1",
+  "name": "Auto-set by AI",
+  "minMoisture": 25,
+  "maxMoisture": 75,
+  "waterDurationMs": 5000,
+  "isEnabled": true,
+  "cooldownMinutes": 30,
+  "lastTriggeredAt": null,
+  "createdAt": "2026-05-24T08:45:00Z"
+}</pre>
+  </div>
+
+  <h3>5. get_sensor_history(device_id, limit)</h3>
+  <p>AI nhận: <em>"Cho tôi xem 5 lần đo gần nhất"</em></p>
+  <div class="response-label">MCP gọi GET /api/sensordata/history/ESP32S3_Zone1?limit=5:</div>
+  <div class="code-block response-block">
+    <pre>[
+  {"timestamp":"2026-05-24T08:17:47Z","temperature":28.4,"soilMoisture":61.8,"lightLevel":420.5},
+  {"timestamp":"2026-05-24T08:15:00Z","temperature":28.1,"soilMoisture":62.1,"lightLevel":415.2},
+  {"timestamp":"2026-05-24T08:12:00Z","temperature":27.9,"soilMoisture":62.5,"lightLevel":408.7},
+  {"timestamp":"2026-05-24T08:09:00Z","temperature":27.8,"soilMoisture":63.0,"lightLevel":402.1},
+  {"timestamp":"2026-05-24T08:06:00Z","temperature":27.7,"soilMoisture":63.5,"lightLevel":398.4}
+]</pre>
+  </div>
+  <div class="response-label">AI có thể tự phân tích trend rồi trả lời:</div>
+  <div class="code-block response-block">
+    <pre>Trong 5 lần đo gần nhất (15 phút):
+- Nhiệt độ tăng nhẹ: 27.7°C → 28.4°C
+- Độ ẩm đất giảm dần: 63.5% → 61.8% (mất ~1.7%)
+- Ánh sáng đang tăng: 398 → 420 lux
+
+Xu hướng đất khô dần là bình thường lúc sáng nắng lên.
+Chưa cần tưới vì còn trên ngưỡng 25%.</pre>
+  </div>
+
+  <h3>Danh sách 12 MCP tools</h3>
+  <table>
+    <tr><th>Tool</th><th>HTTP tương ứng</th><th>Mô tả</th></tr>
+    <tr><td><code>list_devices</code></td><td><code>GET /api/devices</code></td><td>Liệt kê tất cả thiết bị</td></tr>
+    <tr><td><code>get_device_info</code></td><td><code>GET /api/devices/{id}</code></td><td>Thông tin 1 thiết bị</td></tr>
+    <tr><td><code>get_latest_sensor</code></td><td><code>GET /api/sensordata/latest/{id}</code></td><td>Sensor mới nhất</td></tr>
+    <tr><td><code>get_sensor_history</code></td><td><code>GET /api/sensordata/history/{id}</code></td><td>Lịch sử sensor</td></tr>
+    <tr><td><code>send_command</code></td><td><code>POST /api/control/commands</code></td><td>Gửi lệnh thủ công</td></tr>
+    <tr><td><code>get_pending_commands</code></td><td><code>GET /api/control/commands/{id}</code></td><td>Lệnh đang chờ ESP32</td></tr>
+    <tr><td><code>auto_water</code></td><td><code>POST /api/control/auto-water/{id}</code></td><td>Tự tưới theo ngưỡng</td></tr>
+    <tr><td><code>auto_light</code></td><td><code>POST /api/control/auto-light/{id}</code></td><td>Tự đèn theo ngưỡng</td></tr>
+    <tr><td><code>get_moisture_rule</code></td><td><code>GET /api/rules/moisture/{id}</code></td><td>Xem moisture rules</td></tr>
+    <tr><td><code>set_moisture_rule</code></td><td><code>POST /api/rules/moisture</code></td><td>Tạo moisture rule</td></tr>
+    <tr><td><code>get_light_rule</code></td><td><code>GET /api/rules/light/{id}</code></td><td>Xem light rules</td></tr>
+    <tr><td><code>set_light_rule</code></td><td><code>POST /api/rules/light</code></td><td>Tạo light rule</td></tr>
+  </table>
+
+  <div class="alert success">
+    <strong>Demo argument cho leader</strong>: AI không cần code đặc biệt nào để biết cây cần tưới hay không — AI gọi tool, server trả data thật, AI dùng reasoning để phân tích. Đây là <strong>chuẩn MCP</strong> (Model Context Protocol) — cùng cơ chế Claude Desktop / ChatGPT đang dùng với plugins.
   </div>
 </section>
 
