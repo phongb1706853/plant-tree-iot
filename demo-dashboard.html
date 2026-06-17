@@ -272,6 +272,7 @@
 
     <div class="group-label">MCP / AI</div>
     <button class="nav-btn" data-target="mcp-tools">MCP Tools & Response</button>
+    <button class="nav-btn" data-target="mcp-iot-setup">Setup MCP cho IoT team</button>
 
     <div class="group-label">Khác</div>
     <button class="nav-btn" data-target="troubleshoot">Troubleshooting</button>
@@ -1254,6 +1255,304 @@ Chưa cần tưới vì còn trên ngưỡng 25%.</pre>
 
   <div class="alert success">
     <strong>Demo argument cho leader</strong>: AI không cần code đặc biệt nào để biết cây cần tưới hay không — AI gọi tool, server trả data thật, AI dùng reasoning để phân tích. Đây là <strong>chuẩn MCP</strong> (Model Context Protocol) — cùng cơ chế Claude Desktop / ChatGPT đang dùng với plugins.
+  </div>
+</section>
+
+<section id="mcp-iot-setup">
+  <h2>Setup MCP cho IoT team</h2>
+
+  <div class="alert info">
+    <strong>Cách MCP hoạt động</strong>: MCP server <em>không phải</em> một service public — nó là một process Python chạy local, được AI client (Claude Desktop / Ollama UI / Msty / Open WebUI) <strong>tự spawn</strong> qua stdio khi cần. Vì vậy IoT team phải cài MCP server <em>trên chính máy</em> chạy AI client, rồi MCP gọi REST API qua Cloudflare Tunnel.
+  </div>
+
+  <h3>Kiến trúc</h3>
+  <div class="code-block">
+    <pre>┌─────────────────── Máy IoT team ───────────────────┐         ┌─────────────────┐
+│                                                     │         │ Mac Mini server │
+│  ┌──────────┐   stdio    ┌──────────────────┐       │  HTTPS  │                 │
+│  │  AI UI   │ ─────────► │   MCP server     │ ──────┼────────►│ .NET API :80    │
+│  │ (Claude  │            │ (Python venv)    │       │ Tunnel  │ MongoDB         │
+│  │ Desktop, │ ◄───────── │ config.py trỏ    │ ◄─────┼────JSON │ Mosquitto       │
+│  │ Msty…)   │   result   │ tới tunnel URL   │       │         └─────────────────┘
+│  └──────────┘            └──────────────────┘       │
+│                                                     │
+└─────────────────────────────────────────────────────┘</pre>
+  </div>
+
+  <h3>Yêu cầu phía IoT team</h3>
+  <ul>
+    <li><strong>OS</strong>: Windows / macOS / Linux đều OK</li>
+    <li><strong>Python 3.10+</strong> (3.11 khuyến nghị) — có thể cài qua <code>uv</code>, <code>pyenv</code>, hoặc python.org</li>
+    <li><strong>Git</strong> để clone repo</li>
+    <li><strong>Một AI client hỗ trợ MCP</strong>: Claude Desktop (free), Msty (free), Open WebUI, AnythingLLM, LM Studio (≥0.3.17), hoặc bất cứ UI nào có config <code>mcpServers</code></li>
+    <li>Nếu dùng Ollama local: cần Ollama đã chạy + model hỗ trợ tool calling (llama3.1, qwen2.5, mistral-nemo…)</li>
+    <li><strong>Internet</strong> để gọi tới Cloudflare Tunnel URL</li>
+  </ul>
+
+  <h3>Bước 1 — Clone repo + setup MCP server</h3>
+
+  <h4>Mac / Linux</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># Cài uv nếu chưa có (không cần sudo)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+
+# Clone repo
+git clone https://github.com/phongb1706853/plant-tree-iot.git
+cd plant-tree-iot/mcp-server
+
+# Tạo venv + cài deps
+uv python install 3.11
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -r requirements.txt
+
+# Verify
+pytest tests/ -v   # expect 13 passed</pre>
+  </div>
+
+  <h4>Windows (PowerShell)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># Cài uv (PowerShell as user, không cần admin)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Clone repo
+git clone https://github.com/phongb1706853/plant-tree-iot.git
+cd plant-tree-iot\mcp-server
+
+# Tạo venv + cài deps
+uv python install 3.11
+uv venv --python 3.11
+.\.venv\Scripts\Activate.ps1
+uv pip install -r requirements.txt
+
+pytest tests\ -v</pre>
+  </div>
+
+  <h3>Bước 2 — Cấu hình URL server</h3>
+
+  <p>Mở file <code>mcp-server/config.py</code>, đổi <code>API_BASE_URL</code> trỏ tới Cloudflare Tunnel URL (chính là URL bạn nhận được khi chạy <code>cloudflared</code> trên Mac):</p>
+
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># mcp-server/config.py
+
+API_BASE_URL = "https://crawford-super-vista-bytes.trycloudflare.com"
+REQUEST_TIMEOUT = 15
+MCP_SERVER_NAME = "plant-tree-mcp"</pre>
+  </div>
+
+  <div class="alert">
+    <strong>Lưu ý URL ephemeral</strong>: Quick Tunnel URL đổi mỗi lần restart <code>cloudflared</code> trên Mac. IoT team cần biết URL hiện tại mỗi lần test — hỏi anh Thịnh hoặc check log Mac. Khi production sẽ chuyển sang domain cố định.
+  </div>
+
+  <h3>Bước 3 — Lấy đường dẫn tuyệt đối</h3>
+
+  <p>AI client cần đường dẫn tuyệt đối tới Python venv + script <code>server.py</code>. Lấy bằng cách:</p>
+
+  <h4>Mac / Linux</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>cd plant-tree-iot/mcp-server
+source .venv/bin/activate
+
+# Đường dẫn Python trong venv
+which python
+# Ví dụ: /Users/iotteam/plant-tree-iot/mcp-server/.venv/bin/python
+
+# Đường dẫn server.py
+realpath server.py
+# Ví dụ: /Users/iotteam/plant-tree-iot/mcp-server/server.py</pre>
+  </div>
+
+  <h4>Windows (PowerShell)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>cd plant-tree-iot\mcp-server
+.\.venv\Scripts\Activate.ps1
+
+# Đường dẫn Python
+Get-Command python | Select-Object -ExpandProperty Source
+# Ví dụ: C:\Users\iotteam\plant-tree-iot\mcp-server\.venv\Scripts\python.exe
+
+# Đường dẫn server.py
+(Resolve-Path server.py).Path
+# Ví dụ: C:\Users\iotteam\plant-tree-iot\mcp-server\server.py</pre>
+  </div>
+
+  <h3>Bước 4 — Cấu hình AI client</h3>
+
+  <h4>4a. Claude Desktop (recommend — đơn giản nhất)</h4>
+  <p>Mở file config theo OS:</p>
+  <ul>
+    <li><strong>Mac</strong>: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
+    <li><strong>Windows</strong>: <code>%APPDATA%\Claude\claude_desktop_config.json</code></li>
+  </ul>
+
+  <p>Nội dung (Mac):</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>{
+  "mcpServers": {
+    "plant-tree": {
+      "command": "/Users/iotteam/plant-tree-iot/mcp-server/.venv/bin/python",
+      "args": [
+        "/Users/iotteam/plant-tree-iot/mcp-server/server.py"
+      ]
+    }
+  }
+}</pre>
+  </div>
+
+  <p>Nội dung (Windows):</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>{
+  "mcpServers": {
+    "plant-tree": {
+      "command": "C:\\Users\\iotteam\\plant-tree-iot\\mcp-server\\.venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\Users\\iotteam\\plant-tree-iot\\mcp-server\\server.py"
+      ]
+    }
+  }
+}</pre>
+  </div>
+
+  <p>Restart Claude Desktop. Khi mở chat, có icon 🔌 ở góc dưới chat box — click vào sẽ thấy <strong>12 tools</strong> của <code>plant-tree</code>.</p>
+
+  <h4>4b. Msty (free, cross-platform)</h4>
+  <ol>
+    <li>Tải tại <strong>https://msty.app</strong></li>
+    <li>Setting → <strong>Tools & MCP</strong> → <strong>Add Tool</strong></li>
+    <li>Chọn type: <strong>Local Command (stdio)</strong></li>
+    <li>Name: <code>plant-tree</code></li>
+    <li>Command: đường dẫn tới Python venv</li>
+    <li>Args: đường dẫn tới <code>server.py</code></li>
+    <li>Save → tools sẽ tự xuất hiện trong chat</li>
+  </ol>
+
+  <h4>4c. Open WebUI (self-hosted, Docker)</h4>
+  <p>Open WebUI hỗ trợ MCP qua plugin <strong>mcpo</strong> (proxy stdio → OpenAPI). Setup:</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># Cài mcpo bridge
+uv pip install mcpo
+
+# Chạy MCP server qua HTTP OpenAPI wrapper trên port 8000
+mcpo --port 8000 -- /path/to/.venv/bin/python /path/to/server.py
+
+# Open WebUI → Settings → Tools → Add OpenAPI server
+# URL: http://localhost:8000</pre>
+  </div>
+
+  <h4>4d. Ollama trực tiếp (CLI)</h4>
+  <p>Ollama bản gốc <em>chưa</em> hỗ trợ MCP native. Cần dùng UI bên trên (Msty, Claude Desktop) hoặc dùng <strong>mcphost</strong> để bắc cầu:</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># Cài mcphost (Go binary)
+go install github.com/mark3labs/mcphost@latest
+
+# Tạo file config.json
+cat &gt; mcphost-config.json &lt;&lt; 'EOF'
+{
+  "mcpServers": {
+    "plant-tree": {
+      "command": "/path/to/.venv/bin/python",
+      "args": ["/path/to/server.py"]
+    }
+  }
+}
+EOF
+
+# Chạy với Ollama
+mcphost --config mcphost-config.json --model ollama:qwen2.5</pre>
+  </div>
+
+  <h3>Bước 5 — Test</h3>
+
+  <p>Trong AI chat, gõ các câu sau (tiếng Việt vẫn được, AI sẽ tự gọi tool):</p>
+  <div class="code-block">
+    <pre>>>> Liệt kê tất cả thiết bị IoT đang có
+>>> Cây ESP32S3_Zone1 hiện tại thế nào?
+>>> Cây có cần tưới không?
+>>> Tưới cây ESP32S3_Zone1 trong 10 giây
+>>> Đặt rule tự động tưới khi độ ẩm dưới 25%
+>>> Cho tôi xem 10 lần đo cảm biến gần nhất</pre>
+  </div>
+
+  <p>Nếu AI tự gọi đúng tool, sẽ thấy log dạng <code>[tool] list_devices() → ...</code> hoặc trong UI hiển thị "Used 1 tool". Response sẽ là dữ liệu thật từ MongoDB qua Cloudflare Tunnel.</p>
+
+  <h3>Troubleshooting MCP setup</h3>
+  <table>
+    <tr><th>Lỗi</th><th>Cách xử lý</th></tr>
+    <tr>
+      <td>AI client không thấy tool</td>
+      <td>Check log AI client (Claude Desktop có log ở <code>~/Library/Logs/Claude/</code> Mac hoặc <code>%APPDATA%\Claude\logs\</code> Windows). Thường do đường dẫn Python/server.py sai.</td>
+    </tr>
+    <tr>
+      <td><code>ModuleNotFoundError: mcp</code></td>
+      <td>Quên activate venv hoặc <code>pip install -r requirements.txt</code> chưa chạy. Verify lại bằng <code>pytest tests/ -v</code>.</td>
+    </tr>
+    <tr>
+      <td>Tool gọi nhưng timeout</td>
+      <td>Cloudflare Tunnel URL đã đổi — cập nhật <code>config.py</code> với URL mới và restart AI client.</td>
+    </tr>
+    <tr>
+      <td>"Connection refused" trong log</td>
+      <td>Server Mac chưa chạy hoặc tunnel chưa start. Verify: <code>curl https://&lt;tunnel-url&gt;/api/devices</code> phải trả về <code>[]</code>.</td>
+    </tr>
+    <tr>
+      <td>AI không hiểu yêu cầu, không gọi tool</td>
+      <td>Đổi model có khả năng tool-calling tốt hơn: Claude (best), GPT-4, llama3.1:70b, qwen2.5:32b. Model nhỏ &lt;7B thường gọi tool kém.</td>
+    </tr>
+    <tr>
+      <td>Windows: lỗi backslash trong config JSON</td>
+      <td>Dùng double backslash <code>\\</code> hoặc forward slash <code>/</code> trong path JSON.</td>
+    </tr>
+  </table>
+
+  <h3>Alternative — IoT team không dùng AI, chỉ test API</h3>
+  <p>Nếu IoT team chỉ cần verify thiết bị gửi/nhận data đúng (không cần AI), <strong>không cần MCP</strong>. Chỉ cần curl/Postman tới Cloudflare Tunnel URL. Xem section <a href="#" onclick="document.querySelector('[data-target=api-sensors]').click(); return false;">Sensor Data API</a>.</p>
+
+  <h3>Thông tin tóm tắt gửi IoT team</h3>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>========================================================
+PLANT TREE IoT — Thông tin kết nối MCP / API
+========================================================
+
+REST API public URL (Cloudflare Tunnel — thay khi cần):
+  https://crawford-super-vista-bytes.trycloudflare.com
+
+Repo MCP server:
+  https://github.com/phongb1706853/plant-tree-iot
+  Đường dẫn: mcp-server/
+
+Cách setup MCP server (xem demo-dashboard.html chi tiết):
+  1. git clone repo
+  2. cd mcp-server && uv venv --python 3.11
+  3. uv pip install -r requirements.txt
+  4. Sửa config.py: API_BASE_URL = "&lt;tunnel-url&gt;"
+  5. Config AI client (Claude Desktop / Msty) trỏ tới venv python + server.py
+
+12 MCP tools sẵn có:
+  - Devices:  list_devices, get_device_info
+  - Sensors:  get_latest_sensor, get_sensor_history
+  - Control:  send_command, get_pending_commands, auto_water, auto_light
+  - Rules:    get_moisture_rule, set_moisture_rule, get_light_rule, set_light_rule
+
+Test endpoint thuần HTTP (không cần MCP):
+  curl https://&lt;tunnel-url&gt;/api/devices
+  curl -X POST https://&lt;tunnel-url&gt;/api/sensordata/upload \
+    -H "Content-Type: application/json" \
+    -d '{"device_id":"...","temperature_c":28,"soil_moisture_percent":60,"light_lux":400}'
+
+Liên hệ vấn đề kỹ thuật:
+  Phong Nguyen — phong.nguyen@treehousei.com
+========================================================</pre>
   </div>
 </section>
 
