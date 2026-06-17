@@ -270,6 +270,9 @@
     <button class="nav-btn" data-target="api-rules-light">Rules — Light</button>
     <button class="nav-btn" data-target="api-control">Control</button>
 
+    <div class="group-label">MQTT</div>
+    <button class="nav-btn" data-target="mqtt-connect">Kết nối MQTT (IoT team)</button>
+
     <div class="group-label">MCP / AI</div>
     <button class="nav-btn" data-target="mcp-tools">MCP Tools & Response</button>
     <button class="nav-btn" data-target="mcp-iot-setup">Setup MCP cho IoT team</button>
@@ -1083,6 +1086,306 @@ curl -X POST $API/api/control/commands \
   "threshold": 200,
   "commandId": "65f8c3d4e5f67890123456ef"
 }</pre>
+  </div>
+</section>
+
+<section id="mqtt-connect">
+  <h2>Kết nối MQTT — Thông tin cho IoT team</h2>
+
+  <div class="alert info">
+    <strong>Broker đang dùng</strong>: <code>Mosquitto</code> (Eclipse, chạy Docker container <code>eclipse-mosquitto</code>). <code>MQTTx</code> chỉ là <strong>client UI</strong> để test, không phải broker.
+  </div>
+
+  <h3>Thông tin kết nối broker</h3>
+  <table>
+    <tr><th>Thông số</th><th>Giá trị</th><th>Ghi chú</th></tr>
+    <tr><td>Broker host</td><td><code>&lt;IP-LAN-Mac&gt;</code></td><td>Lấy bằng <code>ipconfig getifaddr en0</code> trên Mac (ví dụ <code>192.168.88.126</code>)</td></tr>
+    <tr><td>Port</td><td><code>1883</code></td><td>Plain TCP MQTT</td></tr>
+    <tr><td>WebSocket port</td><td><code>9001</code></td><td>Đã expose container nhưng <strong>chưa bật listener</strong> trong mosquitto.conf — chỉ cần khi muốn dùng MQTT-WS qua tunnel</td></tr>
+    <tr><td>TLS</td><td>❌ Không</td><td>Plain text, chỉ dùng trong LAN. Production cần TLS.</td></tr>
+    <tr><td>Username</td><td>(trống)</td><td><code>allow_anonymous true</code> — không xác thực</td></tr>
+    <tr><td>Password</td><td>(trống)</td><td>—</td></tr>
+    <tr><td>Client ID</td><td>tự do</td><td>ESP32 nên đặt <code>esp32-&lt;mac-suffix&gt;</code> để dễ debug</td></tr>
+    <tr><td>QoS</td><td>1 (AtLeastOnce)</td><td>Server publish command với QoS 1</td></tr>
+    <tr><td>Keep-alive</td><td>60s</td><td>Default PubSubClient</td></tr>
+  </table>
+
+  <div class="alert danger">
+    <strong>Caveat quan trọng</strong>: MQTT broker hiện đang nằm trong LAN của Mac và <strong>không expose ra ngoài</strong>. Cloudflare Quick Tunnel chỉ tunnel HTTP/HTTPS, không tunnel raw TCP cho MQTT 1883. Nghĩa là:
+    <ul style="margin-top: 8px;">
+      <li>✅ ESP32 cùng Wi-Fi với Mac → kết nối MQTT bình thường</li>
+      <li>❌ ESP32 khác mạng (4G, văn phòng khác) → KHÔNG kết nối được MQTT</li>
+    </ul>
+    Trường hợp khác mạng: dùng HTTP polling endpoint <code>/api/control/commands/&lt;deviceId&gt;</code> qua tunnel HTTPS (xem <a href="#" onclick="document.querySelector('[data-target=api-control]').click(); return false;">Control API</a>) hoặc setup MQTT over WebSocket qua tunnel.
+  </div>
+
+  <h3>Topics MQTT</h3>
+
+  <h4>Format A — Topic chuẩn project</h4>
+  <table>
+    <tr><th>Topic</th><th>Hướng</th><th>Mô tả</th></tr>
+    <tr>
+      <td><code>planttree/{deviceId}/sensors</code></td>
+      <td>ESP32 → Server</td>
+      <td>Publish sensor data, payload <strong>camelCase</strong></td>
+    </tr>
+    <tr>
+      <td><code>planttree/{deviceId}/commands</code></td>
+      <td>Server → ESP32</td>
+      <td>Subscribe để nhận lệnh tự động (WATER_ON/OFF, LIGHT_ON/OFF…)</td>
+    </tr>
+  </table>
+
+  <h4>Format B — Topic xmini board (đã hỗ trợ payload IoT team)</h4>
+  <table>
+    <tr><th>Topic</th><th>Hướng</th><th>Mô tả</th></tr>
+    <tr>
+      <td><code>xmini/sensor_data</code></td>
+      <td>ESP32 → Server</td>
+      <td>Publish sensor data, payload <strong>snake_case</strong> (giống HTTP IoT team)</td>
+    </tr>
+    <tr>
+      <td><code>xmini/control</code></td>
+      <td>Server → ESP32</td>
+      <td>Subscribe để nhận lệnh</td>
+    </tr>
+  </table>
+
+  <h3>Payload mẫu</h3>
+
+  <h4>Publish sensor (camelCase, topic <code>planttree/&lt;id&gt;/sensors</code>)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>{
+  "temperature": 28.4,
+  "humidity": 65.0,
+  "soilMoisture": 61.8,
+  "lightLevel": 420.5,
+  "waterLevel": 85.0,
+  "phLevel": 6.5
+}</pre>
+  </div>
+
+  <h4>Publish sensor (snake_case, topic <code>xmini/sensor_data</code>)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>{
+  "device_id": "ESP32S3_Zone1",
+  "temperature_c": 28.4,
+  "humidity_percent": 65.0,
+  "light_lux": 420.5,
+  "pressure_hpa": 1008.6,
+  "altitude_m": 38.2
+}</pre>
+  </div>
+  <div class="alert">
+    <strong>Lưu ý</strong>: Topic <code>xmini/sensor_data</code> không có deviceId trong topic path — server đọc <code>device_id</code> từ <strong>payload JSON</strong>. Server hiện chưa map các field <code>pressure_hpa</code>/<code>altitude_m</code> từ MQTT vào DB (chỉ HTTP đã hỗ trợ). Sẽ extend sau demo nếu cần.
+  </div>
+
+  <h4>Subscribe command (server publish)</h4>
+  <p>ESP32 subscribe <code>planttree/&lt;deviceId&gt;/commands</code> (hoặc <code>xmini/control</code>) sẽ nhận:</p>
+  <div class="code-block response-block">
+    <pre>{
+  "command": "WATER_ON",
+  "commandId": "65f8b2c3d4e5f6789012abcd",
+  "parameters": {
+    "duration": 5000,
+    "reason": "moisture_rule",
+    "ruleId": "65f8a1a1a1a1a1a1a1a1a1a1",
+    "currentMoisture": 20
+  }
+}</pre>
+  </div>
+  <p>Giá trị <code>command</code> có thể là: <code>WATER_ON</code>, <code>WATER_OFF</code>, <code>LIGHT_ON</code>, <code>LIGHT_OFF</code>, <code>FAN_ON</code>, <code>FAN_OFF</code>.</p>
+
+  <h3>Test bằng MQTTx (UI)</h3>
+
+  <p>Tải MQTTx tại <strong>https://mqttx.app</strong> (free, multi-platform).</p>
+
+  <ol>
+    <li>Bấm <strong>+ New Connection</strong></li>
+    <li>Điền:
+      <ul>
+        <li>Name: <code>plant-tree-mac</code></li>
+        <li>Host: <code>&lt;IP-LAN-Mac&gt;</code> (vd <code>192.168.88.126</code>)</li>
+        <li>Port: <code>1883</code></li>
+        <li>SSL/TLS: <strong>OFF</strong></li>
+        <li>Username / Password: để trống</li>
+      </ul>
+    </li>
+    <li>Bấm <strong>Connect</strong></li>
+    <li>Bấm <strong>+ New Subscription</strong> → topic <code>planttree/#</code> (wildcard, xem tất cả device) hoặc <code>xmini/#</code></li>
+    <li>Tab <strong>Publisher</strong> → topic <code>planttree/esp32-test/sensors</code> → paste payload mẫu → <strong>Send</strong></li>
+    <li>Verify trên Mac log <code>dotnet run</code> phải thấy <code>MQTT received from esp32-test</code></li>
+  </ol>
+
+  <h3>Test bằng mosquitto_pub / mosquitto_sub (CLI)</h3>
+
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># Subscribe tất cả topic planttree (terminal 1)
+mosquitto_sub -h 192.168.88.126 -p 1883 -t 'planttree/#' -v
+
+# Publish sensor data (terminal 2)
+mosquitto_pub -h 192.168.88.126 -p 1883 \
+  -t 'planttree/esp32-test/sensors' \
+  -m '{"temperature":28,"soilMoisture":20,"lightLevel":50}'
+
+# Hoặc dùng topic xmini với payload snake_case
+mosquitto_pub -h 192.168.88.126 -p 1883 \
+  -t 'xmini/sensor_data' \
+  -m '{"device_id":"ESP32S3_Zone1","temperature_c":28,"light_lux":50}'</pre>
+  </div>
+
+  <p>Nếu có moisture/light rule cho device đó, server sẽ tự publish lệnh xuống <code>planttree/&lt;id&gt;/commands</code> hoặc <code>xmini/control</code> — terminal 1 sẽ thấy.</p>
+
+  <h3>Code ESP32 mẫu (PubSubClient)</h3>
+
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>#include &lt;WiFi.h&gt;
+#include &lt;PubSubClient.h&gt;
+#include &lt;ArduinoJson.h&gt;
+
+const char* WIFI_SSID     = "&lt;ten-wifi&gt;";
+const char* WIFI_PASSWORD = "&lt;mat-khau-wifi&gt;";
+
+const char* MQTT_BROKER   = "192.168.88.126";   // IP Mac trong LAN
+const int   MQTT_PORT     = 1883;
+const char* MQTT_USERNAME = "";                  // trống
+const char* MQTT_PASSWORD = "";                  // trống
+
+const char* DEVICE_ID     = "ESP32S3_Zone1";
+
+WiFiClient wifiClient;                           // KHÔNG WiFiClientSecure (chưa TLS)
+PubSubClient mqtt(wifiClient);
+
+char sensorTopic[64];
+char commandTopic[64];
+
+void onCommand(char* topic, byte* payload, unsigned int len) {
+  String msg;
+  for (unsigned int i = 0; i &lt; len; i++) msg += (char)payload[i];
+
+  StaticJsonDocument&lt;512&gt; doc;
+  deserializeJson(doc, msg);
+
+  String command = doc["command"];   // WATER_ON / WATER_OFF / LIGHT_ON / ...
+  if (command == "WATER_ON") {
+    int duration = doc["parameters"]["duration"] | 5000;
+    digitalWrite(PUMP_PIN, HIGH);
+    delay(duration);
+    digitalWrite(PUMP_PIN, LOW);
+  } else if (command == "LIGHT_ON") {
+    digitalWrite(LIGHT_PIN, HIGH);
+  } // ...
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+
+  snprintf(sensorTopic,  sizeof(sensorTopic),  "planttree/%s/sensors", DEVICE_ID);
+  snprintf(commandTopic, sizeof(commandTopic), "planttree/%s/commands", DEVICE_ID);
+
+  mqtt.setServer(MQTT_BROKER, MQTT_PORT);
+  mqtt.setCallback(onCommand);
+  mqtt.setBufferSize(512);
+}
+
+void reconnect() {
+  while (!mqtt.connected()) {
+    if (mqtt.connect(DEVICE_ID)) {                 // không username/password
+      mqtt.subscribe(commandTopic);
+    } else {
+      delay(5000);
+    }
+  }
+}
+
+void publishSensor() {
+  StaticJsonDocument&lt;256&gt; doc;
+  doc["temperature"]  = readTemp();
+  doc["soilMoisture"] = readSoil();
+  doc["lightLevel"]   = readLight();
+
+  char buf[256];
+  size_t n = serializeJson(doc, buf);
+  mqtt.publish(sensorTopic, buf, n);
+}
+
+void loop() {
+  if (!mqtt.connected()) reconnect();
+  mqtt.loop();
+
+  static unsigned long last = 0;
+  if (millis() - last &gt; 30000) {        // 30s
+    publishSensor();
+    last = millis();
+  }
+}</pre>
+  </div>
+
+  <h3>Verify từ Mac (debug)</h3>
+
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># Xem container Mosquitto đang chạy chưa
+docker ps | grep mosquitto
+
+# Xem log Mosquitto (publish/subscribe activity)
+docker logs mosquitto -f
+
+# Subscribe wildcard tất cả topic
+docker exec mosquitto mosquitto_sub -h localhost -t '#' -v</pre>
+  </div>
+
+  <h3>Thông tin tóm tắt gửi IoT team</h3>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>========================================================
+PLANT TREE IoT — Thông tin kết nối MQTT
+========================================================
+
+Broker: Mosquitto (eclipse-mosquitto Docker container)
+Host:   &lt;IP-LAN-Mac, ví dụ 192.168.88.126&gt;
+Port:   1883 (plain TCP)
+TLS:    KHÔNG
+Auth:   KHÔNG (allow_anonymous)
+QoS:    1 (AtLeastOnce)
+
+ESP32 phải CÙNG MẠNG Wi-Fi với Mac. Tunnel HTTPS không
+tunnel MQTT — nếu khác mạng dùng HTTP polling endpoint
+GET /api/control/commands/{deviceId}.
+
+TOPICS:
+  ESP32 publish sensor (chọn 1 trong 2 format):
+    A. planttree/{deviceId}/sensors  (payload camelCase)
+       {"temperature":28,"soilMoisture":60,"lightLevel":400}
+
+    B. xmini/sensor_data             (payload snake_case)
+       {"device_id":"ESP32S3_Zone1","temperature_c":28,
+        "light_lux":400,"pressure_hpa":1008,"altitude_m":38}
+
+  ESP32 subscribe command:
+    A. planttree/{deviceId}/commands   (nếu publish format A)
+    B. xmini/control                   (nếu publish format B)
+
+  Server publish payload:
+    {"command":"WATER_ON","commandId":"...",
+     "parameters":{"duration":5000,...}}
+
+  Command values: WATER_ON, WATER_OFF, LIGHT_ON, LIGHT_OFF,
+                  FAN_ON, FAN_OFF
+
+TEST CLIENT:
+  - MQTTx (UI):           https://mqttx.app
+  - mosquitto_pub/sub:    brew install mosquitto
+  - PubSubClient (ESP32): Arduino Library Manager
+
+Liên hệ: Phong Nguyen — phong.nguyen@treehousei.com
+========================================================</pre>
   </div>
 </section>
 
