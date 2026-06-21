@@ -448,6 +448,8 @@
       <input type="text" id="apiHost" placeholder="localhost" value="localhost" style="max-width: 200px;">
       <label for="apiPort">Port</label>
       <input type="number" id="apiPort" placeholder="8000" value="8000" style="max-width: 100px;">
+      <label for="globalDeviceId">Device ID</label>
+      <input type="text" id="globalDeviceId" placeholder="esp32-001" style="max-width: 150px;">
     </div>
   </header>
 
@@ -1080,6 +1082,19 @@
       return `http://${host}:${port}`;
     }
 
+    function getGlobalDeviceId() {
+      return document.getElementById('globalDeviceId').value.trim();
+    }
+
+    // Auto-fill deviceId fields from header when empty
+    function ensureDeviceId(fieldId) {
+      const field = document.getElementById(fieldId);
+      if (field && !field.value.trim()) {
+        const globalId = getGlobalDeviceId();
+        if (globalId) field.value = globalId;
+      }
+    }
+
     async function makeRequest(method, path, body = null) {
       const url = getApiUrl() + path;
       const startTime = Date.now();
@@ -1147,6 +1162,7 @@
     }
 
     async function executeGetDevice() {
+      ensureDeviceId('get-deviceId');
       const deviceId = document.getElementById('get-deviceId').value;
       const response = await makeRequest('GET', `/api/devices/${deviceId}`);
       displayResponse('get-response', 'get-status', 'get-time', 'get-body', response);
