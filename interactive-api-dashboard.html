@@ -445,7 +445,7 @@
     <h1>🌱 Plant Tree API Tester</h1>
     <div class="api-config">
       <label for="apiUrl">Server URL</label>
-      <input type="text" id="apiUrl" placeholder="http://localhost:5257" value="http://localhost:5257">
+      <input type="text" id="apiUrl" placeholder="http://localhost:8000" value="http://localhost:8000">
     </div>
   </header>
 
@@ -1073,7 +1073,7 @@
 
     // API calls
     function getApiUrl() {
-      return document.getElementById('apiUrl').value.trim() || 'http://localhost:5257';
+      return document.getElementById('apiUrl').value.trim() || 'http://localhost:8000';
     }
 
     async function makeRequest(method, path, body = null) {
