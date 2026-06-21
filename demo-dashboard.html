@@ -239,14 +239,136 @@
     margin-bottom: 16px;
   }
   .url-label { font-size: 12px; color: #94a3b8; margin-bottom: 4px; display: block; }
+
+  /* ===== Live Tester ===== */
+  .conn-bar {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 12px 0 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: flex-end;
+  }
+  .conn-bar .field { display: flex; flex-direction: column; gap: 4px; }
+  .conn-bar .field label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #94a3b8;
+  }
+  .conn-bar input {
+    background: #020617;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: #e2e8f0;
+    font-family: monospace;
+    font-size: 13px;
+  }
+  .conn-bar input:focus { outline: none; border-color: #10b981; }
+  .conn-status {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-left: auto;
+    font-family: monospace;
+  }
+  .conn-status b { color: #5eead4; }
+
+  .try-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    margin: 14px 0;
+    overflow: hidden;
+  }
+  .try-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: #172033;
+    border-bottom: 1px solid #334155;
+  }
+  .try-head .path { font-family: monospace; font-size: 13px; color: #cbd5e1; }
+  .try-head .title { font-size: 13px; color: #94a3b8; margin-left: auto; }
+  .try-body { padding: 16px; }
+
+  .try-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .try-field { display: flex; flex-direction: column; gap: 4px; }
+  .try-field.full { grid-column: 1 / -1; }
+  .try-field label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #94a3b8;
+  }
+  .try-field input,
+  .try-field select,
+  .try-field textarea {
+    background: #020617;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: #e2e8f0;
+    font-family: monospace;
+    font-size: 13px;
+    width: 100%;
+  }
+  .try-field textarea { min-height: 80px; resize: vertical; }
+  .try-field input:focus,
+  .try-field select:focus,
+  .try-field textarea:focus { outline: none; border-color: #10b981; }
+
+  .run-btn {
+    background: #10b981;
+    color: #022c22;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 18px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .run-btn:hover { opacity: 0.9; }
+  .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .try-result { margin-top: 14px; display: none; }
+  .try-result.show { display: block; }
+  .try-result .status-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+  .status-pill {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-weight: 700;
+    font-size: 11px;
+  }
+  .status-pill.ok { background: rgba(34,197,94,0.2); color: #4ade80; }
+  .status-pill.err { background: rgba(239,68,68,0.2); color: #fca5a5; }
+  .status-pill.wait { background: rgba(59,130,246,0.2); color: #93c5fd; }
+  .status-line .ms { color: #94a3b8; font-family: monospace; }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>🌱 Plant Tree IoT — Demo Dashboard <span>v1.0 · 2026-05-25</span></h1>
+  <h1>🌱 Plant Tree IoT — Demo Dashboard <span>v1.1 · 2026-06-21</span></h1>
   <div class="meta">
-    <div>Stack: <code>.NET 10 + MongoDB + Mosquitto + MCP</code></div>
+    <div>Stack: <code>.NET 10 + MongoDB + HiveCloud MQTT + MCP</code></div>
     <div>Public: <code>Cloudflare Quick Tunnel</code></div>
   </div>
 </header>
@@ -269,6 +391,13 @@
     <button class="nav-btn" data-target="api-rules-moisture">Rules — Moisture</button>
     <button class="nav-btn" data-target="api-rules-light">Rules — Light</button>
     <button class="nav-btn" data-target="api-control">Control</button>
+
+    <div class="group-label">🧪 Test trực tiếp</div>
+    <button class="nav-btn" data-target="try-config">Kết nối</button>
+    <button class="nav-btn" data-target="try-devices">Devices</button>
+    <button class="nav-btn" data-target="try-sensors">Sensor Data</button>
+    <button class="nav-btn" data-target="try-rules">Rules</button>
+    <button class="nav-btn" data-target="try-control">Control</button>
 
     <div class="group-label">MQTT</div>
     <button class="nav-btn" data-target="mqtt-connect">Kết nối MQTT (IoT team)</button>
@@ -1086,6 +1215,228 @@ curl -X POST $API/api/control/commands \
   "threshold": 200,
   "commandId": "65f8c3d4e5f67890123456ef"
 }</pre>
+  </div>
+</section>
+
+<section id="try-config">
+  <h2>🧪 Test trực tiếp — Kết nối</h2>
+  <p>Gọi API thật từ ngay trên trang này, không cần terminal. Đặt host/port/device <strong>một lần</strong> ở đây, các tab Test khác sẽ dùng chung. Cấu hình được lưu vào trình duyệt (localStorage).</p>
+
+  <div class="alert info">
+    Server phải đang chạy (<code>dotnet run</code>, mặc định <code>http://localhost:8000</code>). Nếu mở file HTML qua <code>file://</code>, request vẫn chạy được vì server đã bật CORS <code>AllowAnyOrigin</code>.
+  </div>
+
+  <div class="conn-bar">
+    <div class="field">
+      <label for="conn-host">Host</label>
+      <input id="conn-host" style="width:200px" placeholder="localhost">
+    </div>
+    <div class="field">
+      <label for="conn-port">Port</label>
+      <input id="conn-port" style="width:100px" placeholder="8000">
+    </div>
+    <div class="field">
+      <label for="conn-device">Device ID</label>
+      <input id="conn-device" style="width:180px" placeholder="ESP32S3_Zone1">
+    </div>
+    <div class="conn-status">Target: <b id="conn-preview">—</b></div>
+  </div>
+
+  <h3>Smoke test nhanh</h3>
+  <p>Bấm để kiểm tra server có sống không (gọi <code>GET /api/devices</code>).</p>
+  <button class="run-btn" id="run-ping">Ping server</button>
+  <div class="try-result" id="r-ping">
+    <div class="status-line"><span class="status-pill"></span><span class="ms"></span></div>
+    <div class="code-block response-block"><pre></pre></div>
+  </div>
+</section>
+
+<section id="try-devices">
+  <h2>🧪 Test — Devices</h2>
+  <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/devices/register</span><span class="title">Đăng ký device</span></div>
+    <div class="try-body">
+      <div class="try-grid">
+        <div class="try-field"><label>Device ID</label><input id="d-reg-id" placeholder="dùng Device ID ở tab Kết nối nếu trống"></div>
+        <div class="try-field"><label>Name</label><input id="d-reg-name" placeholder="Zone 1"></div>
+        <div class="try-field"><label>Plant Type</label><input id="d-reg-plant" placeholder="Mixed"></div>
+        <div class="try-field"><label>Location</label><input id="d-reg-loc" placeholder="IoT lab"></div>
+      </div>
+      <button class="run-btn" id="run-d-reg">Execute</button>
+      <div class="try-result" id="r-d-reg"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/devices</span><span class="title">Tất cả devices</span></div>
+    <div class="try-body">
+      <button class="run-btn" id="run-d-list">Execute</button>
+      <div class="try-result" id="r-d-list"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/devices/{deviceId}</span><span class="title">1 device (dùng Device ID)</span></div>
+    <div class="try-body">
+      <button class="run-btn" id="run-d-get">Execute</button>
+      <div class="try-result" id="r-d-get"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/devices/{deviceId}/heartbeat</span><span class="title">Heartbeat</span></div>
+    <div class="try-body">
+      <button class="run-btn" id="run-d-hb">Execute</button>
+      <div class="try-result" id="r-d-hb"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="try-sensors">
+  <h2>🧪 Test — Sensor Data</h2>
+  <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/sensordata/upload</span><span class="title">Gửi sensor + tự eval rule</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Payload gửi theo snake_case (<code>device_id</code> lấy từ tab Kết nối). Nếu khớp rule, response trả <code>triggeredCommands</code> và server publish lệnh xuống <code>xmini/control</code>.</p>
+      <div class="try-grid">
+        <div class="try-field"><label>temperature_c</label><input id="s-temp" type="number" step="0.1" placeholder="28"></div>
+        <div class="try-field"><label>humidity_percent</label><input id="s-hum" type="number" step="0.1" placeholder="65"></div>
+        <div class="try-field"><label>light_lux</label><input id="s-light" type="number" step="0.1" placeholder="55"></div>
+        <div class="try-field"><label>soil_moisture_percent</label><input id="s-moist" type="number" step="0.1" placeholder="20"></div>
+        <div class="try-field"><label>soil_moisture_raw</label><input id="s-raw" type="number" placeholder="3681"></div>
+      </div>
+      <button class="run-btn" id="run-s-upload">Execute</button>
+      <div class="try-result" id="r-s-upload"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/sensordata/latest/{deviceId}</span><span class="title">Dữ liệu mới nhất</span></div>
+    <div class="try-body">
+      <button class="run-btn" id="run-s-latest">Execute</button>
+      <div class="try-result" id="r-s-latest"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/sensordata/history/{deviceId}</span><span class="title">Lịch sử</span></div>
+    <div class="try-body">
+      <div class="try-grid">
+        <div class="try-field"><label>limit</label><input id="s-history-limit" type="number" value="50" placeholder="50"></div>
+      </div>
+      <button class="run-btn" id="run-s-history">Execute</button>
+      <div class="try-result" id="r-s-history"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="try-rules">
+  <h2>🧪 Test — Rules</h2>
+  <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
+
+  <h3>Moisture (độ ẩm)</h3>
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/rules/moisture</span><span class="title">Tạo rule tưới</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">moisture &lt; min → <code>WATER_ON</code> · moisture ≥ max → <code>WATER_OFF</code>. Cooldown = số phút chờ trước khi rule được trigger lại.</p>
+      <div class="try-grid">
+        <div class="try-field"><label>Name</label><input id="rm-name" placeholder="Auto Water"></div>
+        <div class="try-field"><label>minMoisture %</label><input id="rm-min" type="number" step="0.1" placeholder="30"></div>
+        <div class="try-field"><label>maxMoisture %</label><input id="rm-max" type="number" step="0.1" placeholder="70"></div>
+        <div class="try-field"><label>waterDurationMs</label><input id="rm-dur" type="number" placeholder="5000"></div>
+        <div class="try-field"><label>cooldownMinutes</label><input id="rm-cd" type="number" placeholder="30"></div>
+      </div>
+      <button class="run-btn" id="run-rm-create">Execute</button>
+      <div class="try-result" id="r-rm-create"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/rules/moisture/{deviceId}</span><span class="title">Xem rules độ ẩm</span></div>
+    <div class="try-body">
+      <button class="run-btn" id="run-rm-get">Execute</button>
+      <div class="try-result" id="r-rm-get"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <h3>Light (ánh sáng)</h3>
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/rules/light</span><span class="title">Tạo rule đèn</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">light &lt; min → <code>LIGHT_ON</code> · light ≥ max → <code>LIGHT_OFF</code>.</p>
+      <div class="try-grid">
+        <div class="try-field"><label>Name</label><input id="rl-name" placeholder="Auto Light"></div>
+        <div class="try-field"><label>minLight lux</label><input id="rl-min" type="number" step="0.1" placeholder="25"></div>
+        <div class="try-field"><label>maxLight lux</label><input id="rl-max" type="number" step="0.1" placeholder="60"></div>
+        <div class="try-field"><label>cooldownMinutes</label><input id="rl-cd" type="number" placeholder="10"></div>
+      </div>
+      <button class="run-btn" id="run-rl-create">Execute</button>
+      <div class="try-result" id="r-rl-create"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/rules/light/{deviceId}</span><span class="title">Xem rules ánh sáng</span></div>
+    <div class="try-body">
+      <button class="run-btn" id="run-rl-get">Execute</button>
+      <div class="try-result" id="r-rl-get"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="try-control">
+  <h2>🧪 Test — Control</h2>
+  <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/commands</span><span class="title">Gửi lệnh (publish MQTT xmini/control)</span></div>
+    <div class="try-body">
+      <div class="try-grid">
+        <div class="try-field"><label>Command</label>
+          <select id="c-cmd">
+            <option value="WATER_ON">WATER_ON — Bật máy bơm</option>
+            <option value="WATER_OFF">WATER_OFF — Tắt máy bơm</option>
+            <option value="LIGHT_ON">LIGHT_ON — Bật đèn</option>
+            <option value="LIGHT_OFF">LIGHT_OFF — Tắt đèn</option>
+          </select>
+        </div>
+        <div class="try-field full"><label>Parameters (JSON, để trống = {})</label><textarea id="c-params" placeholder='{"duration": 5000}'></textarea></div>
+      </div>
+      <button class="run-btn" id="run-c-send">Execute</button>
+      <div class="try-result" id="r-c-send"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/control/commands/{deviceId}</span><span class="title">Lệnh đang chờ (device polling)</span></div>
+    <div class="try-body">
+      <button class="run-btn" id="run-c-pending">Execute</button>
+      <div class="try-result" id="r-c-pending"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/auto-water/{deviceId}</span><span class="title">Auto water theo threshold</span></div>
+    <div class="try-body">
+      <div class="try-grid">
+        <div class="try-field"><label>threshold %</label><input id="c-aw-threshold" type="number" step="0.1" value="30"></div>
+      </div>
+      <button class="run-btn" id="run-c-aw">Execute</button>
+      <div class="try-result" id="r-c-aw"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/auto-light/{deviceId}</span><span class="title">Auto light theo threshold</span></div>
+    <div class="try-body">
+      <div class="try-grid">
+        <div class="try-field"><label>threshold lux</label><input id="c-al-threshold" type="number" step="0.1" value="200"></div>
+      </div>
+      <button class="run-btn" id="run-c-al">Execute</button>
+      <div class="try-result" id="r-c-al"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
   </div>
 </section>
 
@@ -1959,6 +2310,160 @@ Liên hệ vấn đề kỹ thuật:
       // Could implement live URL replacement across all code blocks here
     });
   }
+
+  // ===== Live Tester =====
+  (function () {
+    const LS = 'planttree-tester-cfg';
+    const hostEl = document.getElementById('conn-host');
+    const portEl = document.getElementById('conn-port');
+    const devEl  = document.getElementById('conn-device');
+    if (!hostEl) return; // tester not present
+
+    const defaults = { host: 'localhost', port: '8000', device: 'ESP32S3_Zone1' };
+    const saved = (() => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } })();
+    hostEl.value = saved.host || defaults.host;
+    portEl.value = saved.port || defaults.port;
+    devEl.value  = saved.device || defaults.device;
+
+    function cfg() {
+      return {
+        base: `http://${(hostEl.value.trim() || 'localhost')}:${(portEl.value.trim() || '8000')}`,
+        device: devEl.value.trim()
+      };
+    }
+    function persist() {
+      localStorage.setItem(LS, JSON.stringify({ host: hostEl.value.trim(), port: portEl.value.trim(), device: devEl.value.trim() }));
+      refreshEcho();
+    }
+    function refreshEcho() {
+      const { base, device } = cfg();
+      const txt = `${base} · device=${device || '(chưa đặt)'}`;
+      const prev = document.getElementById('conn-preview');
+      if (prev) prev.textContent = txt;
+      document.querySelectorAll('.conn-echo').forEach(el => { el.textContent = txt; });
+    }
+    [hostEl, portEl, devEl].forEach(el => el.addEventListener('input', persist));
+    document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', refreshEcho));
+    refreshEcho();
+
+    // Core request runner. resultId is the .try-result container.
+    async function run(resultId, method, path, body) {
+      const box = document.getElementById(resultId);
+      const pill = box.querySelector('.status-pill');
+      const ms = box.querySelector('.ms');
+      const pre = box.querySelector('pre');
+      box.classList.add('show');
+      pill.className = 'status-pill wait';
+      pill.textContent = '… đang gọi';
+      ms.textContent = '';
+      pre.textContent = '';
+
+      const started = performance.now();
+      try {
+        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        if (body !== undefined) opts.body = JSON.stringify(body);
+        const res = await fetch(cfg().base + path, opts);
+        const dur = Math.round(performance.now() - started);
+        const text = await res.text();
+        let out = text;
+        try { out = JSON.stringify(JSON.parse(text), null, 2); } catch {}
+        pill.className = 'status-pill ' + (res.ok ? 'ok' : 'err');
+        pill.textContent = (res.ok ? '✓ ' : '✗ ') + res.status + ' ' + res.statusText;
+        ms.textContent = dur + ' ms';
+        pre.textContent = out || '(empty body)';
+      } catch (err) {
+        const dur = Math.round(performance.now() - started);
+        pill.className = 'status-pill err';
+        pill.textContent = '✗ Failed to fetch';
+        ms.textContent = dur + ' ms';
+        pre.textContent = err.message + '\n\nKiểm tra: server đang chạy? Host/Port đúng? (xem tab Kết nối)';
+      }
+    }
+
+    const val = id => document.getElementById(id).value.trim();
+    const num = id => { const v = val(id); return v === '' ? null : Number(v); };
+    function requireDevice(resultId) {
+      const d = cfg().device;
+      if (!d) {
+        const box = document.getElementById(resultId);
+        box.classList.add('show');
+        box.querySelector('.status-pill').className = 'status-pill err';
+        box.querySelector('.status-pill').textContent = '✗ Thiếu Device ID';
+        box.querySelector('.ms').textContent = '';
+        box.querySelector('pre').textContent = 'Đặt Device ID ở tab "Kết nối" trước.';
+        return null;
+      }
+      return d;
+    }
+    const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+
+    // --- Config ---
+    on('run-ping', () => run('r-ping', 'GET', '/api/devices'));
+
+    // --- Devices ---
+    on('run-d-reg', () => {
+      const id = val('d-reg-id') || cfg().device;
+      run('r-d-reg', 'POST', '/api/devices/register', {
+        deviceId: id, name: val('d-reg-name'), plantType: val('d-reg-plant'), location: val('d-reg-loc')
+      });
+    });
+    on('run-d-list', () => run('r-d-list', 'GET', '/api/devices'));
+    on('run-d-get', () => { const d = requireDevice('r-d-get'); if (d) run('r-d-get', 'GET', `/api/devices/${encodeURIComponent(d)}`); });
+    on('run-d-hb', () => { const d = requireDevice('r-d-hb'); if (d) run('r-d-hb', 'POST', `/api/devices/${encodeURIComponent(d)}/heartbeat`); });
+
+    // --- Sensors ---
+    on('run-s-upload', () => {
+      const d = requireDevice('r-s-upload'); if (!d) return;
+      const body = { device_id: d };
+      [['s-temp','temperature_c'],['s-hum','humidity_percent'],['s-light','light_lux'],['s-moist','soil_moisture_percent'],['s-raw','soil_moisture_raw']]
+        .forEach(([id, key]) => { const v = num(id); if (v !== null) body[key] = v; });
+      run('r-s-upload', 'POST', '/api/sensordata/upload', body);
+    });
+    on('run-s-latest', () => { const d = requireDevice('r-s-latest'); if (d) run('r-s-latest', 'GET', `/api/sensordata/latest/${encodeURIComponent(d)}`); });
+    on('run-s-history', () => { const d = requireDevice('r-s-history'); if (d) run('r-s-history', 'GET', `/api/sensordata/history/${encodeURIComponent(d)}?limit=${num('s-history-limit') || 50}`); });
+
+    // --- Rules: moisture ---
+    on('run-rm-create', () => {
+      const d = requireDevice('r-rm-create'); if (!d) return;
+      run('r-rm-create', 'POST', '/api/rules/moisture', {
+        deviceId: d, name: val('rm-name'), minMoisture: num('rm-min'), maxMoisture: num('rm-max'),
+        waterDurationMs: num('rm-dur'), cooldownMinutes: num('rm-cd')
+      });
+    });
+    on('run-rm-get', () => { const d = requireDevice('r-rm-get'); if (d) run('r-rm-get', 'GET', `/api/rules/moisture/${encodeURIComponent(d)}`); });
+
+    // --- Rules: light ---
+    on('run-rl-create', () => {
+      const d = requireDevice('r-rl-create'); if (!d) return;
+      run('r-rl-create', 'POST', '/api/rules/light', {
+        deviceId: d, name: val('rl-name'), minLight: num('rl-min'), maxLight: num('rl-max'), cooldownMinutes: num('rl-cd')
+      });
+    });
+    on('run-rl-get', () => { const d = requireDevice('r-rl-get'); if (d) run('r-rl-get', 'GET', `/api/rules/light/${encodeURIComponent(d)}`); });
+
+    // --- Control ---
+    on('run-c-send', () => {
+      const d = requireDevice('r-c-send'); if (!d) return;
+      let params = {};
+      const raw = val('c-params');
+      if (raw) {
+        try { params = JSON.parse(raw); }
+        catch {
+          const box = document.getElementById('r-c-send');
+          box.classList.add('show');
+          box.querySelector('.status-pill').className = 'status-pill err';
+          box.querySelector('.status-pill').textContent = '✗ Parameters không phải JSON hợp lệ';
+          box.querySelector('.ms').textContent = '';
+          box.querySelector('pre').textContent = 'Ví dụ: {"duration": 5000}';
+          return;
+        }
+      }
+      run('r-c-send', 'POST', '/api/control/commands', { deviceId: d, command: val('c-cmd'), parameters: params });
+    });
+    on('run-c-pending', () => { const d = requireDevice('r-c-pending'); if (d) run('r-c-pending', 'GET', `/api/control/commands/${encodeURIComponent(d)}`); });
+    on('run-c-aw', () => { const d = requireDevice('r-c-aw'); if (d) run('r-c-aw', 'POST', `/api/control/auto-water/${encodeURIComponent(d)}?threshold=${num('c-aw-threshold') || 30}`); });
+    on('run-c-al', () => { const d = requireDevice('r-c-al'); if (d) run('r-c-al', 'POST', `/api/control/auto-light/${encodeURIComponent(d)}?threshold=${num('c-al-threshold') || 200}`); });
+  })();
 </script>
 </body>
 </html>
