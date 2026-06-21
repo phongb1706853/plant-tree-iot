@@ -89,7 +89,7 @@ public class SensorDataController : ControllerBase
 
             // Check cooldown
             if (rule.LastTriggeredAt.HasValue &&
-                (now - rule.LastTriggeredAt.Value).TotalMinutes < rule.CooldownMinutes)
+                (now - rule.LastTriggeredAt.Value).TotalMilliseconds < rule.CooldownMs)
                 continue;
 
             ControlCommand? command = null;
@@ -169,7 +169,7 @@ public class SensorDataController : ControllerBase
         {
             if (!rule.IsEnabled) continue;
             if (rule.LastTriggeredAt.HasValue &&
-                (now - rule.LastTriggeredAt.Value).TotalMinutes < rule.CooldownMinutes)
+                (now - rule.LastTriggeredAt.Value).TotalMilliseconds < rule.CooldownMs)
                 continue;
 
             ControlCommand? command = null;

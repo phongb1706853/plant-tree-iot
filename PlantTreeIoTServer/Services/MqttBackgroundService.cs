@@ -113,7 +113,7 @@ public class MqttBackgroundService : BackgroundService
 
                 deviceId    = xmini.DeviceId;
                 lightLevel  = xmini.LightLux;
-                soilMoisture = null;
+                soilMoisture = xmini.SoilMoisturePercent;
                 temperature = xmini.TemperatureC;
                 humidity    = xmini.HumidityPercent;
                 commandTopic = "xmini/control";
@@ -173,7 +173,7 @@ public class MqttBackgroundService : BackgroundService
             {
                 if (!rule.IsEnabled) continue;
                 if (rule.LastTriggeredAt.HasValue &&
-                    (now - rule.LastTriggeredAt.Value).TotalMinutes < rule.CooldownMinutes) continue;
+                    (now - rule.LastTriggeredAt.Value).TotalMilliseconds < rule.CooldownMs) continue;
 
                 ControlCommand? cmd = null;
                 if (soilMoisture < rule.MinMoisture)
@@ -203,7 +203,7 @@ public class MqttBackgroundService : BackgroundService
             {
                 if (!rule.IsEnabled) continue;
                 if (rule.LastTriggeredAt.HasValue &&
-                    (now - rule.LastTriggeredAt.Value).TotalMinutes < rule.CooldownMinutes) continue;
+                    (now - rule.LastTriggeredAt.Value).TotalMilliseconds < rule.CooldownMs) continue;
 
                 ControlCommand? cmd = null;
                 if (lightLevel < rule.MinLight)
@@ -272,6 +272,12 @@ public class XminiSensorPayload
 
     [System.Text.Json.Serialization.JsonPropertyName("light_lux")]
     public double? LightLux { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("soil_moisture_percent")]
+    public double? SoilMoisturePercent { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("soil_moisture_raw")]
+    public int? SoilMoistureRaw { get; set; }
 
     [System.Text.Json.Serialization.JsonPropertyName("pressure_hpa")]
     public double? PressureHpa { get; set; }

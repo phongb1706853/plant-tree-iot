@@ -1,4 +1,4 @@
-# Plant Tree IoT Server
+﻿# Plant Tree IoT Server
 
 Server .NET để quản lý hệ thống IoT trồng cây thông minh với ESP32 và MongoDB.
 
@@ -270,7 +270,7 @@ curl https://plant-tree-iot-production.up.railway.app/api/sensordata/history/esp
 # Tao rule tuoi nuoc: tuoi khi do am < 30%, dung khi > 70%
 curl -X POST https://plant-tree-iot-production.up.railway.app/api/rules/moisture \
   -H "Content-Type: application/json" \
-  -d '{"deviceId": "esp32-001", "name": "Tuoi tu dong", "minMoisture": 30, "maxMoisture": 70, "waterDurationMs": 5000, "cooldownMinutes": 30}'
+  -d '{"deviceId": "esp32-001", "name": "Tuoi tu dong", "minMoisture": 30, "maxMoisture": 70, "waterDurationMs": 5000, "cooldownMs": 1800000}'
 
 # Xem rules do am
 curl https://plant-tree-iot-production.up.railway.app/api/rules/moisture/esp32-001
@@ -278,7 +278,7 @@ curl https://plant-tree-iot-production.up.railway.app/api/rules/moisture/esp32-0
 # Cap nhat rule (thay {ruleId} bang id that)
 curl -X PUT https://plant-tree-iot-production.up.railway.app/api/rules/moisture/{ruleId} \
   -H "Content-Type: application/json" \
-  -d '{"name": "Tuoi tu dong", "minMoisture": 25, "maxMoisture": 70, "waterDurationMs": 8000, "isEnabled": true, "cooldownMinutes": 30}'
+  -d '{"name": "Tuoi tu dong", "minMoisture": 25, "maxMoisture": 70, "waterDurationMs": 8000, "isEnabled": true, "cooldownMs": 1800000}'
 
 # Xoa rule
 curl -X DELETE https://plant-tree-iot-production.up.railway.app/api/rules/moisture/{ruleId}
@@ -290,7 +290,7 @@ curl -X DELETE https://plant-tree-iot-production.up.railway.app/api/rules/moistu
 # Tao rule den: bat den khi anh sang < 25, tat khi > 60
 curl -X POST https://plant-tree-iot-production.up.railway.app/api/rules/light \
   -H "Content-Type: application/json" \
-  -d '{"deviceId": "esp32-001", "name": "Den chieu sang", "minLight": 25, "maxLight": 60, "isEnabled": true, "cooldownMinutes": 10}'
+  -d '{"deviceId": "esp32-001", "name": "Den chieu sang", "minLight": 25, "maxLight": 60, "isEnabled": true, "cooldownMs": 600000}'
 
 # Xem rules anh sang
 curl https://plant-tree-iot-production.up.railway.app/api/rules/light/esp32-001
@@ -298,7 +298,7 @@ curl https://plant-tree-iot-production.up.railway.app/api/rules/light/esp32-001
 # Cap nhat rule
 curl -X PUT https://plant-tree-iot-production.up.railway.app/api/rules/light/{ruleId} \
   -H "Content-Type: application/json" \
-  -d '{"name": "Den chieu sang", "minLight": 20, "maxLight": 70, "isEnabled": true, "cooldownMinutes": 10}'
+  -d '{"name": "Den chieu sang", "minLight": 20, "maxLight": 70, "isEnabled": true, "cooldownMs": 600000}'
 
 # Xoa rule
 curl -X DELETE https://plant-tree-iot-production.up.railway.app/api/rules/light/{ruleId}

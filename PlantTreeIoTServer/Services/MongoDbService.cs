@@ -100,10 +100,11 @@ public class MongoDbService
             .Set(r => r.MaxMoisture, updated.MaxMoisture)
             .Set(r => r.WaterDurationMs, updated.WaterDurationMs)
             .Set(r => r.IsEnabled, updated.IsEnabled)
-            .Set(r => r.CooldownMinutes, updated.CooldownMinutes);
+            .Set(r => r.CooldownMs, updated.CooldownMs);
 
         var result = await MoistureRules.UpdateOneAsync(r => r.Id == ruleId, update);
-        return result.ModifiedCount > 0;
+        // MatchedCount: rule có tồn tại không (ModifiedCount = 0 khi giá trị không đổi -> vẫn coi là thành công)
+        return result.MatchedCount > 0;
     }
 
     public async Task UpdateRuleLastTriggeredAsync(string ruleId)
@@ -135,9 +136,9 @@ public class MongoDbService
             .Set(r => r.MinLight, updated.MinLight)
             .Set(r => r.MaxLight, updated.MaxLight)
             .Set(r => r.IsEnabled, updated.IsEnabled)
-            .Set(r => r.CooldownMinutes, updated.CooldownMinutes);
+            .Set(r => r.CooldownMs, updated.CooldownMs);
         var result = await LightRules.UpdateOneAsync(r => r.Id == ruleId, update);
-        return result.ModifiedCount > 0;
+        return result.MatchedCount > 0;
     }
 
     public async Task UpdateLightRuleLastTriggeredAsync(string ruleId)

@@ -57,7 +57,7 @@ public class RulesController : ControllerBase
                 MaxMoisture = request.MaxMoisture,
                 WaterDurationMs = request.WaterDurationMs,
                 IsEnabled = request.IsEnabled,
-                CooldownMinutes = request.CooldownMinutes,
+                CooldownMs = request.CooldownMs,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -93,7 +93,7 @@ public class RulesController : ControllerBase
                 MaxMoisture = request.MaxMoisture,
                 WaterDurationMs = request.WaterDurationMs,
                 IsEnabled = request.IsEnabled,
-                CooldownMinutes = request.CooldownMinutes
+                CooldownMs = request.CooldownMs
             };
 
             var success = await _mongoDbService.UpdateMoistureRuleAsync(ruleId, updated);
@@ -165,7 +165,7 @@ public class RulesController : ControllerBase
                 MinLight = request.MinLight,
                 MaxLight = request.MaxLight,
                 IsEnabled = request.IsEnabled,
-                CooldownMinutes = request.CooldownMinutes,
+                CooldownMs = request.CooldownMs,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -196,7 +196,7 @@ public class RulesController : ControllerBase
                 MinLight = request.MinLight,
                 MaxLight = request.MaxLight,
                 IsEnabled = request.IsEnabled,
-                CooldownMinutes = request.CooldownMinutes
+                CooldownMs = request.CooldownMs
             };
 
             var success = await _mongoDbService.UpdateLightRuleAsync(ruleId, updated);
@@ -237,7 +237,7 @@ public class MoistureRuleRequest
     public double MaxMoisture { get; set; } = 70.0;
     public int WaterDurationMs { get; set; } = 5000;
     public bool IsEnabled { get; set; } = true;
-    public int CooldownMinutes { get; set; } = 30;
+    public int CooldownMs { get; set; } = 1800000;
 }
 
 public class LightRuleRequest
@@ -247,5 +247,5 @@ public class LightRuleRequest
     public double MinLight { get; set; } = 25.0;
     public double MaxLight { get; set; } = 60.0;
     public bool IsEnabled { get; set; } = true;
-    public int CooldownMinutes { get; set; } = 10;
+    public int CooldownMs { get; set; } = 600000;
 }

@@ -110,9 +110,9 @@ public class MoistureRule
     [BsonElement("isEnabled")]
     public bool IsEnabled { get; set; } = true;
 
-    /// <summary>Thời gian chờ tối thiểu giữa 2 lần tưới (phút)</summary>
-    [BsonElement("cooldownMinutes")]
-    public int CooldownMinutes { get; set; } = 30;
+    /// <summary>Thời gian chờ tối thiểu giữa 2 lần tưới (ms)</summary>
+    [BsonElement("cooldownMs")]
+    public int CooldownMs { get; set; } = 1800000;
 
     [BsonElement("lastTriggeredAt")]
     [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
@@ -147,8 +147,9 @@ public class LightRule
     [BsonElement("isEnabled")]
     public bool IsEnabled { get; set; } = true;
 
-    [BsonElement("cooldownMinutes")]
-    public int CooldownMinutes { get; set; } = 10;
+    /// <summary>Thời gian chờ tối thiểu giữa 2 lần đổi trạng thái đèn (ms)</summary>
+    [BsonElement("cooldownMs")]
+    public int CooldownMs { get; set; } = 600000;
 
     [BsonElement("lastTriggeredAt")]
     [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]

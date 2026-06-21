@@ -1,4 +1,4 @@
-# Demo Notes — Plant Tree IoT
+﻿# Demo Notes — Plant Tree IoT
 
 > Ngày demo: 2026-05-25
 > Tunnel URL hiện tại (Quick Tunnel, sẽ đổi mỗi lần restart cloudflared):
@@ -253,12 +253,12 @@ curl "$API/api/sensordata/range/$DEVICE?startDate=2026-05-24T00:00:00Z&endDate=2
 # Tạo rule tưới: tưới khi < 30%, dừng khi > 70%, mỗi lần 5 giây, cooldown 30 phút
 curl -X POST $API/api/rules/moisture \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Tuoi tu dong","minMoisture":30,"maxMoisture":70,"waterDurationMs":5000,"cooldownMinutes":30}'
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Tuoi tu dong","minMoisture":30,"maxMoisture":70,"waterDurationMs":5000,"cooldownMs":1800000}'
 
 # Tạo rule cố tình trigger với soil hiện tại (61.8%): min=70 → sẽ tưới
 curl -X POST $API/api/rules/moisture \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tuoi","minMoisture":70,"maxMoisture":80,"waterDurationMs":5000,"cooldownMinutes":1}'
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tuoi","minMoisture":70,"maxMoisture":80,"waterDurationMs":5000,"cooldownMs":60000}'
 
 # Xem rules
 curl $API/api/rules/moisture/$DEVICE
@@ -266,7 +266,7 @@ curl $API/api/rules/moisture/$DEVICE
 # Cập nhật rule (thay <ruleId>)
 curl -X PUT $API/api/rules/moisture/<ruleId> \
   -H "Content-Type: application/json" \
-  -d '{"name":"Tuoi tu dong","minMoisture":25,"maxMoisture":70,"waterDurationMs":8000,"isEnabled":true,"cooldownMinutes":30}'
+  -d '{"name":"Tuoi tu dong","minMoisture":25,"maxMoisture":70,"waterDurationMs":8000,"isEnabled":true,"cooldownMs":1800000}'
 
 # Xoá rule
 curl -X DELETE $API/api/rules/moisture/<ruleId>
@@ -278,17 +278,17 @@ curl -X DELETE $API/api/rules/moisture/<ruleId>
 # Tạo rule đèn: bật khi lux < 25, tắt khi > 60
 curl -X POST $API/api/rules/light \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Den chieu sang","minLight":25,"maxLight":60,"isEnabled":true,"cooldownMinutes":10}'
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Den chieu sang","minLight":25,"maxLight":60,"isEnabled":true,"cooldownMs":600000}'
 
 # Rule cố tình trigger LIGHT_ON với light hiện tại (420.5 lux): min=500
 curl -X POST $API/api/rules/light \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMinutes":1}'
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMs":60000}'
 
 # Rule cố tình trigger LIGHT_OFF với light hiện tại: max=400
 curl -X POST $API/api/rules/light \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tat den","minLight":100,"maxLight":400,"isEnabled":true,"cooldownMinutes":1}'
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tat den","minLight":100,"maxLight":400,"isEnabled":true,"cooldownMs":60000}'
 
 # Xem rules
 curl $API/api/rules/light/$DEVICE
@@ -296,7 +296,7 @@ curl $API/api/rules/light/$DEVICE
 # Cập nhật
 curl -X PUT $API/api/rules/light/<ruleId> \
   -H "Content-Type: application/json" \
-  -d '{"name":"Den chieu sang","minLight":20,"maxLight":70,"isEnabled":true,"cooldownMinutes":10}'
+  -d '{"name":"Den chieu sang","minLight":20,"maxLight":70,"isEnabled":true,"cooldownMs":600000}'
 
 # Xoá
 curl -X DELETE $API/api/rules/light/<ruleId>
@@ -351,7 +351,7 @@ curl -X POST $API/api/sensordata/upload -H "Content-Type: application/json" \
 
 # 3. Tạo rule light cố tình trigger
 curl -X POST $API/api/rules/light -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMinutes":1}'
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMs":60000}'
 
 # 4. Gửi lại sensor data → response có triggeredCommands: [LIGHT_ON]
 curl -X POST $API/api/sensordata/upload -H "Content-Type: application/json" \

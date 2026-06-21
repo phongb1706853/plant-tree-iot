@@ -1,4 +1,4 @@
-# Plant Tree IoT — API & MQTT Guide
+﻿# Plant Tree IoT — API & MQTT Guide
 
 ## System Architecture
 
@@ -157,7 +157,7 @@ Content-Type: application/json
   "minMoisture": 30,
   "maxMoisture": 70,
   "waterDurationMs": 5000,
-  "cooldownMinutes": 30,
+  "cooldownMs": 1800000,
   "isEnabled": true
 }
 ```
@@ -171,7 +171,7 @@ Content-Type: application/json
   "minMoisture": 30,
   "maxMoisture": 70,
   "waterDurationMs": 5000,
-  "cooldownMinutes": 30,
+  "cooldownMs": 1800000,
   "isEnabled": true,
   "createdAt": "2026-06-21T10:00:00Z",
   "lastTriggeredAt": null
@@ -198,7 +198,7 @@ Content-Type: application/json
   "minLight": 25,
   "maxLight": 60,
   "isEnabled": true,
-  "cooldownMinutes": 10
+  "cooldownMs": 600000
 }
 ```
 
@@ -210,7 +210,7 @@ Content-Type: application/json
   "name": "Auto Light",
   "minLight": 25,
   "maxLight": 60,
-  "cooldownMinutes": 10,
+  "cooldownMs": 600000,
   "isEnabled": true,
   "createdAt": "2026-06-21T10:00:00Z",
   "lastTriggeredAt": null
@@ -329,7 +329,7 @@ curl -X POST http://localhost:8000/api/rules/moisture \
     "minMoisture": 30,
     "maxMoisture": 70,
     "waterDurationMs": 5000,
-    "cooldownMinutes": 30
+    "cooldownMs": 1800000
   }'
 ```
 
@@ -379,7 +379,7 @@ curl -X POST http://localhost:8000/api/control/commands \
   minMoisture: 30,
   maxMoisture: 70,
   waterDurationMs: 5000,
-  cooldownMinutes: 30,
+  cooldownMs: 1800000,
   isEnabled: true,
   createdAt: ISODate,
   lastTriggeredAt: ISODate
@@ -420,7 +420,7 @@ curl -X POST http://localhost:8000/api/control/commands \
    - Expected: No trigger (45.5 is between 30-70)
 
 3. **Check cooldown:**
-   - `lastTriggeredAt` + `cooldownMinutes` must pass
+   - `lastTriggeredAt` + `cooldownMs` must pass
 
 4. **Check rule is enabled:**
    - `"isEnabled": true`

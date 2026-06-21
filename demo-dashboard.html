@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
@@ -626,7 +626,7 @@ curl -X POST $API/api/sensordata/upload -H "Content-Type: application/json" \
 
 # 3. Tạo light rule cố tình trigger (min=500 > 420.5)
 curl -X POST $API/api/rules/light -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMinutes":1}'
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMs":60000}'
 
 # 4. Gửi lại sensor → triggeredCommands có LIGHT_ON
 curl -X POST $API/api/sensordata/upload -H "Content-Type: application/json" \
@@ -963,7 +963,7 @@ export DEVICE=ESP32S3_Zone1</pre>
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/rules/moisture \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Tuoi tu dong","minMoisture":30,"maxMoisture":70,"waterDurationMs":5000,"cooldownMinutes":30}'</pre>
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Tuoi tu dong","minMoisture":30,"maxMoisture":70,"waterDurationMs":5000,"cooldownMs":1800000}'</pre>
   </div>
 
   <div class="response-label">Response — HTTP 201 Created (rule mới)</div>
@@ -976,7 +976,7 @@ export DEVICE=ESP32S3_Zone1</pre>
   "maxMoisture": 70,
   "waterDurationMs": 5000,
   "isEnabled": true,
-  "cooldownMinutes": 30,
+  "cooldownMs": 1800000,
   "lastTriggeredAt": null,
   "createdAt": "2026-05-24T08:10:00.123456Z"
 }</pre>
@@ -987,7 +987,7 @@ export DEVICE=ESP32S3_Zone1</pre>
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/rules/moisture \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tuoi","minMoisture":70,"maxMoisture":80,"waterDurationMs":5000,"cooldownMinutes":1}'</pre>
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tuoi","minMoisture":70,"maxMoisture":80,"waterDurationMs":5000,"cooldownMs":60000}'</pre>
   </div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/rules/moisture/{deviceId}</div>
@@ -1007,7 +1007,7 @@ export DEVICE=ESP32S3_Zone1</pre>
     "maxMoisture": 70,
     "waterDurationMs": 5000,
     "isEnabled": true,
-    "cooldownMinutes": 30,
+    "cooldownMs": 1800000,
     "lastTriggeredAt": "2026-05-24T08:30:00Z",
     "createdAt": "2026-05-24T08:10:00Z"
   }
@@ -1019,7 +1019,7 @@ export DEVICE=ESP32S3_Zone1</pre>
     <button class="copy-btn">Copy</button>
     <pre>curl -X PUT $API/api/rules/moisture/&lt;ruleId&gt; \
   -H "Content-Type: application/json" \
-  -d '{"name":"Tuoi tu dong","minMoisture":25,"maxMoisture":70,"waterDurationMs":8000,"isEnabled":true,"cooldownMinutes":30}'</pre>
+  -d '{"name":"Tuoi tu dong","minMoisture":25,"maxMoisture":70,"waterDurationMs":8000,"isEnabled":true,"cooldownMs":1800000}'</pre>
   </div>
 
   <div class="endpoint delete"><span class="badge delete">DELETE</span> /api/rules/moisture/{ruleId}</div>
@@ -1038,7 +1038,7 @@ export DEVICE=ESP32S3_Zone1</pre>
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/rules/light \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Den chieu sang","minLight":25,"maxLight":60,"isEnabled":true,"cooldownMinutes":10}'</pre>
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Den chieu sang","minLight":25,"maxLight":60,"isEnabled":true,"cooldownMs":600000}'</pre>
   </div>
 
   <div class="response-label">Response — HTTP 201 Created</div>
@@ -1050,7 +1050,7 @@ export DEVICE=ESP32S3_Zone1</pre>
   "minLight": 25,
   "maxLight": 60,
   "isEnabled": true,
-  "cooldownMinutes": 10,
+  "cooldownMs": 600000,
   "lastTriggeredAt": null,
   "createdAt": "2026-05-24T08:12:00.123456Z"
 }</pre>
@@ -1061,7 +1061,7 @@ export DEVICE=ESP32S3_Zone1</pre>
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/rules/light \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMinutes":1}'</pre>
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMs":60000}'</pre>
   </div>
 
   <h4>Trigger LIGHT_OFF với light hiện tại: max=400</h4>
@@ -1069,7 +1069,7 @@ export DEVICE=ESP32S3_Zone1</pre>
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/rules/light \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tat den","minLight":100,"maxLight":400,"isEnabled":true,"cooldownMinutes":1}'</pre>
+  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tat den","minLight":100,"maxLight":400,"isEnabled":true,"cooldownMs":60000}'</pre>
   </div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/rules/light/{deviceId}</div>
@@ -1083,7 +1083,7 @@ export DEVICE=ESP32S3_Zone1</pre>
     <button class="copy-btn">Copy</button>
     <pre>curl -X PUT $API/api/rules/light/&lt;ruleId&gt; \
   -H "Content-Type: application/json" \
-  -d '{"name":"Den chieu sang","minLight":20,"maxLight":70,"isEnabled":true,"cooldownMinutes":10}'</pre>
+  -d '{"name":"Den chieu sang","minLight":20,"maxLight":70,"isEnabled":true,"cooldownMs":600000}'</pre>
   </div>
 
   <div class="endpoint delete"><span class="badge delete">DELETE</span> /api/rules/light/{ruleId}</div>
@@ -1342,13 +1342,13 @@ curl -X POST $API/api/control/commands \
   <div class="try-card">
     <div class="try-head"><span class="badge post">POST</span><span class="path">/api/rules/moisture</span><span class="title">Tạo rule tưới</span></div>
     <div class="try-body">
-      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">moisture &lt; min → <code>WATER_ON</code> · moisture ≥ max → <code>WATER_OFF</code>. Cooldown = số phút chờ trước khi rule được trigger lại.</p>
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">moisture &lt; min → <code>WATER_ON</code> · moisture ≥ max → <code>WATER_OFF</code>. Cooldown = số <b>mili-giây</b> chờ trước khi rule được trigger lại (60000 = 1 phút).</p>
       <div class="try-grid">
         <div class="try-field"><label>Name</label><input id="rm-name" placeholder="Auto Water"></div>
         <div class="try-field"><label>minMoisture %</label><input id="rm-min" type="number" step="0.1" placeholder="30"></div>
         <div class="try-field"><label>maxMoisture %</label><input id="rm-max" type="number" step="0.1" placeholder="70"></div>
         <div class="try-field"><label>waterDurationMs</label><input id="rm-dur" type="number" placeholder="5000"></div>
-        <div class="try-field"><label>cooldownMinutes</label><input id="rm-cd" type="number" placeholder="30"></div>
+        <div class="try-field"><label>cooldownMs</label><input id="rm-cd" type="number" placeholder="1800000"></div>
       </div>
       <button class="run-btn" id="run-rm-create">Execute</button>
       <div class="try-result" id="r-rm-create"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
@@ -1371,7 +1371,7 @@ curl -X POST $API/api/control/commands \
         <div class="try-field"><label>Name</label><input id="rl-name" placeholder="Auto Light"></div>
         <div class="try-field"><label>minLight lux</label><input id="rl-min" type="number" step="0.1" placeholder="25"></div>
         <div class="try-field"><label>maxLight lux</label><input id="rl-max" type="number" step="0.1" placeholder="60"></div>
-        <div class="try-field"><label>cooldownMinutes</label><input id="rl-cd" type="number" placeholder="10"></div>
+        <div class="try-field"><label>cooldownMs</label><input id="rl-cd" type="number" placeholder="600000"></div>
       </div>
       <button class="run-btn" id="run-rl-create">Execute</button>
       <div class="try-result" id="r-rl-create"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
@@ -1382,6 +1382,25 @@ curl -X POST $API/api/control/commands \
     <div class="try-body">
       <button class="run-btn" id="run-rl-get">Execute</button>
       <div class="try-result" id="r-rl-get"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <h3>⚙️ Quản lý rules — Sửa / Xóa trực tiếp</h3>
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="badge put">PUT</span><span class="badge delete">DEL</span><span class="path">/api/rules/moisture/{ruleId}</span><span class="title">Moisture — list, edit inline, delete</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Bấm <b>Load</b> để lấy rule của device hiện tại, sửa giá trị ngay trên dòng rồi <b>Lưu</b> (PUT) hoặc <b>Xóa</b> (DELETE).</p>
+      <button class="run-btn" id="run-rm-manage">Load rules độ ẩm</button>
+      <div id="rm-manage-msg" class="rule-msg"></div>
+      <div id="rm-manage-list" class="rule-list"></div>
+    </div>
+  </div>
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="badge put">PUT</span><span class="badge delete">DEL</span><span class="path">/api/rules/light/{ruleId}</span><span class="title">Light — list, edit inline, delete</span></div>
+    <div class="try-body">
+      <button class="run-btn" id="run-rl-manage">Load rules ánh sáng</button>
+      <div id="rl-manage-msg" class="rule-msg"></div>
+      <div id="rl-manage-list" class="rule-list"></div>
     </div>
   </div>
 </section>
@@ -1853,7 +1872,7 @@ Command ID: 65f8b2c3d4e5f6789012abcd</pre>
   "minMoisture": 25,
   "maxMoisture": 75,
   "waterDurationMs": 5000,
-  "cooldownMinutes": 30
+  "cooldownMs": 1800000
 }</pre>
   </div>
   <div class="response-label">Server response:</div>
@@ -1866,7 +1885,7 @@ Command ID: 65f8b2c3d4e5f6789012abcd</pre>
   "maxMoisture": 75,
   "waterDurationMs": 5000,
   "isEnabled": true,
-  "cooldownMinutes": 30,
+  "cooldownMs": 1800000,
   "lastTriggeredAt": null,
   "createdAt": "2026-05-24T08:45:00Z"
 }</pre>
@@ -2427,7 +2446,7 @@ Liên hệ vấn đề kỹ thuật:
       const d = requireDevice('r-rm-create'); if (!d) return;
       run('r-rm-create', 'POST', '/api/rules/moisture', {
         deviceId: d, name: val('rm-name'), minMoisture: num('rm-min'), maxMoisture: num('rm-max'),
-        waterDurationMs: num('rm-dur'), cooldownMinutes: num('rm-cd')
+        waterDurationMs: num('rm-dur') ?? 5000, cooldownMs: num('rm-cd') ?? 1800000
       });
     });
     on('run-rm-get', () => { const d = requireDevice('r-rm-get'); if (d) run('r-rm-get', 'GET', `/api/rules/moisture/${encodeURIComponent(d)}`); });
@@ -2436,7 +2455,7 @@ Liên hệ vấn đề kỹ thuật:
     on('run-rl-create', () => {
       const d = requireDevice('r-rl-create'); if (!d) return;
       run('r-rl-create', 'POST', '/api/rules/light', {
-        deviceId: d, name: val('rl-name'), minLight: num('rl-min'), maxLight: num('rl-max'), cooldownMinutes: num('rl-cd')
+        deviceId: d, name: val('rl-name'), minLight: num('rl-min'), maxLight: num('rl-max'), cooldownMs: num('rl-cd') ?? 600000
       });
     });
     on('run-rl-get', () => { const d = requireDevice('r-rl-get'); if (d) run('r-rl-get', 'GET', `/api/rules/light/${encodeURIComponent(d)}`); });
@@ -2463,6 +2482,108 @@ Liên hệ vấn đề kỹ thuật:
     on('run-c-pending', () => { const d = requireDevice('r-c-pending'); if (d) run('r-c-pending', 'GET', `/api/control/commands/${encodeURIComponent(d)}`); });
     on('run-c-aw', () => { const d = requireDevice('r-c-aw'); if (d) run('r-c-aw', 'POST', `/api/control/auto-water/${encodeURIComponent(d)}?threshold=${num('c-aw-threshold') || 30}`); });
     on('run-c-al', () => { const d = requireDevice('r-c-al'); if (d) run('r-c-al', 'POST', `/api/control/auto-light/${encodeURIComponent(d)}?threshold=${num('c-al-threshold') || 200}`); });
+
+    // --- Rules manager: list + inline edit (PUT) + delete (DELETE) ---
+    const RULE_TYPES = {
+      moisture: {
+        path: 'moisture', listId: 'rm-manage-list', msgId: 'rm-manage-msg',
+        fields: [
+          { key: 'name', label: 'Name', type: 'text', flex: '1 1 130px' },
+          { key: 'minMoisture', label: 'min %', type: 'number' },
+          { key: 'maxMoisture', label: 'max %', type: 'number' },
+          { key: 'waterDurationMs', label: 'durationMs', type: 'number' },
+          { key: 'cooldownMs', label: 'cooldownMs', type: 'number' },
+        ],
+      },
+      light: {
+        path: 'light', listId: 'rl-manage-list', msgId: 'rl-manage-msg',
+        fields: [
+          { key: 'name', label: 'Name', type: 'text', flex: '1 1 130px' },
+          { key: 'minLight', label: 'min lux', type: 'number' },
+          { key: 'maxLight', label: 'max lux', type: 'number' },
+          { key: 'cooldownMs', label: 'cooldownMs', type: 'number' },
+        ],
+      },
+    };
+
+    function ruleMsg(id, text, ok) {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.style.cssText = 'margin:8px 0;font-size:13px;color:' + (ok ? '#34d399' : '#f87171');
+    }
+
+    async function apiJson(method, path, body) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body !== undefined) opts.body = JSON.stringify(body);
+      const res = await fetch(cfg().base + path, opts);
+      let data = null; try { data = await res.json(); } catch {}
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    function ruleField(f, value) {
+      const wrap = document.createElement('label');
+      wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;font-size:11px;color:#94a3b8;flex:' + (f.flex || '0 1 95px');
+      const input = document.createElement('input');
+      input.type = f.type;
+      if (f.type === 'number') input.step = '0.1';
+      input.value = value ?? '';
+      input.style.cssText = 'background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:5px 7px;font-size:13px;width:100%';
+      wrap.appendChild(document.createTextNode(f.label));
+      wrap.appendChild(input);
+      return { wrap, input };
+    }
+
+    function buildRuleRow(typeKey, rule) {
+      const t = RULE_TYPES[typeKey];
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;background:#0b1220;border:1px solid #1e293b;border-radius:8px;padding:10px;margin-bottom:8px';
+      const inputs = {};
+      t.fields.forEach(f => { const { wrap, input } = ruleField(f, rule[f.key]); inputs[f.key] = input; row.appendChild(wrap); });
+
+      const enWrap = document.createElement('label');
+      enWrap.style.cssText = 'display:flex;align-items:center;gap:5px;font-size:12px;color:#94a3b8';
+      const en = document.createElement('input'); en.type = 'checkbox'; en.checked = !!rule.isEnabled;
+      enWrap.appendChild(en); enWrap.appendChild(document.createTextNode('enabled'));
+      row.appendChild(enWrap);
+
+      const save = document.createElement('button'); save.textContent = '💾 Lưu'; save.className = 'run-btn'; save.style.cssText = 'padding:6px 12px';
+      const del = document.createElement('button'); del.textContent = '🗑 Xóa'; del.className = 'run-btn'; del.style.cssText = 'padding:6px 12px;background:#7f1d1d';
+      row.appendChild(save); row.appendChild(del);
+
+      save.addEventListener('click', async () => {
+        const body = { deviceId: rule.deviceId, isEnabled: en.checked };
+        t.fields.forEach(f => { const v = inputs[f.key].value.trim(); body[f.key] = f.type === 'number' ? Number(v) : v; });
+        save.disabled = true;
+        const { ok, status, data } = await apiJson('PUT', `/api/rules/${t.path}/${rule.id}`, body);
+        save.disabled = false;
+        ruleMsg(t.msgId, ok ? `✓ Đã lưu rule ${rule.id}` : `✗ Lỗi ${status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`, ok);
+      });
+      del.addEventListener('click', async () => {
+        if (!confirm(`Xóa rule "${rule.name || rule.id}"?`)) return;
+        del.disabled = true;
+        const { ok, status } = await apiJson('DELETE', `/api/rules/${t.path}/${rule.id}`);
+        if (ok) { row.remove(); ruleMsg(t.msgId, `✓ Đã xóa rule ${rule.id}`, true); }
+        else { del.disabled = false; ruleMsg(t.msgId, `✗ Xóa thất bại (${status})`, false); }
+      });
+      return row;
+    }
+
+    async function loadRules(typeKey) {
+      const t = RULE_TYPES[typeKey];
+      const listEl = document.getElementById(t.listId);
+      const d = cfg().device;
+      if (!d) { ruleMsg(t.msgId, '✗ Thiếu Device ID — đặt ở tab "Kết nối" trước.', false); return; }
+      ruleMsg(t.msgId, '… đang tải', true);
+      listEl.innerHTML = '';
+      const { ok, data } = await apiJson('GET', `/api/rules/${t.path}/${encodeURIComponent(d)}`);
+      if (!ok || !Array.isArray(data)) { ruleMsg(t.msgId, '✗ Không tải được rules', false); return; }
+      if (data.length === 0) { ruleMsg(t.msgId, `Chưa có rule ${typeKey} nào cho device ${d}.`, true); return; }
+      ruleMsg(t.msgId, `${data.length} rule cho device ${d}`, true);
+      data.forEach(rule => listEl.appendChild(buildRuleRow(typeKey, rule)));
+    }
+
+    on('run-rm-manage', () => loadRules('moisture'));
+    on('run-rl-manage', () => loadRules('light'));
   })();
 </script>
 </body>
