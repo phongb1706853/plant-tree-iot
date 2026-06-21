@@ -15,10 +15,10 @@ const char* WIFI_SSID     = "your-wifi-ssid";
 const char* WIFI_PASSWORD = "your-wifi-password";
 
 // HiveMQ Cloud credentials
-const char* MQTT_BROKER   = "your-cluster.s1.eu.hivemq.cloud";
+const char* MQTT_BROKER   = "ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud";
 const int   MQTT_PORT     = 8883;  // TLS port
-const char* MQTT_USERNAME = "your-username";
-const char* MQTT_PASSWORD = "your-password";
+const char* MQTT_USERNAME = "nod-iot-plant";
+const char* MQTT_PASSWORD = "Nod-iot-plant1234";
 
 const char* DEVICE_ID = "esp32-001";
 
