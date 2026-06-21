@@ -1,7 +1,7 @@
 using PlantTreeIoTServer.Services;
 
 // Support Railway's dynamic PORT environment variable
-var port = Environment.GetEnvironmentVariable("PORT") ?? "80";
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8000";
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls($"http://+:{port}");
 
@@ -11,7 +11,8 @@ builder.Services.AddControllers();
 // Register MongoDB service
 builder.Services.AddSingleton<MongoDbService>();
 
-// Register MQTT background service
+// Register MQTT services
+builder.Services.AddSingleton<MqttPublisherService>();
 builder.Services.AddHostedService<PlantTreeIoTServer.Services.MqttBackgroundService>();
 
 // Configure CORS for ESP32 communication
@@ -29,6 +30,10 @@ builder.Services.AddCors(options =>
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+// Initialize MQTT Publisher
+var mqttPublisher = app.Services.GetRequiredService<MqttPublisherService>();
+await mqttPublisher.InitializeAsync(app.Configuration);
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

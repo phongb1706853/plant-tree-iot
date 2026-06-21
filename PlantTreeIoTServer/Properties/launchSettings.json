@@ -1,20 +1,25 @@
-﻿{
+{
   "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
     "http": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
-      "applicationUrl": "http://localhost:5257",
+      "applicationUrl": "http://localhost:8000",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "MQTT_BROKER": "ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud",
+        "MQTT_PORT": "8883",
+        "MQTT_USERNAME": "nod-iot-plant",
+        "MQTT_PASSWORD": "Nod-iot-plant1234",
+        "MQTT_USE_TLS": "true"
       }
     },
     "https": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
-      "applicationUrl": "https://localhost:7040;http://localhost:5257",
+      "applicationUrl": "https://localhost:7040;http://localhost:8000",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }

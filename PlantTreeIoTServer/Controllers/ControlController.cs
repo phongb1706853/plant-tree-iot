@@ -9,11 +9,13 @@ namespace PlantTreeIoTServer.Controllers;
 public class ControlController : ControllerBase
 {
     private readonly MongoDbService _mongoDbService;
+    private readonly MqttPublisherService _mqttPublisher;
     private readonly ILogger<ControlController> _logger;
 
-    public ControlController(MongoDbService mongoDbService, ILogger<ControlController> logger)
+    public ControlController(MongoDbService mongoDbService, MqttPublisherService mqttPublisher, ILogger<ControlController> logger)
     {
         _mongoDbService = mongoDbService;
+        _mqttPublisher = mqttPublisher;
         _logger = logger;
     }
 
@@ -58,6 +60,9 @@ public class ControlController : ControllerBase
             };
 
             await _mongoDbService.InsertControlCommandAsync(command);
+
+            // Publish to MQTT so device can receive command
+            await _mqttPublisher.PublishCommandAsync(request.DeviceId, request.Command, request.Parameters);
 
             _logger.LogInformation("Command sent to device {DeviceId}: {Command}", request.DeviceId, request.Command);
 
