@@ -444,8 +444,10 @@
   <header>
     <h1>🌱 Plant Tree API Tester</h1>
     <div class="api-config">
-      <label for="apiUrl">Server URL</label>
-      <input type="text" id="apiUrl" placeholder="http://localhost:8000" value="http://localhost:8000">
+      <label for="apiHost">Host</label>
+      <input type="text" id="apiHost" placeholder="localhost" value="localhost" style="max-width: 200px;">
+      <label for="apiPort">Port</label>
+      <input type="number" id="apiPort" placeholder="8000" value="8000" style="max-width: 100px;">
     </div>
   </header>
 
@@ -1073,7 +1075,9 @@
 
     // API calls
     function getApiUrl() {
-      return document.getElementById('apiUrl').value.trim() || 'http://localhost:8000';
+      const host = document.getElementById('apiHost').value.trim() || 'localhost';
+      const port = document.getElementById('apiPort').value.trim() || '8000';
+      return `http://${host}:${port}`;
     }
 
     async function makeRequest(method, path, body = null) {
