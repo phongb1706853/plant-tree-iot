@@ -1171,28 +1171,32 @@ curl -X POST $API/api/control/commands \
     <button class="copy-btn">Copy</button>
     <pre>{
   "device_id": "ESP32S3_Zone1",
-  "temperature_c": 28.4,
-  "humidity_percent": 65.0,
-  "light_lux": 420.5,
-  "pressure_hpa": 1008.6,
-  "altitude_m": 38.2
+  "temperature_c": 28,
+  "humidity_percent": 65,
+  "pressure_hpa": 1014.28,
+  "altitude_m": 38.2,
+  "light_lux": 57.5,
+  "soil_moisture_percent": 45.5,
+  "soil_moisture_raw": 2540,
+  "relay_on": false
 }</pre>
   </div>
   <div class="alert">
-    <strong>Lưu ý</strong>: Topic <code>xmini/sensor_data</code> không có deviceId trong topic path — server đọc <code>device_id</code> từ <strong>payload JSON</strong>. Server hiện chưa map các field <code>pressure_hpa</code>/<code>altitude_m</code> từ MQTT vào DB (chỉ HTTP đã hỗ trợ). Sẽ extend sau demo nếu cần.
+    <strong>Lưu ý</strong>: Topic <code>xmini/sensor_data</code> không có deviceId trong topic path — server đọc <code>device_id</code> từ <strong>payload JSON</strong>. Server parse tất cả fields: temperature, humidity, pressure, altitude, light, soil moisture (%), raw ADC value, relay state.
   </div>
 
-  <h4>Subscribe command (server publish)</h4>
-  <p>ESP32 subscribe <code>planttree/&lt;deviceId&gt;/commands</code> (hoặc <code>xmini/control</code>) sẽ nhận:</p>
+  <h4>Subscribe command (server publish to xmini/control)</h4>
+  <p>ESP32 subscribe <code>xmini/control</code> sẽ nhận command từ server:</p>
   <div class="code-block response-block">
     <pre>{
   "command": "WATER_ON",
-  "commandId": "65f8b2c3d4e5f6789012abcd",
   "parameters": {
     "duration": 5000,
     "reason": "moisture_rule",
-    "ruleId": "65f8a1a1a1a1a1a1a1a1a1a1",
-    "currentMoisture": 20
+    "ruleId": "rule-123",
+    "ruleName": "Auto Water",
+    "threshold": 30,
+    "currentMoisture": 25
   }
 }</pre>
   </div>
@@ -1231,13 +1235,14 @@ mosquitto_pub -h 192.168.88.126 -p 1883 \
   -t 'planttree/esp32-test/sensors' \
   -m '{"temperature":28,"soilMoisture":20,"lightLevel":50}'
 
-# Hoặc dùng topic xmini với payload snake_case
-mosquitto_pub -h 192.168.88.126 -p 1883 \
+# Hoặc dùng topic xmini với payload snake_case (HiveCloud)
+mosquitto_pub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --cafile ca.crt \
+  -u nod-iot-plant -P Nod-iot-plant1234 \
   -t 'xmini/sensor_data' \
-  -m '{"device_id":"ESP32S3_Zone1","temperature_c":28,"light_lux":50}'</pre>
+  -m '{"device_id":"ESP32S3_Zone1","temperature_c":28,"humidity_percent":65,"light_lux":57.5,"soil_moisture_percent":45.5,"soil_moisture_raw":2540,"relay_on":false}'</pre>
   </div>
 
-  <p>Nếu có moisture/light rule cho device đó, server sẽ tự publish lệnh xuống <code>planttree/&lt;id&gt;/commands</code> hoặc <code>xmini/control</code> — terminal 1 sẽ thấy.</p>
+  <p><strong>Nếu có moisture/light rule cho device đó</strong>, server sẽ tự evaluate và publish lệnh xuống <code>xmini/control</code> — terminal subscribe sẽ thấy: <code>{"command":"WATER_ON","parameters":{...}}</code></p>
 
   <h3>Code ESP32 mẫu (PubSubClient)</h3>
 
