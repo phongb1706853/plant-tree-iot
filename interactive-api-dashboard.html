@@ -930,10 +930,6 @@
           </div>
           <div class="endpoint-body">
             <div class="form-group">
-              <label>Device ID</label>
-              <input type="text" id="cmd-deviceId" placeholder="esp32-001">
-            </div>
-            <div class="form-group">
               <label>Command</label>
               <select id="cmd-command">
                 <option value="WATER_ON">WATER_ON — Bật máy bơm</option>
@@ -1246,8 +1242,13 @@
     }
 
     async function executeSendCommand() {
+      const deviceId = getGlobalDeviceId();
+      if (!deviceId) {
+        alert('Please set Device ID in header');
+        return;
+      }
       const body = {
-        deviceId: document.getElementById('cmd-deviceId').value,
+        deviceId: deviceId,
         command: document.getElementById('cmd-command').value,
         parameters: document.getElementById('cmd-params').value ? JSON.parse(document.getElementById('cmd-params').value) : {}
       };
