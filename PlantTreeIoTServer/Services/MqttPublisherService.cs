@@ -1,6 +1,8 @@
 using MQTTnet;
 using MQTTnet.Client;
 using MQTTnet.Protocol;
+using System.Net.Security;
+using System.Security.Authentication;
 using System.Text.Json;
 
 namespace PlantTreeIoTServer.Services;
@@ -38,6 +40,8 @@ public class MqttPublisherService
                 ?? configuration["Mqtt:Password"] ?? "";
             var useTls = bool.Parse(Environment.GetEnvironmentVariable("MQTT_USE_TLS")
                 ?? configuration["Mqtt:UseTls"] ?? "true");
+            var allowInvalidCert = bool.Parse(Environment.GetEnvironmentVariable("MQTT_ALLOW_INVALID_CERT")
+                ?? configuration["Mqtt:AllowInvalidCert"] ?? "false");
 
             var factory = new MqttFactory();
             _mqttClient = factory.CreateMqttClient();
@@ -51,7 +55,22 @@ public class MqttPublisherService
                 optionsBuilder = optionsBuilder.WithCredentials(username, password);
 
             if (useTls)
-                optionsBuilder = optionsBuilder.WithTlsOptions(o => o.UseTls());
+                optionsBuilder = optionsBuilder.WithTlsOptions(o =>
+                {
+                    o.UseTls(true);
+                    o.WithTargetHost(broker); // ensure SNI matches the broker's certificate
+                    o.WithSslProtocols(SslProtocols.Tls12 | SslProtocols.Tls13);
+                    o.WithCertificateValidationHandler(ctx =>
+                    {
+                        if (ctx.SslPolicyErrors == SslPolicyErrors.None)
+                            return true;
+
+                        _logger.LogWarning("MQTT TLS certificate validation failed: {Errors} (subject={Subject})",
+                            ctx.SslPolicyErrors, ctx.Certificate?.Subject);
+
+                        return allowInvalidCert;
+                    });
+                });
 
             var options = optionsBuilder.Build();
             await _mqttClient.ConnectAsync(options);
