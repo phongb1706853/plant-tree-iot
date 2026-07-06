@@ -1,0 +1,41 @@
+# Deploy stack cho máy Mac — CHỈ CẦN FILE NÀY, không cần source code.
+# Image server được pull sẵn từ GHCR; MongoDB chạy kèm trong stack.
+#
+#   docker compose -f docker-compose.deploy.yml up -d      # chạy (tự pull image)
+#   docker compose -f docker-compose.deploy.yml pull       # lấy bản mới nhất
+#   docker compose -f docker-compose.deploy.yml down        # dừng
+#
+# Truy cập API:  http://localhost:8080
+name: planttree-iot
+
+services:
+  server:
+    image: ghcr.io/phongb1706853/plant-tree-iot:latest
+    pull_policy: always
+    ports:
+      - "8080:8000" # host 8080 -> container 8000 (app nghe cổng 8000)
+    environment:
+      PORT: "8000"
+      ASPNETCORE_ENVIRONMENT: Production
+      # Kết nối tới service mongodb trong cùng network (KHÔNG dùng localhost)
+      MONGO_URL: mongodb://mongodb:27017
+      # HiveMQ Cloud — override bằng .env cùng thư mục nếu cần
+      MQTT_BROKER: ${MQTT_BROKER:-ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud}
+      MQTT_PORT: ${MQTT_PORT:-8883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-nod-iot-plant}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-Nod-iot-plant1234}
+      MQTT_USE_TLS: ${MQTT_USE_TLS:-true}
+      # Bỏ qua xác thực cert (trust store macOS thiếu CA của HiveMQ) — chỉ dùng dev
+      MQTT_ALLOW_INVALID_CERT: ${MQTT_ALLOW_INVALID_CERT:-true}
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7.0
+    volumes:
+      - mongodb_data:/data/db # dữ liệu giữ lại giữa các lần chạy
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
