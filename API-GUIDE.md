@@ -18,6 +18,34 @@ Device receives & executes command
 
 ---
 
+## 🔐 Authentication
+
+HTTP API yêu cầu xác thực: **JWT** cho người dùng, **Device Token** cho ESP32. Kênh MQTT xác thực riêng bằng credential broker HiveMQ (không đổi).
+
+### Người dùng (JWT)
+
+```
+POST /api/auth/register   { "email", "password", "displayName" }   -> { token }
+POST /api/auth/login      { "email", "password" }                  -> { token }
+```
+
+Gắn `Authorization: Bearer <token>` cho: devices, sensordata (đọc), rules, control (gửi lệnh / auto). Mỗi user chỉ thấy device mình sở hữu.
+
+### Thiết bị ESP32 (Device Token)
+
+User đăng ký device (JWT) → nhận `deviceSecret` **1 lần**. ESP32 gửi header:
+
+```
+X-Device-Id: <deviceId>
+X-Device-Secret: <deviceSecret>
+```
+
+cho: `POST /api/sensordata/upload`, `GET /api/control/commands/{id}`, `POST /api/control/commands/{id}/executed`, `POST /api/devices/{id}/heartbeat`.
+
+> Các ví dụ `curl` bên dưới cần thêm header token tương ứng. Endpoint `GET /api/control/commands/{id}` chấp nhận **cả hai** (ESP32 dùng Device Token, người dùng/MCP dùng Bearer).
+
+---
+
 ## MQTT Configuration
 
 **Broker:** HiveCloud (HiveMQ Cloud)

@@ -15,6 +15,9 @@ const char* SERVER_URL = "http://your-azure-container-url"; // e.g., "http://pla
 
 // Device configuration
 const char* DEVICE_ID = "ESP32_001";
+// Device secret: LẤY TỪ response khi user đăng ký device (POST /api/devices/register)
+// hoặc claim/rotate-secret. Server chỉ trả plaintext 1 lần — dán vào đây.
+const char* DEVICE_SECRET = "paste-device-secret-here";
 
 // Sensor pins
 #define DHT_PIN 4
@@ -46,8 +49,10 @@ void setup() {
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
 
-  // Register device on first boot
-  registerDevice();
+  // LƯU Ý: Từ khi có authentication, device KHÔNG tự đăng ký được nữa
+  // (endpoint /api/devices/register cần JWT của người dùng).
+  // User phải đăng ký device qua app/dashboard trước, lấy DEVICE_SECRET rồi nạp vào firmware.
+  // registerDevice();  // <-- không dùng nữa
 }
 
 void loop() {
@@ -119,6 +124,8 @@ void uploadSensorData() {
   HTTPClient http;
   http.begin(String(SERVER_URL) + "/api/sensordata/upload");
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Device-Id", DEVICE_ID);
+  http.addHeader("X-Device-Secret", DEVICE_SECRET);
 
   DynamicJsonDocument doc(512);
   doc["deviceId"] = DEVICE_ID;
@@ -150,6 +157,8 @@ void sendHeartbeat() {
 
   HTTPClient http;
   http.begin(String(SERVER_URL) + "/api/devices/" + String(DEVICE_ID) + "/heartbeat");
+  http.addHeader("X-Device-Id", DEVICE_ID);
+  http.addHeader("X-Device-Secret", DEVICE_SECRET);
 
   Serial.println("Sending heartbeat...");
   int httpResponseCode = http.POST("");
@@ -168,6 +177,8 @@ void checkPendingCommands() {
 
   HTTPClient http;
   http.begin(String(SERVER_URL) + "/api/control/commands/" + String(DEVICE_ID));
+  http.addHeader("X-Device-Id", DEVICE_ID);
+  http.addHeader("X-Device-Secret", DEVICE_SECRET);
 
   Serial.println("Checking for pending commands...");
   int httpResponseCode = http.GET();
@@ -239,6 +250,8 @@ void markCommandExecuted(String commandId) {
 
   HTTPClient http;
   http.begin(String(SERVER_URL) + "/api/control/commands/" + commandId + "/executed");
+  http.addHeader("X-Device-Id", DEVICE_ID);
+  http.addHeader("X-Device-Secret", DEVICE_SECRET);
 
   int httpResponseCode = http.POST("");
 

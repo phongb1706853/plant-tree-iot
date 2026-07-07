@@ -70,6 +70,15 @@ public class Device
     [BsonElement("plantType")]
     public string? PlantType { get; set; }
 
+    /// <summary>Id của user sở hữu thiết bị (null = thiết bị cũ chưa được claim).</summary>
+    [BsonElement("ownerId")]
+    public string? OwnerId { get; set; }
+
+    /// <summary>BCrypt hash của device secret (dùng cho xác thực ESP32). Không bao giờ lưu plaintext.</summary>
+    [BsonElement("deviceSecretHash")]
+    [System.Text.Json.Serialization.JsonIgnore] // không bao giờ trả hash ra API response
+    public string? DeviceSecretHash { get; set; }
+
     [BsonElement("isActive")]
     public bool IsActive { get; set; } = true;
 

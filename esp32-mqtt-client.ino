@@ -3,6 +3,10 @@
 //   - PubSubClient by Nick O'Leary
 //   - ArduinoJson by Benoit Blanchon
 //   - DHT sensor library by Adafruit
+//
+// AUTH: Client này giao tiếp hoàn toàn qua MQTT, xác thực bằng credential của
+// broker HiveMQ (MQTT_USERNAME/MQTT_PASSWORD bên dưới). Không dùng HTTP API nên
+// KHÔNG cần device token (X-Device-Id/X-Device-Secret) như esp32-azure-client.ino.
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>

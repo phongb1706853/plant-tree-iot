@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PlantTreeIoTServer.Models;
 using PlantTreeIoTServer.Services;
@@ -6,6 +8,7 @@ namespace PlantTreeIoTServer.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize] // rule là tài nguyên người dùng — luôn cần JWT + kiểm tra owner của device
 public class RulesController : ControllerBase
 {
     private readonly MongoDbService _mongoDbService;
@@ -17,6 +20,12 @@ public class RulesController : ControllerBase
         _logger = logger;
     }
 
+    private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+    /// <summary>Kiểm tra user hiện tại có sở hữu device không.</summary>
+    private async Task<bool> OwnsDeviceAsync(string deviceId)
+        => await _mongoDbService.GetOwnedDeviceAsync(deviceId, UserId) != null;
+
     /// <summary>
     /// Lay danh sach rule do am cua mot device
     /// </summary>
@@ -25,6 +34,9 @@ public class RulesController : ControllerBase
     {
         try
         {
+            if (!await OwnsDeviceAsync(deviceId))
+                return NotFound($"Device {deviceId} not found");
+
             var rules = await _mongoDbService.GetMoistureRulesAsync(deviceId);
             return Ok(rules);
         }
@@ -45,6 +57,9 @@ public class RulesController : ControllerBase
         {
             if (string.IsNullOrEmpty(request.DeviceId))
                 return BadRequest("DeviceId is required");
+
+            if (!await OwnsDeviceAsync(request.DeviceId))
+                return NotFound($"Device {request.DeviceId} not found");
 
             if (request.MinMoisture >= request.MaxMoisture)
                 return BadRequest("MinMoisture must be less than MaxMoisture");
@@ -83,6 +98,10 @@ public class RulesController : ControllerBase
     {
         try
         {
+            var existing = await _mongoDbService.GetMoistureRuleAsync(ruleId);
+            if (existing == null || !await OwnsDeviceAsync(existing.DeviceId))
+                return NotFound($"Rule {ruleId} not found");
+
             if (request.MinMoisture >= request.MaxMoisture)
                 return BadRequest("MinMoisture must be less than MaxMoisture");
 
@@ -118,6 +137,10 @@ public class RulesController : ControllerBase
     {
         try
         {
+            var existing = await _mongoDbService.GetMoistureRuleAsync(ruleId);
+            if (existing == null || !await OwnsDeviceAsync(existing.DeviceId))
+                return NotFound($"Rule {ruleId} not found");
+
             var success = await _mongoDbService.DeleteMoistureRuleAsync(ruleId);
             if (!success)
                 return NotFound($"Rule {ruleId} not found");
@@ -137,6 +160,9 @@ public class RulesController : ControllerBase
     {
         try
         {
+            if (!await OwnsDeviceAsync(deviceId))
+                return NotFound($"Device {deviceId} not found");
+
             var rules = await _mongoDbService.GetLightRulesAsync(deviceId);
             return Ok(rules);
         }
@@ -154,6 +180,9 @@ public class RulesController : ControllerBase
         {
             if (string.IsNullOrEmpty(request.DeviceId))
                 return BadRequest("DeviceId is required");
+
+            if (!await OwnsDeviceAsync(request.DeviceId))
+                return NotFound($"Device {request.DeviceId} not found");
 
             if (request.MinLight >= request.MaxLight)
                 return BadRequest("MinLight must be less than MaxLight");
@@ -187,6 +216,10 @@ public class RulesController : ControllerBase
     {
         try
         {
+            var existing = await _mongoDbService.GetLightRuleAsync(ruleId);
+            if (existing == null || !await OwnsDeviceAsync(existing.DeviceId))
+                return NotFound($"Rule {ruleId} not found");
+
             if (request.MinLight >= request.MaxLight)
                 return BadRequest("MinLight must be less than MaxLight");
 
@@ -216,6 +249,10 @@ public class RulesController : ControllerBase
     {
         try
         {
+            var existing = await _mongoDbService.GetLightRuleAsync(ruleId);
+            if (existing == null || !await OwnsDeviceAsync(existing.DeviceId))
+                return NotFound($"Rule {ruleId} not found");
+
             var success = await _mongoDbService.DeleteLightRuleAsync(ruleId);
             if (!success) return NotFound($"Rule {ruleId} not found");
 

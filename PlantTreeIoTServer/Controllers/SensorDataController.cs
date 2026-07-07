@@ -1,5 +1,8 @@
+using System.Security.Claims;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PlantTreeIoTServer.Auth;
 using PlantTreeIoTServer.Models;
 using PlantTreeIoTServer.Services;
 
@@ -7,6 +10,7 @@ namespace PlantTreeIoTServer.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize] // mặc định = Bearer (JWT); action ESP32 override sang DeviceKey
 public class SensorDataController : ControllerBase
 {
     private readonly MongoDbService _mongoDbService;
@@ -18,14 +22,22 @@ public class SensorDataController : ControllerBase
         _logger = logger;
     }
 
+    private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
     /// <summary>
     /// ESP32 gui du lieu cam bien len server. Server tu dong kiem tra rule do am va tra ve lenh dieu khien.
     /// </summary>
+    [Authorize(AuthenticationSchemes = DeviceKeyAuthenticationHandler.SchemeName)]
     [HttpPost("upload")]
     public async Task<IActionResult> UploadSensorData([FromBody] SensorDataUploadRequest request)
     {
         try
         {
+            // Thiết bị chỉ được upload cho chính nó — ép deviceId theo token, bỏ qua body
+            var authDeviceId = User.FindFirstValue("deviceId");
+            if (!string.IsNullOrEmpty(authDeviceId))
+                request.DeviceId = authDeviceId;
+
             if (string.IsNullOrEmpty(request.DeviceId))
             {
                 return BadRequest("DeviceId is required");
@@ -235,6 +247,9 @@ public class SensorDataController : ControllerBase
     {
         try
         {
+            if (await _mongoDbService.GetOwnedDeviceAsync(deviceId, UserId) == null)
+                return NotFound($"Device {deviceId} not found");
+
             var data = await _mongoDbService.GetLatestSensorDataAsync(deviceId);
             if (data == null)
             {
@@ -258,6 +273,9 @@ public class SensorDataController : ControllerBase
     {
         try
         {
+            if (await _mongoDbService.GetOwnedDeviceAsync(deviceId, UserId) == null)
+                return NotFound($"Device {deviceId} not found");
+
             var data = await _mongoDbService.GetSensorDataAsync(deviceId, limit);
             return Ok(data);
         }
@@ -279,6 +297,9 @@ public class SensorDataController : ControllerBase
     {
         try
         {
+            if (await _mongoDbService.GetOwnedDeviceAsync(deviceId, UserId) == null)
+                return NotFound($"Device {deviceId} not found");
+
             // Sử dụng service method thay vì truy cập trực tiếp database
             var allData = await _mongoDbService.GetSensorDataAsync(deviceId, 1000); // Lấy nhiều dữ liệu hơn
             var filteredData = allData

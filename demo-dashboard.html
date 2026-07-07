@@ -1225,6 +1225,9 @@ curl -X POST $API/api/control/commands \
   <div class="alert info">
     Server phải đang chạy (<code>dotnet run</code>, mặc định <code>http://localhost:8000</code>). Nếu mở file HTML qua <code>file://</code>, request vẫn chạy được vì server đã bật CORS <code>AllowAnyOrigin</code>.
   </div>
+  <div class="alert">
+    <strong>Cần đăng nhập trước.</strong> Từ v1.1 API yêu cầu xác thực: <b>Đăng ký/Đăng nhập</b> để lấy JWT (dùng cho hầu hết các nút). Nút <b>Upload sensor</b> &amp; <b>Heartbeat</b> giả lập ESP32 nên cần <b>Device Secret</b> — lấy từ response khi Execute <code>POST /api/devices/register</code> (tự điền vào ô Device Secret).
+  </div>
 
   <div class="conn-bar">
     <div class="field">
@@ -1240,6 +1243,27 @@ curl -X POST $API/api/control/commands \
       <input id="conn-device" style="width:180px" placeholder="ESP32S3_Zone1">
     </div>
     <div class="conn-status">Target: <b id="conn-preview">—</b></div>
+  </div>
+
+  <div class="conn-bar">
+    <div class="field">
+      <label for="conn-email">Email</label>
+      <input id="conn-email" style="width:200px" placeholder="you@example.com">
+    </div>
+    <div class="field">
+      <label for="conn-password">Password</label>
+      <input id="conn-password" type="password" style="width:150px" placeholder="••••••">
+    </div>
+    <button class="run-btn" id="btn-login">Đăng nhập</button>
+    <button class="run-btn" id="btn-register" style="background:#334155;color:#e2e8f0">Đăng ký</button>
+    <div class="conn-status">Auth: <b id="auth-status">chưa đăng nhập</b></div>
+  </div>
+
+  <div class="conn-bar">
+    <div class="field" style="flex:1">
+      <label for="conn-device-secret">Device Secret <span style="text-transform:none">(giả lập ESP32 — dùng cho Upload sensor &amp; Heartbeat)</span></label>
+      <input id="conn-device-secret" style="width:100%" placeholder="dán deviceSecret nhận khi đăng ký device (tự điền sau khi Execute Register)">
+    </div>
   </div>
 
   <h3>Smoke test nhanh</h3>
@@ -2336,6 +2360,10 @@ Liên hệ vấn đề kỹ thuật:
     const hostEl = document.getElementById('conn-host');
     const portEl = document.getElementById('conn-port');
     const devEl  = document.getElementById('conn-device');
+    const emailEl = document.getElementById('conn-email');
+    const pwEl = document.getElementById('conn-password');
+    const secretEl = document.getElementById('conn-device-secret');
+    const authStatusEl = document.getElementById('auth-status');
     if (!hostEl) return; // tester not present
 
     const defaults = { host: 'localhost', port: '8000', device: 'ESP32S3_Zone1' };
@@ -2343,15 +2371,22 @@ Liên hệ vấn đề kỹ thuật:
     hostEl.value = saved.host || defaults.host;
     portEl.value = saved.port || defaults.port;
     devEl.value  = saved.device || defaults.device;
+    if (secretEl) secretEl.value = saved.deviceSecret || '';
+    let authToken = saved.token || '';
 
     function cfg() {
       return {
         base: `http://${(hostEl.value.trim() || 'localhost')}:${(portEl.value.trim() || '8000')}`,
-        device: devEl.value.trim()
+        device: devEl.value.trim(),
+        deviceSecret: secretEl ? secretEl.value.trim() : '',
+        token: authToken
       };
     }
     function persist() {
-      localStorage.setItem(LS, JSON.stringify({ host: hostEl.value.trim(), port: portEl.value.trim(), device: devEl.value.trim() }));
+      localStorage.setItem(LS, JSON.stringify({
+        host: hostEl.value.trim(), port: portEl.value.trim(), device: devEl.value.trim(),
+        deviceSecret: secretEl ? secretEl.value.trim() : '', token: authToken
+      }));
       refreshEcho();
     }
     function refreshEcho() {
@@ -2361,12 +2396,44 @@ Liên hệ vấn đề kỹ thuật:
       if (prev) prev.textContent = txt;
       document.querySelectorAll('.conn-echo').forEach(el => { el.textContent = txt; });
     }
-    [hostEl, portEl, devEl].forEach(el => el.addEventListener('input', persist));
+    function setAuthStatus() {
+      if (!authStatusEl) return;
+      authStatusEl.textContent = authToken ? '✓ đã đăng nhập' : 'chưa đăng nhập';
+      authStatusEl.style.color = authToken ? '#4ade80' : '#94a3b8';
+    }
+    // Gắn header theo loại request: 'user' -> Bearer JWT; 'device' -> X-Device-* (giả lập ESP32)
+    function authHeaders(auth) {
+      const h = { 'Content-Type': 'application/json' };
+      if (auth === 'device') {
+        h['X-Device-Id'] = cfg().device;
+        h['X-Device-Secret'] = cfg().deviceSecret;
+      } else if (authToken) {
+        h['Authorization'] = 'Bearer ' + authToken;
+      }
+      return h;
+    }
+    async function doAuth(path) {
+      if (!emailEl.value.trim() || !pwEl.value) {
+        authStatusEl.textContent = '✗ nhập email + password'; authStatusEl.style.color = '#fca5a5'; return;
+      }
+      try {
+        const res = await fetch(cfg().base + path, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailEl.value.trim(), password: pwEl.value, displayName: emailEl.value.trim() })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.token) { authToken = data.token; persist(); setAuthStatus(); }
+        else { authStatusEl.textContent = '✗ ' + (data.message || (typeof data === 'string' ? data : res.status)); authStatusEl.style.color = '#fca5a5'; }
+      } catch (e) { authStatusEl.textContent = '✗ ' + e.message; authStatusEl.style.color = '#fca5a5'; }
+    }
+    [hostEl, portEl, devEl, secretEl].forEach(el => el && el.addEventListener('input', persist));
     document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', refreshEcho));
     refreshEcho();
+    setAuthStatus();
 
     // Core request runner. resultId is the .try-result container.
-    async function run(resultId, method, path, body) {
+    // auth: 'user' (Bearer JWT, mặc định) | 'device' (X-Device-* giả lập ESP32)
+    async function run(resultId, method, path, body, auth = 'user') {
       const box = document.getElementById(resultId);
       const pill = box.querySelector('.status-pill');
       const ms = box.querySelector('.ms');
@@ -2379,7 +2446,7 @@ Liên hệ vấn đề kỹ thuật:
 
       const started = performance.now();
       try {
-        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        const opts = { method, headers: authHeaders(auth) };
         if (body !== undefined) opts.body = JSON.stringify(body);
         const res = await fetch(cfg().base + path, opts);
         const dur = Math.round(performance.now() - started);
@@ -2416,19 +2483,28 @@ Liên hệ vấn đề kỹ thuật:
     }
     const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
 
+    // --- Auth ---
+    on('btn-login', () => doAuth('/api/auth/login'));
+    on('btn-register', () => doAuth('/api/auth/register'));
+
     // --- Config ---
     on('run-ping', () => run('r-ping', 'GET', '/api/devices'));
 
     // --- Devices ---
-    on('run-d-reg', () => {
+    on('run-d-reg', async () => {
       const id = val('d-reg-id') || cfg().device;
-      run('r-d-reg', 'POST', '/api/devices/register', {
+      await run('r-d-reg', 'POST', '/api/devices/register', {
         deviceId: id, name: val('d-reg-name'), plantType: val('d-reg-plant'), location: val('d-reg-loc')
       });
+      // Device secret chỉ trả 1 lần — tự điền vào ô Device Secret để test upload/heartbeat ngay
+      try {
+        const secret = JSON.parse(document.querySelector('#r-d-reg pre').textContent).deviceSecret;
+        if (secret && secretEl) { secretEl.value = secret; persist(); }
+      } catch {}
     });
     on('run-d-list', () => run('r-d-list', 'GET', '/api/devices'));
     on('run-d-get', () => { const d = requireDevice('r-d-get'); if (d) run('r-d-get', 'GET', `/api/devices/${encodeURIComponent(d)}`); });
-    on('run-d-hb', () => { const d = requireDevice('r-d-hb'); if (d) run('r-d-hb', 'POST', `/api/devices/${encodeURIComponent(d)}/heartbeat`); });
+    on('run-d-hb', () => { const d = requireDevice('r-d-hb'); if (d) run('r-d-hb', 'POST', `/api/devices/${encodeURIComponent(d)}/heartbeat`, undefined, 'device'); });
 
     // --- Sensors ---
     on('run-s-upload', () => {
@@ -2436,7 +2512,7 @@ Liên hệ vấn đề kỹ thuật:
       const body = { device_id: d };
       [['s-temp','temperature_c'],['s-hum','humidity_percent'],['s-light','light_lux'],['s-moist','soil_moisture_percent'],['s-raw','soil_moisture_raw']]
         .forEach(([id, key]) => { const v = num(id); if (v !== null) body[key] = v; });
-      run('r-s-upload', 'POST', '/api/sensordata/upload', body);
+      run('r-s-upload', 'POST', '/api/sensordata/upload', body, 'device');
     });
     on('run-s-latest', () => { const d = requireDevice('r-s-latest'); if (d) run('r-s-latest', 'GET', `/api/sensordata/latest/${encodeURIComponent(d)}`); });
     on('run-s-history', () => { const d = requireDevice('r-s-history'); if (d) run('r-s-history', 'GET', `/api/sensordata/history/${encodeURIComponent(d)}?limit=${num('s-history-limit') || 50}`); });
@@ -2512,8 +2588,8 @@ Liên hệ vấn đề kỹ thuật:
       el.style.cssText = 'margin:8px 0;font-size:13px;color:' + (ok ? '#34d399' : '#f87171');
     }
 
-    async function apiJson(method, path, body) {
-      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    async function apiJson(method, path, body, auth = 'user') {
+      const opts = { method, headers: authHeaders(auth) };
       if (body !== undefined) opts.body = JSON.stringify(body);
       const res = await fetch(cfg().base + path, opts);
       let data = null; try { data = await res.json(); } catch {}

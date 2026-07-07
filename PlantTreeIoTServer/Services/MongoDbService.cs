@@ -18,12 +18,33 @@ public class MongoDbService
 
         var client = new MongoClient(connectionString);
         _database = client.GetDatabase(databaseName);
+
+        // Unique index cho email (best-effort — không crash startup nếu Mongo tạm chưa sẵn sàng;
+        // tầng ứng dụng vẫn kiểm tra trùng email khi đăng ký)
+        try
+        {
+            Users.Indexes.CreateOne(new CreateIndexModel<User>(
+                Builders<User>.IndexKeys.Ascending(u => u.Email),
+                new CreateIndexOptions { Unique = true }));
+        }
+        catch { /* ignore */ }
     }
 
     // Collections
     public IMongoCollection<SensorData> SensorData => _database.GetCollection<SensorData>("SensorData");
     public IMongoCollection<Device> Devices => _database.GetCollection<Device>("Devices");
     public IMongoCollection<ControlCommand> ControlCommands => _database.GetCollection<ControlCommand>("ControlCommands");
+    public IMongoCollection<User> Users => _database.GetCollection<User>("Users");
+
+    // User Operations
+    public async Task<User?> GetUserByEmailAsync(string email)
+        => await Users.Find(u => u.Email == email.ToLowerInvariant()).FirstOrDefaultAsync();
+
+    public async Task<User?> GetUserByIdAsync(string id)
+        => await Users.Find(u => u.Id == id).FirstOrDefaultAsync();
+
+    public async Task CreateUserAsync(User user)
+        => await Users.InsertOneAsync(user);
 
     // Sensor Data Operations
     public async Task<List<SensorData>> GetSensorDataAsync(string deviceId, int limit = 100)
@@ -62,6 +83,26 @@ public class MongoDbService
     public async Task CreateDeviceAsync(Device device)
     {
         await Devices.InsertOneAsync(device);
+    }
+
+    // Device ownership + secret
+    public async Task<List<Device>> GetDevicesByOwnerAsync(string ownerId)
+        => await Devices.Find(d => d.OwnerId == ownerId).ToListAsync();
+
+    /// <summary>Trả về device nếu user là chủ sở hữu, ngược lại null (chặn truy cập chéo).</summary>
+    public async Task<Device?> GetOwnedDeviceAsync(string deviceId, string ownerId)
+        => await Devices.Find(d => d.DeviceId == deviceId && d.OwnerId == ownerId).FirstOrDefaultAsync();
+
+    public async Task SetDeviceSecretAsync(string deviceId, string secretHash)
+    {
+        var update = Builders<Device>.Update.Set(d => d.DeviceSecretHash, secretHash);
+        await Devices.UpdateOneAsync(d => d.DeviceId == deviceId, update);
+    }
+
+    public async Task SetDeviceOwnerAsync(string deviceId, string ownerId)
+    {
+        var update = Builders<Device>.Update.Set(d => d.OwnerId, ownerId);
+        await Devices.UpdateOneAsync(d => d.DeviceId == deviceId, update);
     }
 
     public async Task UpdateDeviceLastSeenAsync(string deviceId)
@@ -126,6 +167,9 @@ public class MongoDbService
     public async Task<List<LightRule>> GetLightRulesAsync(string deviceId)
         => await LightRules.Find(r => r.DeviceId == deviceId).ToListAsync();
 
+    public async Task<LightRule?> GetLightRuleAsync(string ruleId)
+        => await LightRules.Find(r => r.Id == ruleId).FirstOrDefaultAsync();
+
     public async Task InsertLightRuleAsync(LightRule rule)
         => await LightRules.InsertOneAsync(rule);
 
@@ -161,6 +205,9 @@ public class MongoDbService
             .SortBy(cmd => cmd.CreatedAt)
             .ToListAsync();
     }
+
+    public async Task<ControlCommand?> GetControlCommandAsync(string commandId)
+        => await ControlCommands.Find(cmd => cmd.Id == commandId).FirstOrDefaultAsync();
 
     public async Task InsertControlCommandAsync(ControlCommand command)
     {

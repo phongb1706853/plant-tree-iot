@@ -1,4 +1,8 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PlantTreeIoTServer.Auth;
 using PlantTreeIoTServer.Models;
 using PlantTreeIoTServer.Services;
 
@@ -6,6 +10,7 @@ namespace PlantTreeIoTServer.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize] // mặc định = Bearer (JWT); action ESP32 override sang DeviceKey
 public class ControlController : ControllerBase
 {
     private readonly MongoDbService _mongoDbService;
@@ -19,14 +24,34 @@ public class ControlController : ControllerBase
         _logger = logger;
     }
 
+    private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
     /// <summary>
     /// ESP32 lấy lệnh điều khiển đang chờ xử lý
     /// </summary>
+    // Xem lệnh đang chờ: ESP32 poll (DeviceKey) HOẶC người dùng/MCP xem (Bearer + owner)
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + DeviceKeyAuthenticationHandler.SchemeName)]
     [HttpGet("commands/{deviceId}")]
     public async Task<IActionResult> GetPendingCommands(string deviceId)
     {
         try
         {
+            var deviceClaim = User.FindFirstValue("deviceId");
+            if (deviceClaim != null)
+            {
+                // Đăng nhập kiểu thiết bị — chỉ được poll lệnh của chính nó
+                if (deviceClaim != deviceId)
+                    return Forbid();
+            }
+            else
+            {
+                // Đăng nhập kiểu người dùng — phải là owner của device
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId) ||
+                    await _mongoDbService.GetOwnedDeviceAsync(deviceId, userId) == null)
+                    return NotFound($"Device {deviceId} not found");
+            }
+
             var commands = await _mongoDbService.GetPendingCommandsAsync(deviceId);
             return Ok(commands);
         }
@@ -49,6 +74,9 @@ public class ControlController : ControllerBase
             {
                 return BadRequest("DeviceId and Command are required");
             }
+
+            if (await _mongoDbService.GetOwnedDeviceAsync(request.DeviceId, UserId) == null)
+                return NotFound($"Device {request.DeviceId} not found");
 
             var command = new ControlCommand
             {
@@ -78,11 +106,20 @@ public class ControlController : ControllerBase
     /// <summary>
     /// ESP32 báo cáo lệnh đã được thực hiện
     /// </summary>
+    [Authorize(AuthenticationSchemes = DeviceKeyAuthenticationHandler.SchemeName)]
     [HttpPost("commands/{commandId}/executed")]
     public async Task<IActionResult> MarkCommandExecuted(string commandId)
     {
         try
         {
+            // Thiết bị chỉ được đánh dấu lệnh của chính nó
+            var authDeviceId = User.FindFirstValue("deviceId");
+            var command = await _mongoDbService.GetControlCommandAsync(commandId);
+            if (command == null)
+                return NotFound($"Command {commandId} not found");
+            if (command.DeviceId != authDeviceId)
+                return Forbid();
+
             await _mongoDbService.MarkCommandExecutedAsync(commandId);
 
             _logger.LogInformation("Command {CommandId} marked as executed", commandId);
@@ -104,6 +141,9 @@ public class ControlController : ControllerBase
     {
         try
         {
+            if (await _mongoDbService.GetOwnedDeviceAsync(deviceId, UserId) == null)
+                return NotFound($"Device {deviceId} not found");
+
             // Lấy dữ liệu cảm biến mới nhất
             var latestData = await _mongoDbService.GetLatestSensorDataAsync(deviceId);
             if (latestData?.SoilMoisture == null)
@@ -166,6 +206,9 @@ public class ControlController : ControllerBase
     {
         try
         {
+            if (await _mongoDbService.GetOwnedDeviceAsync(deviceId, UserId) == null)
+                return NotFound($"Device {deviceId} not found");
+
             var latestData = await _mongoDbService.GetLatestSensorDataAsync(deviceId);
             if (latestData?.LightLevel == null)
             {

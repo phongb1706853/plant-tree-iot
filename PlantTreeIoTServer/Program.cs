@@ -1,3 +1,8 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using PlantTreeIoTServer.Auth;
 using PlantTreeIoTServer.Services;
 
 // Support Railway's dynamic PORT environment variable
@@ -14,6 +19,46 @@ builder.Services.AddSingleton<MongoDbService>();
 // Register MQTT services
 builder.Services.AddSingleton<MqttPublisherService>();
 builder.Services.AddHostedService<PlantTreeIoTServer.Services.MqttBackgroundService>();
+
+// ===== Authentication =====
+// - JWT Bearer: cho người dùng (app / dashboard / MCP service account)
+// - DeviceKey:  cho ESP32 (header X-Device-Id + X-Device-Secret)
+
+// Bí mật ký JWT: Production BẮT BUỘC đặt biến môi trường JWT_SECRET (chuỗi ngẫu nhiên >= 32 ký tự).
+// KHÔNG commit secret thật vào appsettings. Local (Development) dùng fallback trong code để chạy ngay.
+var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET")
+    ?? builder.Configuration["Jwt:Secret"];
+
+if (string.IsNullOrWhiteSpace(jwtSecret) && builder.Environment.IsDevelopment())
+{
+    jwtSecret = "dev-only-insecure-jwt-key-change-me-min-32-chars-0123456789";
+}
+
+if (string.IsNullOrWhiteSpace(jwtSecret) || jwtSecret.Length < 32)
+{
+    throw new InvalidOperationException(
+        "JWT secret chưa cấu hình hoặc < 32 ký tự. Đặt biến môi trường JWT_SECRET " +
+        "bằng chuỗi ngẫu nhiên mạnh cho Production.");
+}
+
+builder.Services.AddSingleton(new JwtService(jwtSecret, builder.Configuration));
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        };
+    })
+    .AddScheme<AuthenticationSchemeOptions, DeviceKeyAuthenticationHandler>(
+        DeviceKeyAuthenticationHandler.SchemeName, null);
 
 // Configure CORS for ESP32 communication
 builder.Services.AddCors(options =>
@@ -50,6 +95,8 @@ if (app.Environment.IsDevelopment())
 // Use CORS
 app.UseCors("AllowESP32");
 
+// UseAuthentication PHẢI đứng trước UseAuthorization
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

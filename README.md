@@ -351,6 +351,46 @@ curl -X POST https://plant-tree-iot-production.up.railway.app/api/control/comman
 
 ---
 
+## 🔐 Authentication
+
+Từ v1.1, API yêu cầu xác thực. Có **2 loại**:
+
+### 1. Người dùng (app / dashboard / MCP) — JWT
+
+Đăng ký / đăng nhập để lấy token, rồi gắn `Authorization: Bearer <token>` cho mọi request.
+
+```bash
+# Đăng ký
+curl -X POST $API/api/auth/register -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"matkhau123","displayName":"Ten"}'
+
+# Đăng nhập -> nhận { "token": "eyJ..." }
+curl -X POST $API/api/auth/login -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"matkhau123"}'
+
+# Gọi API kèm token
+curl $API/api/devices -H "Authorization: Bearer <token>"
+```
+
+Mỗi user **chỉ thấy / điều khiển device mình sở hữu**.
+
+### 2. Thiết bị ESP32 — Device Token
+
+Khi user đăng ký device (`POST /api/devices/register` với JWT), server trả về `deviceSecret` **1 lần duy nhất**. Nạp secret vào firmware; ESP32 gửi 2 header:
+
+```
+X-Device-Id: <deviceId>
+X-Device-Secret: <deviceSecret>
+```
+
+cho các endpoint thiết bị: `sensordata/upload`, `control/commands/{id}` (poll), `control/commands/{id}/executed`, `devices/{id}/heartbeat`.
+
+Device cũ (tạo trước khi có auth) → user đăng nhập rồi gọi `POST /api/devices/{id}/claim` để nhận sở hữu + lấy secret mới.
+
+> **Production:** đặt biến môi trường `JWT_SECRET` (chuỗi ngẫu nhiên ≥ 32 ký tự). Kênh MQTT xác thực riêng bằng credential broker HiveMQ (không đổi).
+
+---
+
 ## API Documentation
 
 ### 1. Quản lý thiết bị (Devices)
