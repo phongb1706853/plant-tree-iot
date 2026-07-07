@@ -17,6 +17,10 @@ services:
     environment:
       PORT: "8000"
       ASPNETCORE_ENVIRONMENT: Production
+      # JWT: BẮT BUỘC ở Production. Đặt trong .env cùng thư mục:
+      #   JWT_SECRET=$(openssl rand -base64 48)
+      # Thiếu -> compose báo lỗi ngay (fail-closed), server cũng không khởi động.
+      JWT_SECRET: ${JWT_SECRET:?Can dat JWT_SECRET trong .env — sinh bang: openssl rand -base64 48}
       # Kết nối tới service mongodb trong cùng network (KHÔNG dùng localhost)
       MONGO_URL: mongodb://mongodb:27017
       # HiveMQ Cloud — override bằng .env cùng thư mục nếu cần
