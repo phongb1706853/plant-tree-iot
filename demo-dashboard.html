@@ -1232,7 +1232,7 @@ curl -X POST $API/api/control/commands \
   <div class="conn-bar">
     <div class="field">
       <label for="conn-host">Host</label>
-      <input id="conn-host" style="width:200px" placeholder="localhost">
+      <input id="conn-host" style="width:200px" placeholder="localhost hoặc https://...trycloudflare.com">
     </div>
     <div class="field">
       <label for="conn-port">Port</label>
@@ -2375,8 +2375,15 @@ Liên hệ vấn đề kỹ thuật:
     let authToken = saved.token || '';
 
     function cfg() {
+      const host = hostEl.value.trim() || 'localhost';
+      const port = portEl.value.trim();
+      // Nếu Host đã là URL đầy đủ (vd https://xxx.trycloudflare.com) -> dùng nguyên, BỎ QUA Port.
+      // Ngược lại (chỉ host/IP như localhost) -> ghép http://host:port như cũ.
+      const base = /^https?:\/\//i.test(host)
+        ? host.replace(/\/+$/, '')
+        : `http://${host}:${port || '8000'}`;
       return {
-        base: `http://${(hostEl.value.trim() || 'localhost')}:${(portEl.value.trim() || '8000')}`,
+        base,
         device: devEl.value.trim(),
         deviceSecret: secretEl ? secretEl.value.trim() : '',
         token: authToken
