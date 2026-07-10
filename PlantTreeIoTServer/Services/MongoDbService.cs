@@ -105,6 +105,17 @@ public class MongoDbService
         await Devices.UpdateOneAsync(d => d.DeviceId == deviceId, update);
     }
 
+    // Xoá device kèm toàn bộ dữ liệu liên quan; trả về số bản ghi đã xoá mỗi loại.
+    public async Task<(long SensorData, long MoistureRules, long LightRules, long Commands)> DeleteDeviceAndDataAsync(string deviceId)
+    {
+        await Devices.DeleteOneAsync(d => d.DeviceId == deviceId);
+        var s = await SensorData.DeleteManyAsync(x => x.DeviceId == deviceId);
+        var m = await MoistureRules.DeleteManyAsync(x => x.DeviceId == deviceId);
+        var l = await LightRules.DeleteManyAsync(x => x.DeviceId == deviceId);
+        var c = await ControlCommands.DeleteManyAsync(x => x.DeviceId == deviceId);
+        return (s.DeletedCount, m.DeletedCount, l.DeletedCount, c.DeletedCount);
+    }
+
     public async Task UpdateDeviceLastSeenAsync(string deviceId)
     {
         var update = Builders<Device>.Update

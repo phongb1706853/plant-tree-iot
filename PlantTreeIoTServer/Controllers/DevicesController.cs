@@ -169,6 +169,37 @@ public class DevicesController : ControllerBase
     }
 
     /// <summary>
+    /// Xoá device (kèm sensor data, rules, commands liên quan). Chỉ owner mới xoá được.
+    /// </summary>
+    [HttpDelete("{deviceId}")]
+    public async Task<IActionResult> DeleteDevice(string deviceId)
+    {
+        try
+        {
+            var device = await _mongoDbService.GetOwnedDeviceAsync(deviceId, UserId);
+            if (device == null) return NotFound($"Device {deviceId} not found");
+
+            var deleted = await _mongoDbService.DeleteDeviceAndDataAsync(deviceId);
+
+            _logger.LogInformation("Device {DeviceId} deleted by user {UserId}", deviceId, UserId);
+            return Ok(new
+            {
+                message = $"Device {deviceId} deleted",
+                deviceId,
+                deletedSensorData = deleted.SensorData,
+                deletedMoistureRules = deleted.MoistureRules,
+                deletedLightRules = deleted.LightRules,
+                deletedCommands = deleted.Commands
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting device {DeviceId}", deviceId);
+            return StatusCode(500, "Internal server error");
+        }
+    }
+
+    /// <summary>
     /// ESP32 heartbeat - cập nhật thời gian cuối cùng online. Xác thực bằng DeviceKey.
     /// </summary>
     [Authorize(AuthenticationSchemes = DeviceKeyAuthenticationHandler.SchemeName)]
