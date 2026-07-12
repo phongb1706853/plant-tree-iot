@@ -1316,6 +1316,15 @@ curl -X POST $API/api/control/commands \
       <div class="try-result" id="r-d-hb"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
   </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge delete">DELETE</span><span class="path">/api/devices/{deviceId}</span><span class="title">Xoá device (dùng Device ID)</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#f87171;margin-bottom:10px">⚠️ Xoá device đang chọn ở tab Kết nối — kèm sensor/rule/command của nó. Không hoàn tác được. Chỉ chủ sở hữu xoá được.</p>
+      <button class="run-btn" id="run-d-del" style="background:#7f1d1d">Xoá device</button>
+      <div class="try-result" id="r-d-del"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
 </section>
 
 <section id="try-sensors">
@@ -2512,6 +2521,11 @@ Liên hệ vấn đề kỹ thuật:
     on('run-d-list', () => run('r-d-list', 'GET', '/api/devices'));
     on('run-d-get', () => { const d = requireDevice('r-d-get'); if (d) run('r-d-get', 'GET', `/api/devices/${encodeURIComponent(d)}`); });
     on('run-d-hb', () => { const d = requireDevice('r-d-hb'); if (d) run('r-d-hb', 'POST', `/api/devices/${encodeURIComponent(d)}/heartbeat`, undefined, 'device'); });
+    on('run-d-del', () => {
+      const d = requireDevice('r-d-del'); if (!d) return;
+      if (!confirm(`Xoá device "${d}" và toàn bộ dữ liệu liên quan? Không thể hoàn tác.`)) return;
+      run('r-d-del', 'DELETE', `/api/devices/${encodeURIComponent(d)}`);
+    });
 
     // --- Sensors ---
     on('run-s-upload', () => {
