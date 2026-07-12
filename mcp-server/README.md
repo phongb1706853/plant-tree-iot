@@ -50,32 +50,18 @@ pytest tests/ -v
 
 Expected: **13 passed**
 
-### Bước 6 — Cập nhật config MQTT (bỏ HiveMQ, dùng Mosquitto local)
-
-Mở file `PlantTreeIoTServer/appsettings.json`, đổi MQTT settings:
-
-```json
-{
-  "Mqtt": {
-    "Broker": "192.168.88.126",
-    "Port": 1883,
-    "UseTls": false,
-    "Username": "",
-    "Password": ""
-  }
-}
-```
-
-### Bước 7 — Chạy .NET REST API
+### Bước 6 — Chạy .NET REST API
 
 ```bash
 cd plant-tree-iot/PlantTreeIoTServer
 dotnet run
-# API chạy tại http://localhost:5000
-# Verify: curl http://localhost:5000/api/devices
+# API chạy tại http://localhost:8000
+# Verify: curl http://localhost:8000/api/devices
 ```
 
-### Bước 8 — Kết nối Ollama với MCP server
+> Chạy bằng `dotnet run` thì API ở cổng **8000**, còn `config.py` mặc định `PLANT_API_URL=http://localhost:8080` (cổng deploy Docker). Khi dùng `dotnet run`, set `export PLANT_API_URL=http://localhost:8000` cho MCP server.
+
+### Bước 7 — Kết nối Ollama với MCP server
 
 Tìm đường dẫn tuyệt đối trước:
 
@@ -112,7 +98,7 @@ Ví dụ nếu clone vào `/Users/phong/plant-tree-iot`:
 }
 ```
 
-### Bước 9 — Test với Ollama
+### Bước 8 — Test với Ollama
 
 ```
 >>> Liệt kê tất cả thiết bị IoT đang có
@@ -126,10 +112,9 @@ Ví dụ nếu clone vào `/Users/phong/plant-tree-iot`:
 ## Thứ tự khởi động hàng ngày
 
 ```
-1. Docker (Mosquitto 192.168.88.126:1883)  → đã chạy sẵn
-2. dotnet run (PlantTreeIoTServer)          → REST API port 5000
-3. ollama serve                             → AI model port 11434
-4. MCP server                               → tự khởi động khi Ollama cần
+1. dotnet run (PlantTreeIoTServer)          → REST API port 8000
+2. ollama serve                             → AI model port 11434
+3. MCP server                               → tự khởi động khi Ollama cần
 ```
 
 ---

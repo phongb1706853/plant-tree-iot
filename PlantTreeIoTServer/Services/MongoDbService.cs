@@ -9,7 +9,7 @@ public class MongoDbService
 
     public MongoDbService(IConfiguration configuration)
     {
-        // Railway MongoDB plugin injects MONGO_URL or MONGODB_URL
+        // MONGO_URL / MONGODB_URL (đặt trong docker-compose.deploy.yml) ghi đè connection string trong config
         var connectionString = Environment.GetEnvironmentVariable("MONGO_URL")
             ?? Environment.GetEnvironmentVariable("MONGODB_URL")
             ?? configuration.GetValue<string>("MongoDbSettings:ConnectionString")

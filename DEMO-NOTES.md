@@ -12,8 +12,8 @@
 |---|---|---|---|
 | MongoDB (Docker) | Local:27017 | `docker start mongodb` | ❌ phải start tay |
 | MQTT Broker | HiveCloud | Quản lý bởi HiveMQ (không cần chạy local) | ✅ tự động |
-| .NET API | Local:80 | `cd ~/plant-tree-iot/PlantTreeIoTServer && dotnet run` | ❌ |
-| Cloudflare Tunnel | — | `cloudflared tunnel --url http://localhost:80` | ❌ |
+| .NET API | Local:8080 | `cd ~/plant-tree-iot/PlantTreeIoTServer && dotnet run` (bare `dotnet run` nghe ở 8000; bản deploy truy cập ở 8080) | ❌ |
+| Cloudflare Tunnel | — | `cloudflared tunnel --url http://localhost:8080` | ❌ |
 | MCP server | stdio | Ollama tự spawn khi cần | tự động |
 
 **Tất cả 3 process trên đều phải giữ terminal mở suốt demo** (Quick Tunnel = URL chết khi tắt).
@@ -34,11 +34,11 @@ docker ps   # verify mongodb đang Up
 # T3. Chạy .NET API (TERMINAL 1 - giữ mở)
 cd ~/plant-tree-iot/PlantTreeIoTServer
 dotnet run
-# Đợi log: "Now listening on: http://[::]:80"
+# Đợi log: "Now listening on: http://[::]:8000"
 #          "Connected to MQTT broker: ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud:8883"
 
 # T4. Chạy Cloudflare Tunnel (TERMINAL 2 - giữ mở)
-cloudflared tunnel --url http://localhost:80
+cloudflared tunnel --url http://localhost:8080
 # Copy URL "https://xxx-xxx-xxx-xxx.trycloudflare.com" từ output
 # URL này MỚI mỗi lần chạy — cập nhật vào tất cả nơi dùng
 
@@ -139,9 +139,9 @@ Trong UI hỏi: "Liệt kê thiết bị" → AI phải tự gọi tool `list_de
 |---|---|
 | Tunnel URL đổi sát giờ demo | Cập nhật URL trong `config.py`, gửi IoT team URL mới |
 | Cloudflare throttle Quick Tunnel | Restart cloudflared, lấy URL mới |
-| Wi-Fi Mac mất kết nối | Demo offline trên LAN, dùng `http://localhost` thay vì tunnel |
+| Wi-Fi Mac mất kết nối | Demo offline trên LAN, dùng `http://localhost:8080` thay vì tunnel |
 | MongoDB container crash | `docker restart mongodb` |
-| `dotnet run` báo port 80 đang dùng | `lsof -i :80` xem process nào, hoặc đổi sang port khác trong `launchSettings.json` |
+| `dotnet run` báo port 8000 đang dùng | `lsof -i :8000` xem process nào, hoặc đổi sang port khác trong `launchSettings.json` |
 | Ollama không thấy tool | Check log MCP, verify `config.py` URL đúng, test `curl` từ máy Ollama tới URL |
 
 ---
@@ -151,7 +151,7 @@ Trong UI hỏi: "Liệt kê thiết bị" → AI phải tự gọi tool `list_de
 - [ ] Mua domain rẻ (~$1–10/năm) hoặc xin subdomain công ty
 - [ ] Setup Cloudflare Tunnel với domain cố định (thay Quick Tunnel)
 - [ ] Tạo `launchd` plist để auto-start khi reboot Mac:
-  - Docker containers (MongoDB + Mosquitto)
+  - Docker container (MongoDB) — MQTT dùng HiveCloud (managed), không có Mosquitto local
   - .NET API
   - cloudflared
 - [ ] Bật firewall macOS + allow chỉ những port cần thiết
@@ -171,7 +171,7 @@ docker ps
 # Restart toàn bộ stack (sau reboot)
 docker start mongodb
 cd ~/plant-tree-iot/PlantTreeIoTServer && dotnet run        # Terminal 1
-cloudflared tunnel --url http://localhost:80                # Terminal 2
+cloudflared tunnel --url http://localhost:8080                # Terminal 2
 
 # IP LAN của Mac (ESP32 cùng LAN có thể dùng IP này nếu muốn kết nối trực tiếp HTTP)
 ipconfig getifaddr en0

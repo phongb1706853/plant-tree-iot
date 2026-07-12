@@ -5,7 +5,8 @@ using Microsoft.IdentityModel.Tokens;
 using PlantTreeIoTServer.Auth;
 using PlantTreeIoTServer.Services;
 
-// Support Railway's dynamic PORT environment variable
+// Cổng lấy từ biến môi trường PORT (mặc định 8000).
+// docker-compose.deploy.yml map host 8080 -> container 8000.
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8000";
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls($"http://+:{port}");
@@ -86,7 +87,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-// Railway/Render handle SSL at the edge - disable HTTPS redirect in production
+// TLS được terminate ở edge (Cloudflare tunnel / reverse proxy) — tắt HTTPS redirect ngoài Development
 if (app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();

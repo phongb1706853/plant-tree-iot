@@ -1,6 +1,6 @@
 import os
 
-API_BASE_URL = os.getenv("PLANT_API_URL", "http://localhost:5000")
+API_BASE_URL = os.getenv("PLANT_API_URL", "http://localhost:8080")
 REQUEST_TIMEOUT = 10
 MCP_SERVER_NAME = "plant-tree-mcp"
 

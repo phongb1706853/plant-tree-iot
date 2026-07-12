@@ -1,6 +1,6 @@
-@PlantTreeIoTServer_HostAddress = http://localhost:5257
+@PlantTreeIoTServer_HostAddress = http://localhost:8000
 
-GET {{PlantTreeIoTServer_HostAddress}}/weatherforecast/
+GET {{PlantTreeIoTServer_HostAddress}}/api/devices
 Accept: application/json
 
 ###

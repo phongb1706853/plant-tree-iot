@@ -333,9 +333,11 @@ file:///c:/Work/my-project/plant-tree-iot/interactive-api-dashboard.html
 
 ## Curl Examples
 
+> Deploy Docker: http://localhost:8080 · chạy dev bằng dotnet run: http://localhost:8000
+
 ### Upload Sensor Data
 ```bash
-curl -X POST http://localhost:8000/api/sensordata/upload \
+curl -X POST http://localhost:8080/api/sensordata/upload \
   -H "Content-Type: application/json" \
   -d '{
     "device_id": "ESP32S3_Zone1",
@@ -349,7 +351,7 @@ curl -X POST http://localhost:8000/api/sensordata/upload \
 
 ### Create Moisture Rule
 ```bash
-curl -X POST http://localhost:8000/api/rules/moisture \
+curl -X POST http://localhost:8080/api/rules/moisture \
   -H "Content-Type: application/json" \
   -d '{
     "deviceId": "ESP32S3_Zone1",
@@ -363,7 +365,7 @@ curl -X POST http://localhost:8000/api/rules/moisture \
 
 ### Send Command via API
 ```bash
-curl -X POST http://localhost:8000/api/control/commands \
+curl -X POST http://localhost:8080/api/control/commands \
   -H "Content-Type: application/json" \
   -d '{
     "deviceId": "ESP32S3_Zone1",

@@ -57,8 +57,8 @@ Người dùng hỏi AI *"liệt kê thiết bị đang có"*:
 ## ✅ A. Việc cần làm tiếp theo (checklist)
 
 ### 1. Trên .NET server
-- [ ] Đặt `JWT_SECRET` (≥ 32 ký tự ngẫu nhiên) ở môi trường Production (Railway / Docker). **Thiếu → server không khởi động** (fail-closed).
-- [ ] Merge branch `feat/multi-user-auth` → `main` (sau khi đã có `JWT_SECRET`) để CI deploy.
+- [ ] Đặt `JWT_SECRET` (≥ 32 ký tự ngẫu nhiên) ở môi trường Production (Docker). **Thiếu → server không khởi động** (fail-closed).
+- [x] Merge branch `feat/multi-user-auth` → `main` — **đã xong** (auth đã có trong `main`, CI đã build image kèm auth).
 - [ ] Tạo **1 tài khoản service account** cho MCP: `POST /api/auth/register` (vd `mcp@plant-tree.local`).
 - [ ] Đăng ký / claim các device **dưới tài khoản đó** (MCP chỉ thấy device nó sở hữu).
 
@@ -68,7 +68,7 @@ Người dùng hỏi AI *"liệt kê thiết bị đang có"*:
 export MCP_TRANSPORT=streamable-http      # BẮT BUỘC để phục vụ HTTP /mcp (mặc định là stdio)
 export MCP_HOST=0.0.0.0
 export MCP_PORT=8100                       # KHÁC port .NET (8000) để không đụng nhau
-export PLANT_API_URL=http://localhost:8000 # URL .NET server THẬT (đổi theo môi trường)
+export PLANT_API_URL=http://localhost:8080 # URL .NET server THẬT (deploy Docker; dotnet run = 8000; đổi theo môi trường)
 export PLANT_MCP_EMAIL=mcp@plant-tree.local
 export PLANT_MCP_PASSWORD=<mật khẩu service account>
 python server.py                           # -> phục vụ http://<host>:8100/mcp
@@ -106,7 +106,7 @@ http.addHeader("X-Device-Id", DEVICE_ID);
 http.addHeader("X-Device-Secret", DEVICE_SECRET);  // nhận từ bạn khi đăng ký device
 ```
 - ESP32 **không tự đăng ký** nữa (register cần JWT của người dùng) → bạn đăng ký hộ rồi giao secret.
-- File mẫu đã cập nhật: [esp32-azure-client.ino](esp32-azure-client.ino).
+- File firmware mẫu: [esp32-mqtt-client.ino](esp32-mqtt-client.ino).
 - Nếu team dùng MQTT ([esp32-mqtt-client.ino](esp32-mqtt-client.ino)) → **không cần header**, vẫn dùng creds HiveMQ.
 
 ### AI server (`tree-grow-helper`)
@@ -123,7 +123,7 @@ http.addHeader("X-Device-Secret", DEVICE_SECRET);  // nhận từ bạn khi đă
 ## 📋 Bảng port
 | Thành phần | Port | Ghi chú |
 |---|---|---|
-| .NET API | 8000 (dev) / 80 (prod) | dữ liệu + auth |
+| .NET API | 8080 (deploy) / 8000 (dev) | dữ liệu + auth |
 | MCP server (HTTP) | **8100** | tránh trùng .NET |
 | tree-grow-helper (AI) | 8787 | |
 | LM Studio / Ollama | 1234 / 11434 | LLM |
@@ -134,7 +134,7 @@ http.addHeader("X-Device-Secret", DEVICE_SECRET);  // nhận từ bạn khi đă
 | .NET (Production) | `JWT_SECRET` | Khóa ký JWT, ≥32 ký tự. Bắt buộc, fail-closed nếu thiếu |
 | MCP server | `MCP_TRANSPORT` | `stdio` (mặc định) hoặc `streamable-http` |
 | MCP server | `MCP_HOST` / `MCP_PORT` | Host/port khi chạy HTTP (mặc định `127.0.0.1` / `8100`) |
-| MCP server | `PLANT_API_URL` | URL .NET server (mặc định `http://localhost:5000` — đổi cho đúng) |
+| MCP server | `PLANT_API_URL` | URL .NET server (mặc định `http://localhost:8080`; dotnet run = 8000 — đổi cho đúng) |
 | MCP server | `PLANT_MCP_EMAIL` / `PLANT_MCP_PASSWORD` | Tài khoản service account để login .NET |
 | tree-grow-helper | `MCP_URL` | URL MCP server (prefill; /setup lưu đè) |
 

@@ -18,6 +18,10 @@ Trên Mac chỉ việc **pull image mới nhất rồi run**. MongoDB chạy kè
    - (Hoặc nếu muốn để private: trên Mac chạy `docker login ghcr.io` với GitHub username + Personal Access Token có scope `read:packages`.)
 2. Cài **Docker Desktop** trên Mac.
 3. Copy file [`docker-compose.deploy.yml`](docker-compose.deploy.yml) về Mac (đặt ở đâu cũng được, ví dụ `~/planttree/`).
+4. Tạo file `.env` cùng thư mục với compose, đặt `JWT_SECRET` (**BẮT BUỘC**, ≥ 32 ký tự):
+   ```bash
+   echo "JWT_SECRET=$(openssl rand -base64 48)" > .env
+   ```
 
 ## Chạy
 
@@ -44,13 +48,15 @@ docker compose -f docker-compose.deploy.yml up -d
 
 ## Cấu hình
 
-Config MQTT (HiveMQ) đã nhúng sẵn giá trị mặc định trong compose. Muốn đổi thì tạo file `.env` cùng thư mục với compose:
+`JWT_SECRET` là **BẮT BUỘC** — auth đã có sẵn trong `main` và compose fail-closed: thiếu `JWT_SECRET` thì `up` báo lỗi ngay, server không khởi động. Config MQTT (HiveMQ) đã nhúng default trong compose, chỉ ghi đè khi cần. File `.env` cùng thư mục với compose:
 
 ```dotenv
+# BẮT BUỘC — chuỗi ngẫu nhiên >= 32 ký tự:  openssl rand -base64 48
+JWT_SECRET=...
+
+# Tùy chọn — ghi đè MQTT (HiveMQ) nếu cần
 MQTT_BROKER=...
 MQTT_USERNAME=...
 MQTT_PASSWORD=...
 MQTT_ALLOW_INVALID_CERT=true
 ```
-
-> ⚠️ Image này build từ `main` (**chưa có auth**). Khi phần auth hoàn thiện và merge vào `main`, CI sẽ tự build lại kèm auth; lúc đó nhớ thêm `JWT_SECRET` vào `.env` (Production bắt buộc, ≥ 32 ký tự).

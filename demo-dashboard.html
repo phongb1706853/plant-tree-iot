@@ -425,7 +425,7 @@
     </div>
     <div class="stack-card">
       <h4>.NET 10 API</h4>
-      <div class="port">port 80</div>
+      <div class="port">port 8080</div>
       <div class="desc">REST API + MQTT background service, eval rule engine</div>
     </div>
     <div class="stack-card">
@@ -434,9 +434,9 @@
       <div class="desc">Lưu device, sensor history, rules, control commands</div>
     </div>
     <div class="stack-card">
-      <h4>Mosquitto MQTT</h4>
-      <div class="port">port 1883</div>
-      <div class="desc">Broker MQTT local cho ESP32 LAN</div>
+      <h4>HiveMQ Cloud</h4>
+      <div class="port">TLS 8883</div>
+      <div class="desc">Broker MQTT managed (internet)</div>
     </div>
     <div class="stack-card">
       <h4>MCP Server</h4>
@@ -463,18 +463,22 @@
     <pre>┌─────────────────────┐         ┌──────────────────────┐         ┌──────────────────────┐
 │ Máy có Ollama       │         │ Cloudflare Tunnel    │         │ Mac Mini (server)    │
 │ (leader / IoT team) │         │ (Free Quick Tunnel)  │         │                      │
-│                     │         │                      │         │ .NET API :80         │
+│                     │         │                      │         │ .NET API :8080       │
 │  Ollama + MCP server│ ─HTTPS─►│ *.trycloudflare.com  │ ──tcp──►│ MongoDB :27017       │
-│  (stdio transport)  │         │                      │         │ Mosquitto :1883      │
-│  config.py trỏ URL  │         └──────────────────────┘         │ cloudflared          │
-└─────────────────────┘                                          │ MCP server (local)   │
-        ▲                                                        └──────────────────────┘
-        │                                                                  ▲
-   IoT team (curl/Postman)                                                 │ MQTT / HTTP
-   thử api.trycloudflare.com                                               │
-                                                                  ┌───────┴───────┐
-                                                                  │ ESP32 (LAN)   │
-                                                                  └───────────────┘</pre>
+│  (stdio transport)  │         │                      │         │ cloudflared          │
+│  config.py trỏ URL  │         └──────────────────────┘         │ MCP server (local)   │
+└─────────────────────┘                                          └──────────┬───────────┘
+        ▲                                                                    │ MQTT/TLS
+        │                                                                    ▼
+   IoT team (curl/Postman)                                        ┌──────────────────────┐
+   thử api.trycloudflare.com                                      │ HiveMQ Cloud         │
+                                                                  │ (TLS 8883, internet) │
+                                                                  └──────────┬───────────┘
+                                                                             ▲ MQTT/TLS
+                                                                             │
+                                                                  ┌──────────┴───────────┐
+                                                                  │ ESP32 (bất kỳ mạng)  │
+                                                                  └──────────────────────┘</pre>
   </div>
 
   <h3>Vì sao MCP không cần expose ra ngoài</h3>
@@ -539,11 +543,12 @@
 # Đợi 20–30s, icon cá voi menubar đứng yên</pre>
   </div>
 
-  <h4>2. Start MongoDB + Mosquitto containers</h4>
+  <h4>2. Start MongoDB container</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>docker start mongodb mosquitto
-docker ps    # verify cả 2 đang Up</pre>
+    <pre>docker start mongodb
+docker ps    # verify đang Up
+# Broker MQTT là HiveMQ Cloud (managed) — không cần start gì cho MQTT</pre>
   </div>
 
   <h4>3. Chạy .NET API (Terminal 1 — giữ mở)</h4>
@@ -552,14 +557,14 @@ docker ps    # verify cả 2 đang Up</pre>
     <pre>cd ~/plant-tree-iot/PlantTreeIoTServer
 dotnet run
 # Đợi log:
-#   "Connected to MQTT broker: 127.0.0.1:1883"
-#   "Now listening on: http://[::]:80"</pre>
+#   "Connected to MQTT broker: ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud:8883"
+#   "Now listening on: http://[::]:8000"</pre>
   </div>
 
   <h4>4. Chạy Cloudflare Tunnel (Terminal 2 — giữ mở)</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>cloudflared tunnel --url http://localhost:80
+    <pre>cloudflared tunnel --url http://localhost:8080
 # Copy URL "https://xxx-xxx-xxx.trycloudflare.com" từ output
 # URL này MỚI mỗi lần chạy — cập nhật mọi nơi dùng</pre>
   </div>
@@ -567,7 +572,7 @@ dotnet run
   <h4>5. Test (Terminal 3)</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl http://localhost/api/devices
+    <pre>curl http://localhost:8080/api/devices
 # Phải trả về []
 
 curl https://&lt;new-tunnel-url&gt;/api/devices
@@ -662,7 +667,7 @@ $DEVICE="ESP32S3_Zone1"</pre>
   <h3>Local testing (trên Mac)</h3>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>export API=http://localhost
+    <pre>export API=http://localhost:8080
 export DEVICE=ESP32S3_Zone1</pre>
   </div>
 </section>
@@ -1223,7 +1228,7 @@ curl -X POST $API/api/control/commands \
   <p>Gọi API thật từ ngay trên trang này, không cần terminal. Đặt host/port/device <strong>một lần</strong> ở đây, các tab Test khác sẽ dùng chung. Cấu hình được lưu vào trình duyệt (localStorage).</p>
 
   <div class="alert info">
-    Server phải đang chạy (<code>dotnet run</code>, mặc định <code>http://localhost:8000</code>). Nếu mở file HTML qua <code>file://</code>, request vẫn chạy được vì server đã bật CORS <code>AllowAnyOrigin</code>.
+    Server phải đang chạy. Docker deploy mặc định <code>http://localhost:8080</code> (bare <code>dotnet run</code> = <code>http://localhost:8000</code>). Nếu mở file HTML qua <code>file://</code>, request vẫn chạy được vì server đã bật CORS <code>AllowAnyOrigin</code>.
   </div>
   <div class="alert">
     <strong>Cần đăng nhập trước.</strong> Từ v1.1 API yêu cầu xác thực: <b>Đăng ký/Đăng nhập</b> để lấy JWT (dùng cho hầu hết các nút). Nút <b>Upload sensor</b> &amp; <b>Heartbeat</b> giả lập ESP32 nên cần <b>Device Secret</b> — lấy từ response khi Execute <code>POST /api/devices/register</code> (tự điền vào ô Device Secret).
@@ -1236,7 +1241,7 @@ curl -X POST $API/api/control/commands \
     </div>
     <div class="field">
       <label for="conn-port">Port</label>
-      <input id="conn-port" style="width:100px" placeholder="8000">
+      <input id="conn-port" style="width:100px" placeholder="8080">
     </div>
     <div class="field">
       <label for="conn-device">Device ID</label>
@@ -1496,30 +1501,29 @@ curl -X POST $API/api/control/commands \
   <h2>Kết nối MQTT — Thông tin cho IoT team</h2>
 
   <div class="alert info">
-    <strong>Broker đang dùng</strong>: <code>Mosquitto</code> (Eclipse, chạy Docker container <code>eclipse-mosquitto</code>). <code>MQTTx</code> chỉ là <strong>client UI</strong> để test, không phải broker.
+    <strong>Broker đang dùng</strong>: <code>HiveMQ Cloud</code> (managed, chạy trên internet — không có broker local). <code>MQTTx</code> chỉ là <strong>client UI</strong> để test, không phải broker.
   </div>
 
   <h3>Thông tin kết nối broker</h3>
   <table>
     <tr><th>Thông số</th><th>Giá trị</th><th>Ghi chú</th></tr>
-    <tr><td>Broker host</td><td><code>&lt;IP-LAN-Mac&gt;</code></td><td>Lấy bằng <code>ipconfig getifaddr en0</code> trên Mac (ví dụ <code>192.168.88.126</code>)</td></tr>
-    <tr><td>Port</td><td><code>1883</code></td><td>Plain TCP MQTT</td></tr>
-    <tr><td>WebSocket port</td><td><code>9001</code></td><td>Đã expose container nhưng <strong>chưa bật listener</strong> trong mosquitto.conf — chỉ cần khi muốn dùng MQTT-WS qua tunnel</td></tr>
-    <tr><td>TLS</td><td>❌ Không</td><td>Plain text, chỉ dùng trong LAN. Production cần TLS.</td></tr>
-    <tr><td>Username</td><td>(trống)</td><td><code>allow_anonymous true</code> — không xác thực</td></tr>
-    <tr><td>Password</td><td>(trống)</td><td>—</td></tr>
+    <tr><td>Broker host</td><td><code>ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud</code></td><td>HiveMQ Cloud (managed, truy cập qua internet)</td></tr>
+    <tr><td>Port</td><td><code>8883</code></td><td>MQTT over TLS</td></tr>
+    <tr><td>TLS</td><td>✅ Có</td><td>Bắt buộc TLS. ESP32 dùng <code>WiFiClientSecure</code> + <code>setInsecure()</code>.</td></tr>
+    <tr><td>Username</td><td><code>nod-iot-plant</code></td><td>Xác thực bằng username/password</td></tr>
+    <tr><td>Password</td><td><code>Nod-iot-plant1234</code></td><td>—</td></tr>
     <tr><td>Client ID</td><td>tự do</td><td>ESP32 nên đặt <code>esp32-&lt;mac-suffix&gt;</code> để dễ debug</td></tr>
     <tr><td>QoS</td><td>1 (AtLeastOnce)</td><td>Server publish command với QoS 1</td></tr>
     <tr><td>Keep-alive</td><td>60s</td><td>Default PubSubClient</td></tr>
   </table>
 
-  <div class="alert danger">
-    <strong>Caveat quan trọng</strong>: MQTT broker hiện đang nằm trong LAN của Mac và <strong>không expose ra ngoài</strong>. Cloudflare Quick Tunnel chỉ tunnel HTTP/HTTPS, không tunnel raw TCP cho MQTT 1883. Nghĩa là:
+  <div class="alert info">
+    <strong>Broker chạy trên internet</strong>: HiveMQ Cloud là broker managed, có địa chỉ public. Nghĩa là:
     <ul style="margin-top: 8px;">
-      <li>✅ ESP32 cùng Wi-Fi với Mac → kết nối MQTT bình thường</li>
-      <li>❌ ESP32 khác mạng (4G, văn phòng khác) → KHÔNG kết nối được MQTT</li>
+      <li>✅ ESP32 và server <strong>không cần cùng Wi-Fi/LAN</strong> — chỉ cần có internet là kết nối được broker</li>
+      <li>✅ ESP32 ở bất kỳ mạng nào (Wi-Fi văn phòng, 4G, ship đi Đà Lạt…) vẫn tới được server qua HiveMQ Cloud</li>
     </ul>
-    Trường hợp khác mạng: dùng HTTP polling endpoint <code>/api/control/commands/&lt;deviceId&gt;</code> qua tunnel HTTPS (xem <a href="#" onclick="document.querySelector('[data-target=api-control]').click(); return false;">Control API</a>) hoặc setup MQTT over WebSocket qua tunnel.
+    MQTT không đi qua Cloudflare Tunnel (và không cần), vì HiveMQ Cloud đã public sẵn. Nếu muốn, vẫn có thể dùng HTTP polling endpoint <code>/api/control/commands/&lt;deviceId&gt;</code> qua tunnel HTTPS (xem <a href="#" onclick="document.querySelector('[data-target=api-control]').click(); return false;">Control API</a>).
   </div>
 
   <h3>Topics MQTT</h3>
@@ -1613,11 +1617,11 @@ curl -X POST $API/api/control/commands \
     <li>Bấm <strong>+ New Connection</strong></li>
     <li>Điền:
       <ul>
-        <li>Name: <code>plant-tree-mac</code></li>
-        <li>Host: <code>&lt;IP-LAN-Mac&gt;</code> (vd <code>192.168.88.126</code>)</li>
-        <li>Port: <code>1883</code></li>
-        <li>SSL/TLS: <strong>OFF</strong></li>
-        <li>Username / Password: để trống</li>
+        <li>Name: <code>plant-tree-hivemq</code></li>
+        <li>Host: <code>ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud</code></li>
+        <li>Port: <code>8883</code></li>
+        <li>SSL/TLS: <strong>ON</strong></li>
+        <li>Username: <code>nod-iot-plant</code> / Password: <code>Nod-iot-plant1234</code></li>
       </ul>
     </li>
     <li>Bấm <strong>Connect</strong></li>
@@ -1630,16 +1634,19 @@ curl -X POST $API/api/control/commands \
 
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre># Subscribe tất cả topic planttree (terminal 1)
-mosquitto_sub -h 192.168.88.126 -p 1883 -t 'planttree/#' -v
+    <pre># Subscribe tất cả topic planttree (terminal 1) — HiveMQ Cloud, TLS + auth
+mosquitto_sub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --capath /etc/ssl/certs \
+  -u nod-iot-plant -P Nod-iot-plant1234 \
+  -t 'planttree/#' -v
 
 # Publish sensor data (terminal 2)
-mosquitto_pub -h 192.168.88.126 -p 1883 \
+mosquitto_pub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --capath /etc/ssl/certs \
+  -u nod-iot-plant -P Nod-iot-plant1234 \
   -t 'planttree/esp32-test/sensors' \
   -m '{"temperature":28,"soilMoisture":20,"lightLevel":50}'
 
-# Hoặc dùng topic xmini với payload snake_case (HiveCloud)
-mosquitto_pub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --cafile ca.crt \
+# Hoặc dùng topic xmini với payload snake_case
+mosquitto_pub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --capath /etc/ssl/certs \
   -u nod-iot-plant -P Nod-iot-plant1234 \
   -t 'xmini/sensor_data' \
   -m '{"device_id":"ESP32S3_Zone1","temperature_c":28,"humidity_percent":65,"light_lux":57.5,"soil_moisture_percent":45.5,"soil_moisture_raw":2540,"relay_on":false}'</pre>
@@ -1652,20 +1659,21 @@ mosquitto_pub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --c
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>#include &lt;WiFi.h&gt;
+#include &lt;WiFiClientSecure.h&gt;
 #include &lt;PubSubClient.h&gt;
 #include &lt;ArduinoJson.h&gt;
 
 const char* WIFI_SSID     = "&lt;ten-wifi&gt;";
 const char* WIFI_PASSWORD = "&lt;mat-khau-wifi&gt;";
 
-const char* MQTT_BROKER   = "192.168.88.126";   // IP Mac trong LAN
-const int   MQTT_PORT     = 1883;
-const char* MQTT_USERNAME = "";                  // trống
-const char* MQTT_PASSWORD = "";                  // trống
+const char* MQTT_BROKER   = "ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud";  // HiveMQ Cloud
+const int   MQTT_PORT     = 8883;                // TLS
+const char* MQTT_USERNAME = "nod-iot-plant";
+const char* MQTT_PASSWORD = "Nod-iot-plant1234";
 
 const char* DEVICE_ID     = "ESP32S3_Zone1";
 
-WiFiClient wifiClient;                           // KHÔNG WiFiClientSecure (chưa TLS)
+WiFiClientSecure wifiClient;                     // TLS bắt buộc cho HiveMQ Cloud
 PubSubClient mqtt(wifiClient);
 
 char sensorTopic[64];
@@ -1697,6 +1705,7 @@ void setup() {
   snprintf(sensorTopic,  sizeof(sensorTopic),  "planttree/%s/sensors", DEVICE_ID);
   snprintf(commandTopic, sizeof(commandTopic), "planttree/%s/commands", DEVICE_ID);
 
+  wifiClient.setInsecure();                        // bỏ verify cert (đủ cho demo)
   mqtt.setServer(MQTT_BROKER, MQTT_PORT);
   mqtt.setCallback(onCommand);
   mqtt.setBufferSize(512);
@@ -1704,7 +1713,7 @@ void setup() {
 
 void reconnect() {
   while (!mqtt.connected()) {
-    if (mqtt.connect(DEVICE_ID)) {                 // không username/password
+    if (mqtt.connect(DEVICE_ID, MQTT_USERNAME, MQTT_PASSWORD)) {   // auth HiveMQ Cloud
       mqtt.subscribe(commandTopic);
     } else {
       delay(5000);
@@ -1739,14 +1748,12 @@ void loop() {
 
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre># Xem container Mosquitto đang chạy chưa
-docker ps | grep mosquitto
+    <pre># Subscribe wildcard tất cả topic trực tiếp trên HiveMQ Cloud (TLS + auth)
+mosquitto_sub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --capath /etc/ssl/certs \
+  -u nod-iot-plant -P Nod-iot-plant1234 \
+  -t '#' -v
 
-# Xem log Mosquitto (publish/subscribe activity)
-docker logs mosquitto -f
-
-# Subscribe wildcard tất cả topic
-docker exec mosquitto mosquitto_sub -h localhost -t '#' -v</pre>
+# Hoặc dùng MQTTx (UI) subscribe topic '#' để xem toàn bộ publish/subscribe activity</pre>
   </div>
 
   <h3>Thông tin tóm tắt gửi IoT team</h3>
@@ -1756,16 +1763,17 @@ docker exec mosquitto mosquitto_sub -h localhost -t '#' -v</pre>
 PLANT TREE IoT — Thông tin kết nối MQTT
 ========================================================
 
-Broker: Mosquitto (eclipse-mosquitto Docker container)
-Host:   &lt;IP-LAN-Mac, ví dụ 192.168.88.126&gt;
-Port:   1883 (plain TCP)
-TLS:    KHÔNG
-Auth:   KHÔNG (allow_anonymous)
+Broker: HiveMQ Cloud (managed, trên internet)
+Host:   ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud
+Port:   8883 (MQTT over TLS)
+TLS:    CÓ (bắt buộc)
+Auth:   username/password (nod-iot-plant / Nod-iot-plant1234)
 QoS:    1 (AtLeastOnce)
 
-ESP32 phải CÙNG MẠNG Wi-Fi với Mac. Tunnel HTTPS không
-tunnel MQTT — nếu khác mạng dùng HTTP polling endpoint
-GET /api/control/commands/{deviceId}.
+ESP32 và server KHÔNG cần cùng Wi-Fi/LAN — broker public trên
+internet nên ESP32 ở bất kỳ mạng nào (Wi-Fi, 4G, đi Đà Lạt…)
+đều tới được server. Có thể dùng thêm HTTP polling endpoint
+GET /api/control/commands/{deviceId} nếu cần.
 
 TOPICS:
   ESP32 publish sensor (chọn 1 trong 2 format):
@@ -1810,7 +1818,7 @@ Liên hệ: Phong Nguyen — phong.nguyen@treehousei.com
   <div class="code-block">
     <pre>┌──────┐    1. Tool call    ┌────────────┐    2. HTTP     ┌─────────┐
 │ AI   │ ─────────────────► │ MCP server │ ──────────────► │ .NET API│
-│Ollama│   list_devices()   │ (Python)   │  GET /api/...   │  :80    │
+│Ollama│   list_devices()   │ (Python)   │  GET /api/...   │  :8080  │
 └──────┘                    └────────────┘                 └─────────┘
    ▲                              │                              │
    │     4. Tool result           │   3. JSON response           │
@@ -1981,9 +1989,9 @@ Chưa cần tưới vì còn trên ngưỡng 25%.</pre>
     <pre>┌─────────────────── Máy IoT team ───────────────────┐         ┌─────────────────┐
 │                                                     │         │ Mac Mini server │
 │  ┌──────────┐   stdio    ┌──────────────────┐       │  HTTPS  │                 │
-│  │  AI UI   │ ─────────► │   MCP server     │ ──────┼────────►│ .NET API :80    │
+│  │  AI UI   │ ─────────► │   MCP server     │ ──────┼────────►│ .NET API :8080  │
 │  │ (Claude  │            │ (Python venv)    │       │ Tunnel  │ MongoDB         │
-│  │ Desktop, │ ◄───────── │ config.py trỏ    │ ◄─────┼────JSON │ Mosquitto       │
+│  │ Desktop, │ ◄───────── │ config.py trỏ    │ ◄─────┼────JSON │ → HiveMQ Cloud  │
 │  │ Msty…)   │   result   │ tới tunnel URL   │       │         └─────────────────┘
 │  └──────────┘            └──────────────────┘       │
 │                                                     │
@@ -2278,19 +2286,19 @@ Liên hệ vấn đề kỹ thuật:
     </tr>
     <tr>
       <td><code>cloudflared</code> bị Cloudflare throttle</td>
-      <td>Ctrl+C dừng, chạy lại <code>cloudflared tunnel --url http://localhost:80</code> → URL mới</td>
+      <td>Ctrl+C dừng, chạy lại <code>cloudflared tunnel --url http://localhost:8080</code> → URL mới</td>
     </tr>
     <tr>
       <td>Wi-Fi Mac mất kết nối</td>
-      <td>Demo offline LAN, dùng <code>http://localhost</code> thay vì tunnel</td>
+      <td>Demo offline LAN, dùng <code>http://localhost:8080</code> thay vì tunnel</td>
     </tr>
     <tr>
       <td>MongoDB container crash</td>
       <td><code>docker restart mongodb</code></td>
     </tr>
     <tr>
-      <td><code>dotnet run</code> báo port 80 đang dùng</td>
-      <td><code>lsof -i :80</code> xem process; kill hoặc đổi port trong <code>launchSettings.json</code></td>
+      <td><code>dotnet run</code> báo port 8000 đang dùng</td>
+      <td><code>lsof -i :8000</code> xem process; kill hoặc đổi port trong <code>launchSettings.json</code></td>
     </tr>
     <tr>
       <td>Ollama không thấy tool MCP</td>
@@ -2375,7 +2383,7 @@ Liên hệ vấn đề kỹ thuật:
     const authStatusEl = document.getElementById('auth-status');
     if (!hostEl) return; // tester not present
 
-    const defaults = { host: 'localhost', port: '8000', device: 'ESP32S3_Zone1' };
+    const defaults = { host: 'localhost', port: '8080', device: 'ESP32S3_Zone1' };
     const saved = (() => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } })();
     hostEl.value = saved.host || defaults.host;
     portEl.value = saved.port || defaults.port;
@@ -2390,7 +2398,7 @@ Liên hệ vấn đề kỹ thuật:
       // Ngược lại (chỉ host/IP như localhost) -> ghép http://host:port như cũ.
       const base = /^https?:\/\//i.test(host)
         ? host.replace(/\/+$/, '')
-        : `http://${host}:${port || '8000'}`;
+        : `http://${host}:${port || '8080'}`;
       return {
         base,
         device: devEl.value.trim(),
