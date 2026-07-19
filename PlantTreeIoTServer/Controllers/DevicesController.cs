@@ -1,8 +1,6 @@
 using System.Security.Claims;
-using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using PlantTreeIoTServer.Auth;
 using PlantTreeIoTServer.Models;
 using PlantTreeIoTServer.Services;
 
@@ -10,7 +8,7 @@ namespace PlantTreeIoTServer.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize] // mặc định = Bearer (JWT) cho người dùng
+[Authorize] // JWT (người dùng)
 public class DevicesController : ControllerBase
 {
     private readonly MongoDbService _mongoDbService;
@@ -24,29 +22,18 @@ public class DevicesController : ControllerBase
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-    private static string GenerateSecret() =>
-        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-
-    /// <summary>
-    /// Đăng ký device mới. Owner = user đang đăng nhập. Trả về deviceSecret PLAINTEXT đúng 1 lần.
-    /// </summary>
+    /// <summary>Đăng ký device mới. Owner = user đang đăng nhập.</summary>
     [HttpPost("register")]
     public async Task<IActionResult> RegisterDevice([FromBody] DeviceRegistrationRequest request)
     {
         try
         {
             if (string.IsNullOrEmpty(request.DeviceId) || string.IsNullOrEmpty(request.Name))
-            {
                 return BadRequest("DeviceId and Name are required");
-            }
 
-            var existingDevice = await _mongoDbService.GetDeviceAsync(request.DeviceId);
-            if (existingDevice != null)
-            {
+            if (await _mongoDbService.GetDeviceAsync(request.DeviceId) != null)
                 return Conflict($"Device {request.DeviceId} already exists");
-            }
 
-            var secret = GenerateSecret();
             var device = new Device
             {
                 DeviceId = request.DeviceId,
@@ -54,19 +41,15 @@ public class DevicesController : ControllerBase
                 Location = request.Location,
                 PlantType = request.PlantType,
                 OwnerId = UserId,
-                DeviceSecretHash = BCrypt.Net.BCrypt.HashPassword(secret),
                 IsActive = true,
                 LastSeen = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow
             };
-
             await _mongoDbService.CreateDeviceAsync(device);
 
             _logger.LogInformation("Device registered: {DeviceId} by user {UserId}", request.DeviceId, UserId);
-
-            // deviceSecret chỉ hiển thị 1 lần — nạp vào firmware ESP32, server chỉ lưu hash
             return CreatedAtAction(nameof(GetDevice), new { deviceId = device.DeviceId },
-                new { device.DeviceId, device.Name, deviceSecret = secret });
+                new { device.DeviceId, device.Name });
         }
         catch (Exception ex)
         {
@@ -75,16 +58,13 @@ public class DevicesController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Lấy tất cả devices của user đang đăng nhập.
-    /// </summary>
+    /// <summary>Danh sách device user sở hữu HOẶC được chia sẻ.</summary>
     [HttpGet]
     public async Task<IActionResult> GetAllDevices()
     {
         try
         {
-            var devices = await _mongoDbService.GetDevicesByOwnerAsync(UserId);
-            return Ok(devices);
+            return Ok(await _mongoDbService.GetDevicesForUserAsync(UserId));
         }
         catch (Exception ex)
         {
@@ -93,20 +73,14 @@ public class DevicesController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Lấy thông tin một device (chỉ khi user là chủ sở hữu).
-    /// </summary>
+    /// <summary>Xem 1 device (owner hoặc được chia sẻ).</summary>
     [HttpGet("{deviceId}")]
     public async Task<IActionResult> GetDevice(string deviceId)
     {
         try
         {
-            var device = await _mongoDbService.GetOwnedDeviceAsync(deviceId, UserId);
-            if (device == null)
-            {
-                return NotFound($"Device {deviceId} not found");
-            }
-
+            var device = await _mongoDbService.GetAccessibleDeviceAsync(deviceId, UserId);
+            if (device == null) return NotFound($"Device {deviceId} not found");
             return Ok(device);
         }
         catch (Exception ex)
@@ -116,10 +90,7 @@ public class DevicesController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Nhận sở hữu một device chưa có owner (dùng cho device cũ tạo trước khi có auth).
-    /// Trả về device secret mới.
-    /// </summary>
+    /// <summary>Nhận sở hữu device chưa có owner (device cũ tạo trước khi có auth).</summary>
     [HttpPost("{deviceId}/claim")]
     public async Task<IActionResult> Claim(string deviceId)
     {
@@ -131,11 +102,8 @@ public class DevicesController : ControllerBase
                 return Conflict("Device đã có chủ sở hữu");
 
             await _mongoDbService.SetDeviceOwnerAsync(deviceId, UserId);
-            var secret = GenerateSecret();
-            await _mongoDbService.SetDeviceSecretAsync(deviceId, BCrypt.Net.BCrypt.HashPassword(secret));
-
             _logger.LogInformation("Device {DeviceId} claimed by user {UserId}", deviceId, UserId);
-            return Ok(new { deviceId, deviceSecret = secret });
+            return Ok(new { deviceId, message = "Claimed" });
         }
         catch (Exception ex)
         {
@@ -144,33 +112,81 @@ public class DevicesController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Sinh lại device secret (khi lộ hoặc quên). Chỉ owner mới làm được.
-    /// </summary>
-    [HttpPost("{deviceId}/rotate-secret")]
-    public async Task<IActionResult> RotateSecret(string deviceId)
+    /// <summary>Chia sẻ device cho user khác (bằng email). Chỉ owner.</summary>
+    [HttpPost("{deviceId}/share")]
+    public async Task<IActionResult> ShareDevice(string deviceId, [FromBody] ShareRequest request)
     {
         try
         {
             var device = await _mongoDbService.GetOwnedDeviceAsync(deviceId, UserId);
             if (device == null) return NotFound($"Device {deviceId} not found");
 
-            var secret = GenerateSecret();
-            await _mongoDbService.SetDeviceSecretAsync(deviceId, BCrypt.Net.BCrypt.HashPassword(secret));
+            var target = await _mongoDbService.GetUserByEmailAsync(request.Email ?? "");
+            if (target == null) return NotFound($"User {request.Email} not found");
+            if (target.Id == device.OwnerId) return BadRequest("User đã là chủ sở hữu");
 
-            _logger.LogInformation("Device {DeviceId} secret rotated by user {UserId}", deviceId, UserId);
-            return Ok(new { deviceId, deviceSecret = secret });
+            await _mongoDbService.AddDeviceMemberAsync(deviceId, target.Id!);
+            _logger.LogInformation("Device {DeviceId} shared with {Email} by {UserId}", deviceId, target.Email, UserId);
+            return Ok(new { message = $"Đã chia sẻ {deviceId} cho {target.Email}", deviceId, sharedWith = target.Email });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error rotating secret for device {DeviceId}", deviceId);
+            _logger.LogError(ex, "Error sharing device {DeviceId}", deviceId);
             return StatusCode(500, "Internal server error");
         }
     }
 
-    /// <summary>
-    /// Xoá device (kèm sensor data, rules, commands liên quan). Chỉ owner mới xoá được.
-    /// </summary>
+    /// <summary>Thu hồi chia sẻ (theo userId của member). Chỉ owner.</summary>
+    [HttpDelete("{deviceId}/share/{memberId}")]
+    public async Task<IActionResult> UnshareDevice(string deviceId, string memberId)
+    {
+        try
+        {
+            var device = await _mongoDbService.GetOwnedDeviceAsync(deviceId, UserId);
+            if (device == null) return NotFound($"Device {deviceId} not found");
+
+            await _mongoDbService.RemoveDeviceMemberAsync(deviceId, memberId);
+            _logger.LogInformation("Device {DeviceId} unshared from {MemberId} by {UserId}", deviceId, memberId, UserId);
+            return Ok(new { message = "Đã thu hồi chia sẻ", deviceId, memberId });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error unsharing device {DeviceId}", deviceId);
+            return StatusCode(500, "Internal server error");
+        }
+    }
+
+    /// <summary>Danh sách owner + members của device (owner hoặc member xem được).</summary>
+    [HttpGet("{deviceId}/members")]
+    public async Task<IActionResult> GetMembers(string deviceId)
+    {
+        try
+        {
+            var device = await _mongoDbService.GetAccessibleDeviceAsync(deviceId, UserId);
+            if (device == null) return NotFound($"Device {deviceId} not found");
+
+            object? owner = null;
+            if (!string.IsNullOrEmpty(device.OwnerId))
+            {
+                var o = await _mongoDbService.GetUserByIdAsync(device.OwnerId);
+                if (o != null) owner = new { o.Id, o.Email, o.DisplayName };
+            }
+            var members = new List<object>();
+            foreach (var mid in device.Members)
+            {
+                var u = await _mongoDbService.GetUserByIdAsync(mid);
+                if (u != null) members.Add(new { u.Id, u.Email, u.DisplayName });
+            }
+            return Ok(new { deviceId, owner, members });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting members for device {DeviceId}", deviceId);
+            return StatusCode(500, "Internal server error");
+        }
+    }
+
+    /// <summary>Xoá device (kèm sensor/config/command log). Chỉ owner.</summary>
     [HttpDelete("{deviceId}")]
     public async Task<IActionResult> DeleteDevice(string deviceId)
     {
@@ -180,15 +196,13 @@ public class DevicesController : ControllerBase
             if (device == null) return NotFound($"Device {deviceId} not found");
 
             var deleted = await _mongoDbService.DeleteDeviceAndDataAsync(deviceId);
-
             _logger.LogInformation("Device {DeviceId} deleted by user {UserId}", deviceId, UserId);
             return Ok(new
             {
                 message = $"Device {deviceId} deleted",
                 deviceId,
                 deletedSensorData = deleted.SensorData,
-                deletedMoistureRules = deleted.MoistureRules,
-                deletedLightRules = deleted.LightRules,
+                deletedDeviceConfigs = deleted.DeviceConfigs,
                 deletedCommands = deleted.Commands
             });
         }
@@ -199,19 +213,14 @@ public class DevicesController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// ESP32 heartbeat - cập nhật thời gian cuối cùng online. Xác thực bằng DeviceKey.
-    /// </summary>
-    [Authorize(AuthenticationSchemes = DeviceKeyAuthenticationHandler.SchemeName)]
+    /// <summary>Heartbeat cập nhật lastSeen (owner/member). Thiết bị thật cập nhật qua MQTT.</summary>
     [HttpPost("{deviceId}/heartbeat")]
     public async Task<IActionResult> DeviceHeartbeat(string deviceId)
     {
         try
         {
-            // Thiết bị chỉ được heartbeat cho chính nó
-            var authDeviceId = User.FindFirstValue("deviceId");
-            if (authDeviceId != deviceId)
-                return Forbid();
+            if (await _mongoDbService.GetAccessibleDeviceAsync(deviceId, UserId) == null)
+                return NotFound($"Device {deviceId} not found");
 
             await _mongoDbService.UpdateDeviceLastSeenAsync(deviceId);
             return Ok(new { message = "Heartbeat received", timestamp = DateTime.UtcNow });
@@ -230,4 +239,9 @@ public class DeviceRegistrationRequest
     public string Name { get; set; } = string.Empty;
     public string? Location { get; set; }
     public string? PlantType { get; set; }
+}
+
+public class ShareRequest
+{
+    public string Email { get; set; } = string.Empty;
 }

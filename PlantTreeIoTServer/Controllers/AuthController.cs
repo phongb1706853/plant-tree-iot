@@ -12,12 +12,14 @@ public class AuthController : ControllerBase
 {
     private readonly MongoDbService _mongo;
     private readonly JwtService _jwt;
+    private readonly IWebHostEnvironment _env;
     private readonly ILogger<AuthController> _logger;
 
-    public AuthController(MongoDbService mongo, JwtService jwt, ILogger<AuthController> logger)
+    public AuthController(MongoDbService mongo, JwtService jwt, IWebHostEnvironment env, ILogger<AuthController> logger)
     {
         _mongo = mongo;
         _jwt = jwt;
+        _env = env;
         _logger = logger;
     }
 
@@ -105,5 +107,48 @@ public class AuthController : ControllerBase
         if (user == null) return NotFound();
 
         return Ok(new { user.Email, user.DisplayName, user.Role, user.CreatedAt });
+    }
+
+    /// <summary>
+    /// [CHỈ Development] Lấy nhanh JWT bearer để debug (curl/Swagger) mà không cần đăng ký.
+    /// Tự seed (hoặc dùng lại) user cố định dev@plant-tree.local. Production trả 404 (ẩn hoàn toàn).
+    /// </summary>
+    [HttpPost("dev-token")]
+    public async Task<IActionResult> DevToken()
+    {
+        if (!_env.IsDevelopment())
+            return NotFound();
+
+        try
+        {
+            const string devEmail = "dev@plant-tree.local";
+            var user = await _mongo.GetUserByEmailAsync(devEmail);
+            if (user == null)
+            {
+                user = new User
+                {
+                    Email = devEmail,
+                    // Hash cố định — chỉ dùng nội bộ Development, không dành cho login thật.
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("dev-only-do-not-use-in-prod"),
+                    DisplayName = "Dev Debug User",
+                    Role = "User",
+                };
+                await _mongo.CreateUserAsync(user);
+                _logger.LogInformation("Dev user seeded: {Email}", devEmail);
+            }
+
+            return Ok(new AuthResponse
+            {
+                Token = _jwt.GenerateToken(user),
+                Email = user.Email,
+                DisplayName = user.DisplayName,
+                Role = user.Role,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error issuing dev token");
+            return StatusCode(500, "Internal server error");
+        }
     }
 }

@@ -9,12 +9,26 @@ using System.Text.Json;
 
 namespace PlantTreeIoTServer.Services;
 
+/// <summary>
+/// Nghe MQTT theo hợp đồng firmware Xmini (mqtt-api.md):
+///   - xmini/sensor_data : telemetry ~10s (21 trường phẳng)  -> lưu SensorData
+///   - xmini/config      : ngưỡng auto thiết bị đang dùng      -> upsert DeviceConfig
+/// QoS 0, không retained. Thiết bị TỰ chạy auto; BE không sinh lệnh tưới/đèn ở đây nữa
+/// (điều khiển đi qua ControlController -> xmini/control dưới dạng khoá phẳng).
+/// </summary>
 public class MqttBackgroundService : BackgroundService
 {
+    public const string TopicSensorData = "xmini/sensor_data";
+    public const string TopicConfig = "xmini/config";
+
     private readonly MongoDbService _mongoDbService;
     private readonly ILogger<MqttBackgroundService> _logger;
     private readonly IConfiguration _configuration;
     private IMqttClient? _mqttClient;
+
+    // Topic dùng chung không mang device_id. Payload xmini/config CŨNG không có device_id
+    // (mqtt-api.md mục 3) nên gán cấu hình cho thiết bị telemetry gần nhất vừa thấy.
+    private volatile string? _lastSeenDeviceId;
 
     public MqttBackgroundService(
         MongoDbService mongoDbService,
@@ -89,12 +103,14 @@ public class MqttBackgroundService : BackgroundService
                     await _mqttClient.ConnectAsync(options, stoppingToken);
                     _logger.LogInformation("Connected to MQTT broker: {Broker}:{Port}", broker, port);
 
+                    // QoS 0 cho subscribe (hợp đồng). BE nên subscribe TRƯỚC khi thiết bị connect
+                    // vì broker không giữ giá trị cuối (không retained).
                     var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
-                        .WithTopicFilter("planttree/+/sensors")
-                        .WithTopicFilter("xmini/sensor_data")
+                        .WithTopicFilter(TopicSensorData, MqttQualityOfServiceLevel.AtMostOnce)
+                        .WithTopicFilter(TopicConfig, MqttQualityOfServiceLevel.AtMostOnce)
                         .Build();
                     await _mqttClient.SubscribeAsync(subscribeOptions, stoppingToken);
-                    _logger.LogInformation("Subscribed to planttree/+/sensors and xmini/sensor_data");
+                    _logger.LogInformation("Subscribed to {S} and {C} (QoS 0)", TopicSensorData, TopicConfig);
                 }
             }
             catch (Exception ex)
@@ -109,198 +125,67 @@ public class MqttBackgroundService : BackgroundService
             await _mqttClient.DisconnectAsync();
     }
 
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+
     private async Task HandleMessageAsync(MqttApplicationMessageReceivedEventArgs e)
     {
+        var topic = e.ApplicationMessage.Topic;
         try
         {
-            var topic = e.ApplicationMessage.Topic;
             var payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
 
-            string? deviceId;
-            double? soilMoisture;
-            double? lightLevel;
-            double? temperature;
-            double? humidity;
-            string commandTopic;
-
-            if (topic == "xmini/sensor_data")
-            {
-                // Parse xmini board payload
-                var xmini = JsonSerializer.Deserialize<XminiSensorPayload>(payload,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                if (xmini?.DeviceId == null) return;
-
-                deviceId    = xmini.DeviceId;
-                lightLevel  = xmini.LightLux;
-                soilMoisture = xmini.SoilMoisturePercent;
-                temperature = xmini.TemperatureC;
-                humidity    = xmini.HumidityPercent;
-                commandTopic = "xmini/control";
-            }
+            if (topic == TopicSensorData)
+                await HandleSensorDataAsync(payload);
+            else if (topic == TopicConfig)
+                await HandleConfigAsync(payload);
             else
-            {
-                // Parse planttree/{deviceId}/sensors payload
-                var parts = topic.Split('/');
-                if (parts.Length < 3) return;
-                deviceId = parts[1];
-
-                var data = JsonSerializer.Deserialize<MqttSensorPayload>(payload,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                if (data == null) return;
-
-                soilMoisture = data.SoilMoisture;
-                lightLevel   = data.LightLevel;
-                temperature  = data.Temperature;
-                humidity     = data.Humidity;
-                commandTopic = $"planttree/{deviceId}/commands";
-            }
-
-            _logger.LogInformation("MQTT received from {DeviceId} (topic={Topic}): light={Light}, moisture={Moisture}",
-                deviceId, topic, lightLevel, soilMoisture);
-
-            // Save to MongoDB
-            await _mongoDbService.InsertSensorDataAsync(new SensorData
-            {
-                DeviceId     = deviceId,
-                Timestamp    = DateTime.UtcNow,
-                Temperature  = temperature,
-                Humidity     = humidity,
-                SoilMoisture = soilMoisture,
-                LightLevel   = lightLevel
-            });
-            await _mongoDbService.UpdateDeviceLastSeenAsync(deviceId);
-
-            // Evaluate rules and publish commands
-            await EvaluateAndPublishCommandsAsync(deviceId, soilMoisture, lightLevel, commandTopic);
+                _logger.LogDebug("Ignoring message on unexpected topic {Topic}", topic);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling MQTT message on topic {Topic}", e.ApplicationMessage.Topic);
+            _logger.LogError(ex, "Error handling MQTT message on topic {Topic}", topic);
         }
     }
 
-    private async Task EvaluateAndPublishCommandsAsync(string deviceId, double? soilMoisture, double? lightLevel, string commandTopic = "")
+    private async Task HandleSensorDataAsync(string payload)
     {
-        var now = DateTime.UtcNow;
-        var commands = new List<ControlCommand>();
-
-        // Moisture rules
-        if (soilMoisture != null)
+        var telemetry = JsonSerializer.Deserialize<XminiTelemetry>(payload, JsonOpts);
+        if (telemetry?.DeviceId == null)
         {
-            var moistureRules = await _mongoDbService.GetMoistureRulesAsync(deviceId);
-            foreach (var rule in moistureRules)
-            {
-                if (!rule.IsEnabled) continue;
-                if (rule.LastTriggeredAt.HasValue &&
-                    (now - rule.LastTriggeredAt.Value).TotalMilliseconds < rule.CooldownMs) continue;
-
-                ControlCommand? cmd = null;
-                if (soilMoisture < rule.MinMoisture)
-                    cmd = new ControlCommand { DeviceId = deviceId, Command = "WATER_ON",
-                        Parameters = new Dictionary<string, object> { { "duration", rule.WaterDurationMs }, { "reason", "moisture_rule" }, { "ruleId", rule.Id! }, { "currentMoisture", soilMoisture } },
-                        Executed = false, CreatedAt = now };
-                else if (soilMoisture >= rule.MaxMoisture)
-                    cmd = new ControlCommand { DeviceId = deviceId, Command = "WATER_OFF",
-                        Parameters = new Dictionary<string, object> { { "reason", "moisture_rule" }, { "ruleId", rule.Id! }, { "currentMoisture", soilMoisture } },
-                        Executed = false, CreatedAt = now };
-
-                if (cmd != null)
-                {
-                    await _mongoDbService.InsertControlCommandAsync(cmd);
-                    await _mongoDbService.UpdateRuleLastTriggeredAsync(rule.Id!);
-                    commands.Add(cmd);
-                    _logger.LogInformation("Moisture rule triggered {Command} for {DeviceId}", cmd.Command, deviceId);
-                }
-            }
+            _logger.LogWarning("xmini/sensor_data without device_id, skipping");
+            return;
         }
 
-        // Light rules
-        if (lightLevel != null)
-        {
-            var lightRules = await _mongoDbService.GetLightRulesAsync(deviceId);
-            foreach (var rule in lightRules)
-            {
-                if (!rule.IsEnabled) continue;
-                if (rule.LastTriggeredAt.HasValue &&
-                    (now - rule.LastTriggeredAt.Value).TotalMilliseconds < rule.CooldownMs) continue;
+        _lastSeenDeviceId = telemetry.DeviceId;
 
-                ControlCommand? cmd = null;
-                if (lightLevel < rule.MinLight)
-                    cmd = new ControlCommand { DeviceId = deviceId, Command = "LIGHT_ON",
-                        Parameters = new Dictionary<string, object> { { "reason", "light_rule" }, { "ruleId", rule.Id! }, { "currentLight", lightLevel } },
-                        Executed = false, CreatedAt = now };
-                else if (lightLevel >= rule.MaxLight)
-                    cmd = new ControlCommand { DeviceId = deviceId, Command = "LIGHT_OFF",
-                        Parameters = new Dictionary<string, object> { { "reason", "light_rule" }, { "ruleId", rule.Id! }, { "currentLight", lightLevel } },
-                        Executed = false, CreatedAt = now };
+        var sensorData = telemetry.ToSensorData();
+        await _mongoDbService.InsertSensorDataAsync(sensorData);
+        await _mongoDbService.UpdateDeviceLastSeenAsync(telemetry.DeviceId);
 
-                if (cmd != null)
-                {
-                    await _mongoDbService.InsertControlCommandAsync(cmd);
-                    await _mongoDbService.UpdateLightRuleLastTriggeredAsync(rule.Id!);
-                    commands.Add(cmd);
-                    _logger.LogInformation("Light rule triggered {Command} for {DeviceId} (light={L})", cmd.Command, deviceId, lightLevel);
-                }
-            }
-        }
-
-        // Publish all commands via MQTT
-        var topic = string.IsNullOrEmpty(commandTopic) ? $"planttree/{deviceId}/commands" : commandTopic;
-        foreach (var command in commands)
-        {
-            var payload = JsonSerializer.Serialize(new
-            {
-                command = command.Command,
-                commandId = command.Id,
-                parameters = command.Parameters
-            });
-
-            var message = new MqttApplicationMessageBuilder()
-                .WithTopic(topic)
-                .WithPayload(payload)
-                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-                .WithRetainFlag(false)
-                .Build();
-
-            await _mqttClient!.PublishAsync(message);
-            _logger.LogInformation("Published {Command} to topic {Topic}", command.Command, topic);
-        }
+        _logger.LogInformation(
+            "Telemetry from {DeviceId}: mode={Mode} soil={Soil}% light={Lux}lux batt={Batt}% pump={Pump} lightOn={Light}",
+            telemetry.DeviceId, telemetry.Mode, telemetry.SoilPercent, telemetry.LightLux,
+            sensorData.BatteryPercent, telemetry.PumpOn, telemetry.LightOn);
     }
-}
 
-public class MqttSensorPayload
-{
-    public double? Temperature { get; set; }
-    public double? Humidity { get; set; }
-    public double? SoilMoisture { get; set; }
-    public double? LightLevel { get; set; }
-    public double? WaterLevel { get; set; }
-    public double? PhLevel { get; set; }
-}
+    private async Task HandleConfigAsync(string payload)
+    {
+        var envelope = JsonSerializer.Deserialize<XminiConfigEnvelope>(payload, JsonOpts);
+        if (envelope?.Config == null)
+        {
+            _logger.LogWarning("xmini/config without 'config' object, skipping");
+            return;
+        }
 
-public class XminiSensorPayload
-{
-    [System.Text.Json.Serialization.JsonPropertyName("device_id")]
-    public string? DeviceId { get; set; }
+        // Payload config không mang device_id -> gán cho thiết bị telemetry gần nhất.
+        var deviceId = _lastSeenDeviceId;
+        if (string.IsNullOrEmpty(deviceId))
+        {
+            _logger.LogWarning("Received xmini/config but no device seen yet; cannot attribute config, skipping");
+            return;
+        }
 
-    [System.Text.Json.Serialization.JsonPropertyName("temperature_c")]
-    public double? TemperatureC { get; set; }
-
-    [System.Text.Json.Serialization.JsonPropertyName("humidity_percent")]
-    public double? HumidityPercent { get; set; }
-
-    [System.Text.Json.Serialization.JsonPropertyName("light_lux")]
-    public double? LightLux { get; set; }
-
-    [System.Text.Json.Serialization.JsonPropertyName("soil_moisture_percent")]
-    public double? SoilMoisturePercent { get; set; }
-
-    [System.Text.Json.Serialization.JsonPropertyName("soil_moisture_raw")]
-    public int? SoilMoistureRaw { get; set; }
-
-    [System.Text.Json.Serialization.JsonPropertyName("pressure_hpa")]
-    public double? PressureHpa { get; set; }
-
-    [System.Text.Json.Serialization.JsonPropertyName("altitude_m")]
-    public double? AltitudeM { get; set; }
+        await _mongoDbService.UpsertDeviceConfigAsync(envelope.Config.ToDeviceConfig(deviceId));
+        _logger.LogInformation("Stored device config for {DeviceId} from xmini/config", deviceId);
+    }
 }

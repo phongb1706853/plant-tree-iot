@@ -2,7 +2,10 @@ from tools.api_client import request
 
 
 def get_latest_sensor(device_id: str) -> dict:
-    """Lấy dữ liệu cảm biến mới nhất: nhiệt độ, độ ẩm không khí, độ ẩm đất, ánh sáng, pH, mực nước"""
+    """Lấy telemetry mới nhất theo hợp đồng xmini/sensor_data: nhiệt độ (temperature), độ ẩm không khí
+    (humidity), độ ẩm đất % (soilPercent), ánh sáng lux (lightLevel), áp suất/độ cao, pin
+    (batteryVoltageV/batteryPercent...), trạng thái (mode, pumpOn, lightOn, waterOk) và các cờ pin
+    (lowBatt/battFull/battCut). Trường null / batteryPercent thiếu = cảm biến lỗi, không phải giá trị thật."""
     return request("GET", f"/api/sensordata/latest/{device_id}")
 
 

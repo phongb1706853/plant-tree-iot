@@ -1,3 +1,5 @@
+> ⚠️ **SUPERSEDED (2026-07-15).** Tài liệu lịch sử — mô tả thiết kế cũ. Hợp đồng thiết bị hiện hành là `mqtt-api.md` (mô hình device-native: thiết bị tự chạy auto; backend chỉ đọc telemetry, đọc/đặt ngưỡng, gửi lệnh thủ công dạng khoá phẳng pump/light/light_pwm/mode/config/message trên topic `xmini/control`). KHÔNG dùng `WATER_ON/LIGHT_ON/FAN_*`, không có rule-engine phía server.
+
 # MCP Server Design — Plant Tree IoT
 
 **Date:** 2026-05-17  

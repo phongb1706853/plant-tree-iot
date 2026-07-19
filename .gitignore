@@ -6,6 +6,13 @@
 **/*.tmp
 **/packages/
 
+# Python (MCP server)
+**/.venv/
+**/venv/
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+
 # IDEs
 **/.vs/
 **/.vscode/

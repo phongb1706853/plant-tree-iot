@@ -6,10 +6,10 @@ Hệ thống IoT trồng cây thông minh: **ESP32 ⇄ HiveMQ Cloud (MQTT/TLS) �
 
 | Thành phần | Vai trò |
 |---|---|
-| **ESP32** (`esp32-mqtt-client.ino`) | Đọc cảm biến, publish qua MQTT, nhận lệnh điều khiển |
+| **ESP32** (`esp32-mqtt-client.ino`) | Đọc cảm biến, **tự chạy auto tưới/chiếu sáng theo ngưỡng lưu trong NVS**, publish qua MQTT, nhận lệnh điều khiển |
 | **HiveMQ Cloud** | Broker MQTT **managed, chạy trên internet** (TLS 8883) |
-| **Server .NET 10** (`PlantTreeIoTServer/`) | Subscribe cảm biến, chạy rule engine, publish lệnh, REST API |
-| **MongoDB** | Lưu dữ liệu cảm biến, thiết bị, rule, user |
+| **Server .NET 10** (`PlantTreeIoTServer/`) | Subscribe telemetry + config, đọc/đặt ngưỡng auto, publish lệnh thủ công, REST API |
+| **MongoDB** | Lưu dữ liệu cảm biến, thiết bị, cấu hình ngưỡng, user |
 | **Web dashboard** (`demo-dashboard.html`) | UI demo + trình test REST API |
 | **MCP server** (`mcp-server/`) | Cầu nối Ollama/AI → REST API (xem [mcp-server/README.md](mcp-server/README.md)) |
 
@@ -19,21 +19,24 @@ Broker nằm trên internet nên **ESP32 và server KHÔNG cần cùng mạng Wi
 
 ```
    ESP32 (WiFi bất kỳ)                          Server .NET (Docker / Mac)
-        │  publish planttree/<id>/sensors            │  subscribe planttree/+/sensors, xmini/sensor_data
+        │  publish xmini/sensor_data, xmini/config   │  subscribe xmini/sensor_data, xmini/config
         ▼                                            ▼
         └──────────►  HiveMQ Cloud  (TLS 8883)  ◄────┘
-                          ▲   │  publish lệnh (xmini/control, planttree/<id>/commands)
+                          ▲   │  publish lệnh (xmini/control)
                           └───┘
 ```
 
 ### MQTT topics
 
-| Topic | Hướng |
-|---|---|
-| `xmini/sensor_data` · `planttree/{deviceId}/sensors` | Device → Server |
-| `xmini/control` · `planttree/{deviceId}/commands` | Server → Device |
+Cả 3 topic đều **QoS 0**, **không retained**.
 
-Lệnh hỗ trợ: `WATER_ON`, `WATER_OFF`, `LIGHT_ON`, `LIGHT_OFF`.
+| Topic | Hướng | Nội dung |
+|---|---|---|
+| `xmini/sensor_data` | Device → Server | Telemetry ~10s (21 trường phẳng snake_case, gồm `soil_percent`) |
+| `xmini/config` | Device → Server | 15 ngưỡng auto hiện tại (khi kết nối + sau mỗi lần đổi) |
+| `xmini/control` | Server → Device | Lệnh, dạng **1 JSON object phẳng** |
+
+Thiết bị **tự chạy auto tưới/chiếu sáng** theo ngưỡng lưu trong NVS. Server không có rule engine; nó chỉ gửi lệnh **thủ công** dạng khoá phẳng xuống `xmini/control`: `{"pump":true}`, `{"light":true}`, `{"light_pwm":180}`, `{"mode":"auto"}`, `{"message":"..."}`. Muốn đổi hành vi auto thì **chỉnh NGƯỠNG** (`xmini/config`), KHÔNG gửi `WATER_ON`/`LIGHT_ON`.
 
 ## Deploy (Docker trên Mac)
 

@@ -1,3 +1,5 @@
+> ℹ️ **Lưu ý lịch sử (2026-07-15):** Cơ chế auth (JWT Bearer) trong tài liệu này vẫn còn hiệu lực, nhưng các endpoint ĐIỀU KHIỂN được nhắc tới ở đây (`/api/control/auto-water`, `/api/control/auto-light`, `/api/rules/**`, lệnh `WATER_ON`, poll `control/commands`) đã bị GỠ. Hợp đồng thiết bị hiện hành là `mqtt-api.md` (device-native: lệnh khoá phẳng trên `xmini/control`, không có rule-engine phía server).
+
 # Authentication đa người dùng — Plant Tree IoT Implementation Plan
 
 > **For agentic workers:** Thực thi task-by-task. Mỗi task có bước verify riêng. Đây là thay đổi bảo mật + đa file, làm tuần tự và test kỹ từng task.

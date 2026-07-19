@@ -26,9 +26,9 @@
 Mỗi tool trong `mcp-server/` không tự có dữ liệu — nó **gọi tiếp sang .NET API** bằng HTTP:
 ```python
 def list_devices() -> list:
-    return request("GET", "/api/devices")                       # -> .NET
-def send_command(device_id, command, ...):
-    return request("POST", "/api/control/commands", json=...)   # -> .NET
+    return request("GET", "/api/devices")                        # -> .NET
+def set_pump(device_id, on):
+    return request("POST", f"/api/control/{device_id}", json={"pump": on})  # -> .NET
 ```
 Vì dữ liệu + rule engine + auth nằm ở **.NET**, nên 12 tool phải **kèm JWT** khi gọi .NET. Phần này đã được wire sẵn trong [mcp-server/tools/api_client.py](mcp-server/tools/api_client.py) (tự login, gắn `Bearer`, tự login lại khi 401).
 

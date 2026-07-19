@@ -85,38 +85,42 @@ public class MqttPublisherService
         }
     }
 
-    public async Task PublishCommandAsync(string deviceId, string command, Dictionary<string, object>? parameters = null)
+    // Topic điều khiển dùng chung theo hợp đồng (mqtt-api.md): thiết bị subscribe xmini/control.
+    private const string ControlTopic = "xmini/control";
+
+    /// <summary>
+    /// Publish một object JSON PHẲNG xuống xmini/control (QoS 0, không retained) — đúng hợp đồng
+    /// firmware. Thiết bị chỉ hiểu các khoá phẳng: pump / light / light_pwm / mode / auto / config /
+    /// message / message_secs. Khoá lạ bị bỏ qua. KHÔNG bọc trong {"command":...,"parameters":...}.
+    /// </summary>
+    /// <returns>true nếu đã gửi được lên broker.</returns>
+    public async Task<bool> PublishControlAsync(string deviceId, IDictionary<string, object?> flatKeys)
     {
         if (!_isConnected || _mqttClient == null)
         {
-            _logger.LogWarning("MQTT Publisher not connected, cannot publish command");
-            return;
+            _logger.LogWarning("MQTT Publisher not connected, cannot publish control for {DeviceId}", deviceId);
+            return false;
         }
 
         try
         {
-            // Determine topic based on device ID
-            string topic = deviceId.Contains("xmini") ? "xmini/control" : $"planttree/{deviceId}/commands";
-
-            var payload = JsonSerializer.Serialize(new
-            {
-                command = command,
-                parameters = parameters ?? new Dictionary<string, object>()
-            });
+            var payload = JsonSerializer.Serialize(flatKeys);
 
             var message = new MqttApplicationMessageBuilder()
-                .WithTopic(topic)
+                .WithTopic(ControlTopic)
                 .WithPayload(payload)
-                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce) // QoS 0 theo hợp đồng
                 .WithRetainFlag(false)
                 .Build();
 
             await _mqttClient.PublishAsync(message);
-            _logger.LogInformation("Published {Command} to {Topic} for device {DeviceId}", command, topic, deviceId);
+            _logger.LogInformation("Published control to {Topic} for {DeviceId}: {Payload}", ControlTopic, deviceId, payload);
+            return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error publishing MQTT command for device {DeviceId}", deviceId);
+            _logger.LogError(ex, "Error publishing MQTT control for device {DeviceId}", deviceId);
+            return false;
         }
     }
 

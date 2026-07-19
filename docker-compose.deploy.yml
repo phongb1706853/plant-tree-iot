@@ -31,6 +31,11 @@ services:
       MQTT_USE_TLS: ${MQTT_USE_TLS:-true}
       # Bỏ qua xác thực cert (trust store macOS thiếu CA của HiveMQ) — chỉ dùng dev
       MQTT_ALLOW_INVALID_CERT: ${MQTT_ALLOW_INVALID_CERT:-true}
+      # AI server (tree-grow-helper) cho /api/assistant/*. Chạy NGOÀI stack này (trên host).
+      # Mac/Windows Docker Desktop: host.docker.internal trỏ về host (extra_hosts bên dưới cho Linux).
+      AI_SERVER_URL: ${AI_SERVER_URL:-http://host.docker.internal:8787}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - mongodb
     restart: unless-stopped

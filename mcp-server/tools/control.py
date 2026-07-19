@@ -1,31 +1,47 @@
 from tools.api_client import request
 
-VALID_COMMANDS = ["WATER_ON", "WATER_OFF", "LIGHT_ON", "LIGHT_OFF", "FAN_ON", "FAN_OFF"]
+# Điều khiển bám hợp đồng firmware Xmini (mqtt-api.md mục 4): BE publish KHOÁ PHẲNG xuống
+# xmini/control. Thiết bị KHÔNG hiểu WATER_ON/LIGHT_ON/FAN_* — chỉ hiểu pump/light/light_pwm/
+# mode/auto/config/message. Mọi lệnh gửi qua POST /api/control/{deviceId}.
 
 
-def send_command(device_id: str, command: str, duration: int = 0) -> dict:
-    """Gửi lệnh điều khiển đến thiết bị.
-    command: WATER_ON, WATER_OFF, LIGHT_ON, LIGHT_OFF, FAN_ON, FAN_OFF
-    duration: thời gian (ms), chỉ dùng cho WATER_ON
+def set_pump(device_id: str, on: bool) -> dict:
+    """Bật/tắt máy bơm (thủ công).
+    ⚠ Lệnh chấp hành khiến thiết bị chuyển sang MANUAL cho tới khi gọi set_mode(auto=True).
+    Ở AUTO, thiết bị tự tưới theo ngưỡng; dùng set_device_config để chỉnh ngưỡng thay vì bơm tay.
     """
-    if command not in VALID_COMMANDS:
-        return {"error": f"Lệnh không hợp lệ. Các lệnh hợp lệ: {', '.join(VALID_COMMANDS)}"}
-    payload = {"deviceId": device_id, "command": command}
-    if duration > 0:
-        payload["parameters"] = {"duration": duration}
-    return request("POST", "/api/control/commands", json=payload)
+    return request("POST", f"/api/control/{device_id}", json={"pump": bool(on)})
 
 
-def get_pending_commands(device_id: str) -> list:
-    """Xem danh sách lệnh đang chờ thiết bị thực thi"""
+def set_light(device_id: str, on: bool | None = None, pwm: int | None = None) -> dict:
+    """Điều khiển đèn (thủ công). Truyền `pwm` (0–255) để đặt độ sáng, hoặc `on` để bật/tắt.
+    ⚠ Lệnh chấp hành khiến thiết bị chuyển sang MANUAL cho tới khi gọi set_mode(auto=True).
+    """
+    if pwm is not None:
+        return request("POST", f"/api/control/{device_id}", json={"light_pwm": int(pwm)})
+    if on is not None:
+        return request("POST", f"/api/control/{device_id}", json={"light": bool(on)})
+    return {"error": "Cần truyền `on` (bool) hoặc `pwm` (0–255)."}
+
+
+def set_mode(device_id: str, auto: bool) -> dict:
+    """Đổi chế độ: auto=True -> AUTO (thiết bị tự tưới/đèn theo ngưỡng); auto=False -> MANUAL.
+    Gọi auto=True để trả thiết bị về tự động sau khi đã can thiệp tay.
+    """
+    return request("POST", f"/api/control/{device_id}", json={"mode": "auto" if auto else "manual"})
+
+
+def show_message(device_id: str, text: str, secs: int = 0) -> dict:
+    """Hiện chữ lên màn hình TFT của chậu cây ("chậu cây nói với người").
+    text: nội dung — CHỈ ASCII không dấu (tiếng Việt có dấu / emoji sẽ hiện sai); "" để xoá.
+    secs: tự ẩn sau N giây; 0 = giữ tới khi thay/xoá. KHÔNG đổi chế độ AUTO/MANUAL.
+    """
+    payload: dict = {"message": text}
+    if secs and secs > 0:
+        payload["message_secs"] = int(secs)
+    return request("POST", f"/api/control/{device_id}", json=payload)
+
+
+def get_recent_commands(device_id: str) -> list:
+    """Xem nhật ký các lệnh gần nhất đã publish xuống thiết bị (mới nhất trước)."""
     return request("GET", f"/api/control/commands/{device_id}")
-
-
-def auto_water(device_id: str, threshold: float = 30.0) -> dict:
-    """Tưới tự động nếu độ ẩm đất < threshold (mặc định 30%)"""
-    return request("POST", f"/api/control/auto-water/{device_id}", params={"threshold": threshold})
-
-
-def auto_light(device_id: str, threshold: float = 200.0) -> dict:
-    """Tự động bật đèn nếu ánh sáng < threshold, tắt nếu >= threshold (mặc định 200 lux)"""
-    return request("POST", f"/api/control/auto-light/{device_id}", params={"threshold": threshold})

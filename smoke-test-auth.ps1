@@ -1,4 +1,5 @@
-# Smoke test end-to-end cho auth (JWT + device token + ownership).
+# Smoke test end-to-end cho auth (JWT + ownership + chia sẻ device).
+# ESP32 dùng MQTT (HiveMQ) -> KHÔNG còn device secret; endpoint HTTP dùng JWT (owner/member).
 # Yêu cầu: đã `dotnet build`, MongoDB chạy ở localhost:27017.
 # Chạy:  powershell -ExecutionPolicy Bypass -File .\smoke-test-auth.ps1
 $ErrorActionPreference = 'Stop'
@@ -10,13 +11,12 @@ $rand = Get-Random -Maximum 999999
 
 if (-not (Test-Path $exe)) { Write-Host "EXE not found (chay 'dotnet build' truoc): $exe"; exit 1 }
 
-$env:ASPNETCORE_ENVIRONMENT = 'Development'   # dev JWT fallback; Production phai dat JWT_SECRET
-Remove-Item Env:MQTT_BROKER -ErrorAction SilentlyContinue   # tat MQTT cho test
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+Remove-Item Env:MQTT_BROKER -ErrorAction SilentlyContinue
 Remove-Item Env:JWT_SECRET  -ErrorAction SilentlyContinue
 if (Test-Path $log)  { Remove-Item $log  -Force }
 if (Test-Path $elog) { Remove-Item $elog -Force }
 
-# QUAN TRONG: -WorkingDirectory = thu muc exe de doc appsettings.json
 $proc = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe -Parent) -RedirectStandardOutput $log -RedirectStandardError $elog -PassThru -WindowStyle Hidden
 
 function Invoke-Api {
@@ -54,26 +54,49 @@ try {
   $tokenA = try { ($ra.Body | ConvertFrom-Json).token } catch { $null }
   Check '1. Register user A' ($ra.Status -eq 200 -and $tokenA) "status=$($ra.Status)"
 
-  Check '2. GET /api/devices no token -> 401' ((Invoke-Api GET '/api/devices').Status -eq 401) '401'
-  Check '3. GET /api/devices with token -> 200' ((Invoke-Api GET '/api/devices' @{ Authorization="Bearer $tokenA" }).Status -eq 200) '200'
-
-  $r4 = Invoke-Api POST '/api/devices/register' @{ Authorization="Bearer $tokenA" } (@{ deviceId=$dev; name='Smoke Device' } | ConvertTo-Json -Compress)
-  $secret = try { ($r4.Body | ConvertFrom-Json).deviceSecret } catch { $null }
-  Check '4. Register device + secret' (($r4.Status -eq 201 -or $r4.Status -eq 200) -and $secret) "status=$($r4.Status)"
-
-  $r5 = Invoke-Api GET "/api/devices/$dev" @{ Authorization="Bearer $tokenA" }
-  Check '5. No deviceSecretHash leak' ($r5.Status -eq 200 -and ($r5.Body -notmatch 'deviceSecretHash')) '200'
-  Check '6. Upload sensor (correct secret) -> 200' ((Invoke-Api POST '/api/sensordata/upload' @{ 'X-Device-Id'=$dev; 'X-Device-Secret'=$secret } (@{ deviceId=$dev; soilMoisture=20 } | ConvertTo-Json -Compress)).Status -eq 200) '200'
-  Check '7. Upload (wrong secret) -> 401' ((Invoke-Api POST '/api/sensordata/upload' @{ 'X-Device-Id'=$dev; 'X-Device-Secret'='wrong' } (@{ deviceId=$dev } | ConvertTo-Json -Compress)).Status -eq 401) '401'
-
   $rb = Invoke-Api POST '/api/auth/register' @{} (@{ email=$emailB; password='pass1234'; displayName='B' } | ConvertTo-Json -Compress)
   $tokenB = try { ($rb.Body | ConvertFrom-Json).token } catch { $null }
-  Check '8. User B cannot see A device -> 404' ((Invoke-Api GET "/api/devices/$dev" @{ Authorization="Bearer $tokenB" }).Status -eq 404) '404'
-  Check '9. User B cannot command A device -> 404' ((Invoke-Api POST '/api/control/commands' @{ Authorization="Bearer $tokenB" } (@{ deviceId=$dev; command='WATER_ON' } | ConvertTo-Json -Compress)).Status -eq 404) '404'
-  Check '10. Login wrong password -> 401' ((Invoke-Api POST '/api/auth/login' @{} (@{ email=$emailA; password='wrong' } | ConvertTo-Json -Compress)).Status -eq 401) '401'
+  Check '2. Register user B' ($rb.Status -eq 200 -and $tokenB) "status=$($rb.Status)"
+
+  Check '3. GET /api/devices no token -> 401' ((Invoke-Api GET '/api/devices').Status -eq 401) '401'
+
+  # Owner A đăng ký device — response KHÔNG còn deviceSecret
+  $reg = Invoke-Api POST '/api/devices/register' @{ Authorization="Bearer $tokenA" } (@{ deviceId=$dev; name='X' } | ConvertTo-Json -Compress)
+  Check '4. Register device (no deviceSecret in response)' (($reg.Status -eq 201 -or $reg.Status -eq 200) -and ($reg.Body -notmatch 'deviceSecret')) "status=$($reg.Status)"
+
+  $get = Invoke-Api GET "/api/devices/$dev" @{ Authorization="Bearer $tokenA" }
+  Check '5. Owner GET device -> 200, no secret hash' ($get.Status -eq 200 -and ($get.Body -notmatch 'deviceSecretHash')) "status=$($get.Status)"
+
+  Check '6. Owner upload sensor (JWT) -> 200' ((Invoke-Api POST '/api/sensordata/upload' @{ Authorization="Bearer $tokenA" } (@{ deviceId=$dev; soilMoisture=20 } | ConvertTo-Json -Compress)).Status -eq 200) 'owner control'
+
+  # Trước khi chia sẻ: B không truy cập được device của A
+  Check '7. B GET A device (chua share) -> 404' ((Invoke-Api GET "/api/devices/$dev" @{ Authorization="Bearer $tokenB" }).Status -eq 404) '404'
+  Check '8. B upload to A device (chua share) -> 404' ((Invoke-Api POST '/api/sensordata/upload' @{ Authorization="Bearer $tokenB" } (@{ deviceId=$dev; soilMoisture=30 } | ConvertTo-Json -Compress)).Status -eq 404) '404'
+
+  # A chia sẻ device cho B
+  $share = Invoke-Api POST "/api/devices/$dev/share" @{ Authorization="Bearer $tokenA" } (@{ email=$emailB } | ConvertTo-Json -Compress)
+  Check '9. Owner share device cho B -> 200' ($share.Status -eq 200) "status=$($share.Status)"
+
+  # Sau khi chia sẻ: B xem + điều khiển được
+  Check '10. B GET shared device -> 200 (member)' ((Invoke-Api GET "/api/devices/$dev" @{ Authorization="Bearer $tokenB" }).Status -eq 200) 'member view'
+  Check '11. B upload shared device -> 200 (member)' ((Invoke-Api POST '/api/sensordata/upload' @{ Authorization="Bearer $tokenB" } (@{ deviceId=$dev; soilMoisture=40 } | ConvertTo-Json -Compress)).Status -eq 200) 'member control'
+  Check '12. B send command shared device -> 200 (member)' ((Invoke-Api POST '/api/control/commands' @{ Authorization="Bearer $tokenB" } (@{ deviceId=$dev; command='WATER_ON' } | ConvertTo-Json -Compress)).Status -eq 200) 'member control'
+  Check '13. B thay B trong shared device -> KHONG xoa duoc (owner-only)' ((Invoke-Api DELETE "/api/devices/$dev" @{ Authorization="Bearer $tokenB" }).Status -eq 404) 'owner-only delete'
+
+  # members list -> lấy id của B để thu hồi
+  $mem = Invoke-Api GET "/api/devices/$dev/members" @{ Authorization="Bearer $tokenA" }
+  $bId = try { (($mem.Body | ConvertFrom-Json).members)[0].id } catch { $null }
+  Check '14. GET members -> co 1 member' ($mem.Status -eq 200 -and $bId) "memberId=$bId"
+
+  # Thu hồi chia sẻ
+  Check '15. Owner unshare B -> 200' ((Invoke-Api DELETE "/api/devices/$dev/share/$bId" @{ Authorization="Bearer $tokenA" }).Status -eq 200) 'revoke'
+  Check '16. B GET device sau thu hoi -> 404' ((Invoke-Api GET "/api/devices/$dev" @{ Authorization="Bearer $tokenB" }).Status -eq 404) 'revoked'
+
+  Check '17. Login sai password -> 401' ((Invoke-Api POST '/api/auth/login' @{} (@{ email=$emailA; password='wrong' } | ConvertTo-Json -Compress)).Status -eq 401) '401'
 }
 finally {
   if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
 }
 $pass = ($results | Where-Object { $_.Pass }).Count
 Write-Host ("`n===== {0}/{1} PASS =====" -f $pass, $results.Count)
+if ($pass -ne $results.Count -and (Test-Path $elog)) { Get-Content $elog -Tail 15 }

@@ -13,7 +13,8 @@
     line-height: 1.6;
   }
   header {
-    background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+    background: linear-gradient(13Crash — nod-api không có key dataprocessor (chỉ có SharedTopic) → vẫn phải thêm 1 key vào nod-api
+5deg, #065f46 0%, #047857 100%);
     padding: 24px 32px;
     border-bottom: 2px solid #10b981;
   }
@@ -183,6 +184,7 @@
   .badge.post { background: #15803d; color: #fff; }
   .badge.put { background: #b45309; color: #fff; }
   .badge.delete { background: #b91c1c; color: #fff; }
+  .badge.rpc { background: #6d28d9; color: #fff; }
 
   .alert {
     background: rgba(251, 191, 36, 0.1);
@@ -388,21 +390,22 @@
     <button class="nav-btn" data-target="api-config">URL Config</button>
     <button class="nav-btn" data-target="api-devices">Devices</button>
     <button class="nav-btn" data-target="api-sensors">Sensor Data</button>
-    <button class="nav-btn" data-target="api-rules-moisture">Rules — Moisture</button>
-    <button class="nav-btn" data-target="api-rules-light">Rules — Light</button>
+    <button class="nav-btn" data-target="api-thresholds">Ngưỡng auto (Config)</button>
     <button class="nav-btn" data-target="api-control">Control</button>
 
     <div class="group-label">🧪 Test trực tiếp</div>
     <button class="nav-btn" data-target="try-config">Kết nối</button>
     <button class="nav-btn" data-target="try-devices">Devices</button>
     <button class="nav-btn" data-target="try-sensors">Sensor Data</button>
-    <button class="nav-btn" data-target="try-rules">Rules</button>
+    <button class="nav-btn" data-target="try-rules">Ngưỡng auto</button>
     <button class="nav-btn" data-target="try-control">Control</button>
 
     <div class="group-label">MQTT</div>
     <button class="nav-btn" data-target="mqtt-connect">Kết nối MQTT (IoT team)</button>
 
     <div class="group-label">MCP / AI</div>
+    <button class="nav-btn" data-target="try-assistant">🤖 Trợ lý AI (chat)</button>
+    <button class="nav-btn" data-target="mcp-try">🧪 Test MCP tools</button>
     <button class="nav-btn" data-target="mcp-tools">MCP Tools & Response</button>
     <button class="nav-btn" data-target="mcp-iot-setup">Setup MCP cho IoT team</button>
 
@@ -414,7 +417,7 @@
 
 <section id="intro" class="active">
   <h2>Giới thiệu</h2>
-  <p><strong>Plant Tree IoT</strong> là hệ thống quản lý vườn cây thông minh dùng ESP32 + .NET + MongoDB. Server tự động đánh giá rule (độ ẩm, ánh sáng) và sinh lệnh điều khiển (tưới nước, bật đèn) gửi xuống ESP32.</p>
+  <p><strong>Plant Tree IoT</strong> là hệ thống quản lý vườn cây thông minh dùng ESP32 + .NET + MongoDB. Thiết bị (ESP32) <strong>tự chạy chế độ auto</strong> theo ngưỡng lưu trong NVS; server chỉ đọc telemetry, đọc/đặt ngưỡng auto (config) và gửi lệnh <strong>thủ công</strong> (bơm, đèn, chế độ, tin nhắn) xuống ESP32 qua MQTT.</p>
 
   <h3>Thành phần chính</h3>
   <div class="stack-grid">
@@ -426,12 +429,12 @@
     <div class="stack-card">
       <h4>.NET 10 API</h4>
       <div class="port">port 8080</div>
-      <div class="desc">REST API + MQTT background service, eval rule engine</div>
+      <div class="desc">REST API + MQTT background service (đọc telemetry/config, publish lệnh)</div>
     </div>
     <div class="stack-card">
       <h4>MongoDB</h4>
       <div class="port">port 27017</div>
-      <div class="desc">Lưu device, sensor history, rules, control commands</div>
+      <div class="desc">Lưu device, sensor history, device config (ngưỡng), nhật ký lệnh</div>
     </div>
     <div class="stack-card">
       <h4>HiveMQ Cloud</h4>
@@ -441,7 +444,7 @@
     <div class="stack-card">
       <h4>MCP Server</h4>
       <div class="port">stdio</div>
-      <div class="desc">12 tools cho Ollama AI tự gọi (devices, sensors, control, rules)</div>
+      <div class="desc">12 tools cho Ollama AI tự gọi (devices, sensors, control, device config)</div>
     </div>
     <div class="stack-card">
       <h4>Cloudflare Tunnel</h4>
@@ -497,24 +500,23 @@
 
   <h3>Sensor Data</h3>
   <ul>
-    <li>Upload telemetry (temperature, humidity, soil moisture, light, pressure, altitude, relay state)</li>
-    <li>Hỗ trợ <strong>cả 2 format payload</strong>: camelCase (<code>soilMoisture</code>) và snake_case (<code>soil_moisture_percent</code>) — accommodate IoT team firmware hiện tại</li>
+    <li>Upload telemetry (nhiệt độ, độ ẩm, độ ẩm đất %, ánh sáng, áp suất, độ cao, pin, chế độ, trạng thái bơm/đèn, cờ cảnh báo)</li>
+    <li>Payload <strong>snake_case</strong> đúng hợp đồng (<code>device_id</code>, <code>temperature_c</code>, <code>soil_percent</code>…) — giống hệt telemetry thiết bị publish lên <code>xmini/sensor_data</code></li>
     <li>Lấy sensor mới nhất, history, theo khoảng thời gian</li>
   </ul>
 
-  <h3>Rules Engine (tự động)</h3>
+  <h3>Device auto (thiết bị tự chạy)</h3>
   <ul>
-    <li><strong>Moisture rule</strong>: tự sinh command WATER_ON khi soil &lt; min, WATER_OFF khi &gt; max</li>
-    <li><strong>Light rule</strong>: tự sinh command LIGHT_ON khi lux &lt; min, LIGHT_OFF khi &gt; max</li>
-    <li>Cooldown chống spam command</li>
-    <li>Server <strong>tự động eval rule</strong> mỗi lần ESP32 upload sensor — không cần ESP32 hỏi</li>
+    <li>Thiết bị <strong>tự chạy chế độ auto</strong> dựa trên 15 ngưỡng lưu trong NVS — server KHÔNG sinh lệnh tưới/đèn</li>
+    <li>Muốn đổi hành vi auto → chỉnh <strong>ngưỡng (config)</strong>: <code>GET/PUT /api/control/{deviceId}/config</code></li>
+    <li>Thiết bị publish cấu hình hiện tại lên <code>xmini/config</code> khi kết nối và sau mỗi lần đổi</li>
   </ul>
 
   <h3>Control</h3>
   <ul>
-    <li>Gửi lệnh thủ công (WATER_ON/OFF, LIGHT_ON/OFF, FAN_ON/OFF)</li>
-    <li>Pending command queue cho ESP32 polling</li>
-    <li>Báo executed để clear queue</li>
+    <li>Gửi lệnh <strong>thủ công</strong> (ép MANUAL): bơm <code>{"pump":true}</code>, đèn <code>{"light":true}</code>, PWM đèn <code>{"light_pwm":180}</code></li>
+    <li>Đổi chế độ <code>{"mode":"auto"|"manual"}</code> và hiển thị màn hình TFT <code>{"message":"...","message_secs":N}</code></li>
+    <li>Server publish khoá phẳng xuống <code>xmini/control</code>; xem nhật ký lệnh đã gửi qua <code>GET /api/control/commands/{deviceId}</code></li>
   </ul>
 
   <h3>MCP Tools cho AI (12 tools)</h3>
@@ -522,8 +524,8 @@
     <tr><th>Group</th><th>Tools</th></tr>
     <tr><td>Devices</td><td><code>list_devices</code>, <code>get_device_info</code></td></tr>
     <tr><td>Sensors</td><td><code>get_latest_sensor</code>, <code>get_sensor_history</code></td></tr>
-    <tr><td>Control</td><td><code>send_command</code>, <code>get_pending_commands</code>, <code>auto_water</code>, <code>auto_light</code></td></tr>
-    <tr><td>Rules</td><td><code>get_moisture_rule</code>, <code>set_moisture_rule</code>, <code>get_light_rule</code>, <code>set_light_rule</code></td></tr>
+    <tr><td>Control</td><td><code>set_pump</code>, <code>set_light</code>, <code>set_mode</code>, <code>show_message</code>, <code>get_recent_commands</code></td></tr>
+    <tr><td>Device Config</td><td><code>get_device_config</code>, <code>set_device_config</code>, <code>refresh_device_config</code></td></tr>
   </table>
 </section>
 
@@ -597,20 +599,20 @@ dotnet run</pre>
   <p>Mở Postman / Terminal trên máy Windows, lần lượt:</p>
   <ol>
     <li>Đăng ký device <code>ESP32S3_Zone1</code></li>
-    <li>Gửi sensor data bằng payload snake_case (giống IoT team đang dùng)</li>
-    <li>Tạo light rule cố tình trigger (min=500 > current 420.5)</li>
-    <li>Gửi lại sensor data → response trả về <code>triggeredCommands: [LIGHT_ON]</code></li>
-    <li>ESP32 polling <code>/api/control/commands/ESP32S3_Zone1</code> → lấy lệnh</li>
+    <li>Gửi sensor data bằng payload snake_case (giống telemetry thiết bị)</li>
+    <li>Xem ngưỡng auto hiện tại: <code>GET /api/control/ESP32S3_Zone1/config</code></li>
+    <li>Gửi lệnh thủ công bật bơm: <code>POST /api/control/ESP32S3_Zone1</code> body <code>{"pump":true}</code></li>
+    <li>Xem nhật ký lệnh đã publish: <code>GET /api/control/commands/ESP32S3_Zone1</code></li>
   </ol>
-  <p>→ <strong>Chứng minh</strong>: API public, accept payload IoT team, rule engine real-time.</p>
+  <p>→ <strong>Chứng minh</strong>: API public, accept payload thiết bị, publish lệnh xuống MQTT real-time.</p>
 
   <h3>Phần B — Ollama gọi MCP (5 phút)</h3>
   <p>Trong Ollama UI đã config MCP server, hỏi tự nhiên:</p>
   <div class="code-block">
     <pre>>>> Liệt kê tất cả thiết bị IoT đang có
->>> Cây ESP32S3_Zone1 hiện tại có cần tưới không?
->>> Tưới cây esp32-001 trong 10 giây
->>> Đặt rule tự động tưới khi độ ẩm < 25%
+>>> Cây ESP32S3_Zone1 hiện tại thế nào?
+>>> Bật máy bơm cho cây ESP32S3_Zone1
+>>> Đặt ngưỡng tự tưới khi độ ẩm đất dưới 25%
 >>> Cho tôi xem 10 lần đo cảm biến gần nhất</pre>
   </div>
   <p>→ <strong>Chứng minh</strong>: AI tự gọi đúng tool MCP, response từ data thật.</p>
@@ -625,19 +627,18 @@ export DEVICE=ESP32S3_Zone1
 curl -X POST $API/api/devices/register -H "Content-Type: application/json" \
   -d '{"deviceId":"ESP32S3_Zone1","name":"Zone 1","plantType":"Mixed","location":"IoT lab"}'
 
-# 2. Sensor data lần 1 — chưa rule, triggeredCommands rỗng
+# 2. Gửi sensor data (snake_case đúng hợp đồng)
 curl -X POST $API/api/sensordata/upload -H "Content-Type: application/json" \
-  -d '{"device_id":"ESP32S3_Zone1","temperature_c":28.4,"light_lux":420.5,"soil_moisture_percent":61.8}'
+  -d '{"device_id":"ESP32S3_Zone1","temperature_c":28.4,"light_lux":420.5,"soil_percent":62}'
 
-# 3. Tạo light rule cố tình trigger (min=500 > 420.5)
-curl -X POST $API/api/rules/light -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMs":60000}'
+# 3. Xem ngưỡng auto hiện tại của thiết bị
+curl $API/api/control/$DEVICE/config
 
-# 4. Gửi lại sensor → triggeredCommands có LIGHT_ON
-curl -X POST $API/api/sensordata/upload -H "Content-Type: application/json" \
-  -d '{"device_id":"ESP32S3_Zone1","temperature_c":28.4,"light_lux":420.5,"soil_moisture_percent":61.8}'
+# 4. Gửi lệnh thủ công bật bơm (ép MANUAL) — publish xuống xmini/control
+curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" \
+  -d '{"pump":true}'
 
-# 5. ESP32 polling lấy lệnh
+# 5. Xem nhật ký lệnh đã gửi
 curl $API/api/control/commands/$DEVICE</pre>
   </div>
 </section>
@@ -772,13 +773,13 @@ export DEVICE=ESP32S3_Zone1</pre>
   <h2>Sensor Data API</h2>
 
   <div class="alert info">
-    <strong>Payload từ IoT team (snake_case)</strong>: Server đã hỗ trợ map các field <code>device_id</code>, <code>temperature_c</code>, <code>light_lux</code>, <code>soil_moisture_percent</code>, <code>pressure_hpa</code>, <code>altitude_m</code>, <code>soil_moisture_raw</code>, <code>relay_on</code> sang model nội bộ.
+    <strong>Payload snake_case (đúng hợp đồng)</strong>: Server nhận các field <code>device_id</code>, <code>temperature_c</code>, <code>humidity_percent</code>, <code>pressure_hpa</code>, <code>altitude_m</code>, <code>light_lux</code>, <code>soil_percent</code> (int 0–100), <code>battery_voltage_v</code>, <code>battery_percent</code>, <code>mode</code>, <code>pump_on</code>, <code>light_on</code>… — cùng khuôn với telemetry thiết bị publish lên <code>xmini/sensor_data</code>.
   </div>
 
   <div class="endpoint post"><span class="badge post">POST</span> /api/sensordata/upload</div>
-  <p>ESP32 / IoT gửi sensor. Server tự eval rule, trả về <code>triggeredCommands</code>.</p>
+  <p>ESP32 / IoT gửi telemetry. Server lưu lại và trả về <code>{message, timestamp}</code> — <strong>không</strong> còn <code>triggeredCommands</code> (thiết bị tự chạy auto).</p>
 
-  <h4>Payload IoT team đang dùng</h4>
+  <h4>Payload telemetry (snake_case)</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/sensordata/upload \
@@ -786,42 +787,25 @@ export DEVICE=ESP32S3_Zone1</pre>
   -d '{
     "device_id":"ESP32S3_Zone1",
     "temperature_c":28.4,
+    "humidity_percent":65,
     "pressure_hpa":1008.6,
     "altitude_m":38.2,
     "light_lux":420.5,
-    "soil_moisture_percent":61.8,
-    "soil_moisture_raw":2540,
-    "relay_on":false
+    "soil_percent":62,
+    "battery_voltage_v":4.02,
+    "battery_percent":88,
+    "mode":"auto",
+    "pump_on":false,
+    "light_on":false,
+    "light_pwm":0
   }'</pre>
   </div>
 
-  <div class="response-label">Trường hợp KHÔNG có rule (hoặc rule không trigger) — HTTP 200</div>
+  <div class="response-label">Response — HTTP 200</div>
   <div class="code-block response-block">
     <pre>{
   "message": "Data uploaded successfully",
-  "timestamp": "2026-05-24T08:17:47.471989Z",
-  "triggeredCommands": []
-}</pre>
-  </div>
-
-  <div class="response-label">Trường hợp CÓ rule trigger (vd light rule min=500, lux=420.5)</div>
-  <div class="code-block response-block">
-    <pre>{
-  "message": "Data uploaded successfully",
-  "timestamp": "2026-05-24T08:25:12.331020Z",
-  "triggeredCommands": [
-    {
-      "commandId": "65f8a1b2c3d4e5f678901234",
-      "command": "LIGHT_ON",
-      "parameters": {
-        "reason": "light_rule",
-        "ruleId": "65f8a0a0a0a0a0a0a0a0a0a0",
-        "ruleName": "Demo bat den",
-        "threshold": 500,
-        "currentLight": 420.5
-      }
-    }
-  ]
+  "timestamp": "2026-05-24T08:17:47.471989Z"
 }</pre>
   </div>
 
@@ -830,63 +814,8 @@ export DEVICE=ESP32S3_Zone1</pre>
     <pre>DeviceId is required</pre>
   </div>
 
-  <h4>Test scenario "đất khô" (kích moisture rule)</h4>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/sensordata/upload \
-  -H "Content-Type: application/json" \
-  -d '{"device_id":"ESP32S3_Zone1","temperature_c":30,"soil_moisture_percent":20,"light_lux":500}'</pre>
-  </div>
-
-  <div class="response-label">Response (với moisture rule min=30) — soil=20 &lt; 30 → WATER_ON</div>
-  <div class="code-block response-block">
-    <pre>{
-  "message": "Data uploaded successfully",
-  "timestamp": "2026-05-24T08:30:00.123456Z",
-  "triggeredCommands": [
-    {
-      "commandId": "65f8b2c3d4e5f6789012abcd",
-      "command": "WATER_ON",
-      "parameters": {
-        "duration": 5000,
-        "reason": "moisture_rule",
-        "ruleId": "65f8a1a1a1a1a1a1a1a1a1a1",
-        "ruleName": "Tuoi tu dong",
-        "threshold": 30,
-        "currentMoisture": 20
-      }
-    }
-  ]
-}</pre>
-  </div>
-
-  <h4>Test scenario "thiếu sáng" (kích light rule)</h4>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/sensordata/upload \
-  -H "Content-Type: application/json" \
-  -d '{"device_id":"ESP32S3_Zone1","temperature_c":25,"soil_moisture_percent":60,"light_lux":50}'</pre>
-  </div>
-
-  <div class="response-label">Response (light rule min=100, lux=50 &lt; 100) → LIGHT_ON</div>
-  <div class="code-block response-block">
-    <pre>{
-  "message": "Data uploaded successfully",
-  "timestamp": "2026-05-24T08:35:11.987654Z",
-  "triggeredCommands": [
-    {
-      "commandId": "65f8c3d4e5f67890123456ef",
-      "command": "LIGHT_ON",
-      "parameters": {
-        "reason": "light_rule",
-        "ruleId": "65f8a0a0a0a0a0a0a0a0a0a0",
-        "ruleName": "Den chieu sang",
-        "threshold": 100,
-        "currentLight": 50
-      }
-    }
-  ]
-}</pre>
+  <div class="alert info">
+    Thiết bị <strong>tự chạy auto</strong> theo ngưỡng trong NVS — server không sinh lệnh khi nhận telemetry. Muốn đổi hành vi tự tưới/đèn, chỉnh <strong>ngưỡng</strong> ở tab <a href="#" onclick="document.querySelector('[data-target=api-thresholds]').click(); return false;">Ngưỡng auto (Config)</a>.
   </div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/latest/{deviceId}</div>
@@ -902,15 +831,25 @@ export DEVICE=ESP32S3_Zone1</pre>
   "deviceId": "ESP32S3_Zone1",
   "timestamp": "2026-05-24T08:17:47.471989Z",
   "temperature": 28.4,
-  "humidity": null,
-  "soilMoisture": 61.8,
-  "lightLevel": 420.5,
-  "waterLevel": null,
-  "phLevel": null,
+  "humidity": 65,
   "pressure": 1008.6,
   "altitude": 38.2,
-  "soilMoistureRaw": 2540,
-  "relayOn": false,
+  "temperatureBmp": 28.7,
+  "lightLevel": 420.5,
+  "soilPercent": 62,
+  "soilDryFlag": false,
+  "batteryVoltageV": 4.02,
+  "batteryCurrentMa": 120.5,
+  "batteryPowerMw": 484.4,
+  "batteryPercent": 88,
+  "lightOn": false,
+  "lightPwm": 0,
+  "pumpOn": false,
+  "mode": "auto",
+  "waterOk": true,
+  "lowBatt": false,
+  "battFull": false,
+  "battCut": false,
   "location": null
 }</pre>
   </div>
@@ -934,19 +873,22 @@ export DEVICE=ESP32S3_Zone1</pre>
     "deviceId": "ESP32S3_Zone1",
     "timestamp": "2026-05-24T08:17:47Z",
     "temperature": 28.4,
-    "soilMoisture": 61.8,
+    "humidity": 65,
+    "soilPercent": 62,
     "lightLevel": 420.5,
     "pressure": 1008.6,
     "altitude": 38.2,
-    "soilMoistureRaw": 2540,
-    "relayOn": false
+    "batteryPercent": 88,
+    "pumpOn": false,
+    "lightOn": false,
+    "mode": "auto"
   },
   {
     "id": "65f8a0a0...",
     "deviceId": "ESP32S3_Zone1",
     "timestamp": "2026-05-24T08:15:23Z",
     "temperature": 28.1,
-    "soilMoisture": 62.1,
+    "soilPercent": 63,
     "lightLevel": 415.2
   }
 ]</pre>
@@ -959,267 +901,170 @@ export DEVICE=ESP32S3_Zone1</pre>
   </div>
 </section>
 
-<section id="api-rules-moisture">
-  <h2>Rules — Moisture (Độ ẩm đất)</h2>
-  <p>Server tự sinh <code>WATER_ON</code> khi soil &lt; <code>minMoisture</code>, <code>WATER_OFF</code> khi soil ≥ <code>maxMoisture</code>.</p>
+<section id="api-thresholds">
+  <h2>Ngưỡng auto (Device Config)</h2>
+  <p>Thiết bị <strong>TỰ chạy chế độ auto</strong> dựa trên 15 ngưỡng lưu trong NVS. Rule tưới/đèn phía server (<code>/api/rules/*</code>) đã bị <strong>gỡ bỏ</strong>. Muốn đổi hành vi auto → đọc/đặt ngưỡng qua các endpoint config dưới đây; server publish <code>{"config":{...}}</code> xuống <code>xmini/control</code>.</p>
 
-  <div class="endpoint post"><span class="badge post">POST</span> /api/rules/moisture</div>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/rules/moisture \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Tuoi tu dong","minMoisture":30,"maxMoisture":70,"waterDurationMs":5000,"cooldownMs":1800000}'</pre>
+  <div class="alert info">
+    <strong>15 khoá ngưỡng (snake_case)</strong>: <code>soil_on_pct</code>, <code>soil_off_pct</code>, <code>pump_max_run_s</code>, <code>pump_cooldown_s</code>, <code>lux_on</code>, <code>lux_off</code>, <code>light_auto_pwm</code>, <code>batt_warn_pct</code>, <code>batt_recover_pct</code>, <code>soil_dry</code>, <code>soil_wet</code>, <code>batt_full_on_v</code>, <code>batt_full_off_v</code>, <code>batt_crit_v</code>, <code>batt_crit_recover_v</code>.
   </div>
 
-  <div class="response-label">Response — HTTP 201 Created (rule mới)</div>
+  <div class="endpoint get"><span class="badge get">GET</span> /api/control/{deviceId}/config</div>
+  <p>Ngưỡng auto BE nghe được từ <code>xmini/config</code>. Nếu thiết bị chưa gửi, trả về <code>{config:null, note}</code>.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl $API/api/control/$DEVICE/config</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200</div>
   <div class="code-block response-block">
     <pre>{
-  "id": "65f8a1a1a1a1a1a1a1a1a1a1",
   "deviceId": "ESP32S3_Zone1",
-  "name": "Tuoi tu dong",
-  "minMoisture": 30,
-  "maxMoisture": 70,
-  "waterDurationMs": 5000,
-  "isEnabled": true,
-  "cooldownMs": 1800000,
-  "lastTriggeredAt": null,
-  "createdAt": "2026-05-24T08:10:00.123456Z"
+  "config": {
+    "soil_on_pct": 30,
+    "soil_off_pct": 60,
+    "pump_max_run_s": 30,
+    "pump_cooldown_s": 300,
+    "lux_on": 50,
+    "lux_off": 200,
+    "light_auto_pwm": 180,
+    "batt_warn_pct": 20,
+    "batt_recover_pct": 30,
+    "soil_dry": 3200,
+    "soil_wet": 1400,
+    "batt_full_on_v": 4.15,
+    "batt_full_off_v": 4.05,
+    "batt_crit_v": 3.30,
+    "batt_crit_recover_v": 3.50
+  },
+  "updatedAt": "2026-05-24T08:10:00Z"
 }</pre>
   </div>
 
-  <h4>Rule cố tình trigger với soil hiện tại (61.8%): đặt min=70</h4>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/rules/moisture \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tuoi","minMoisture":70,"maxMoisture":80,"waterDurationMs":5000,"cooldownMs":60000}'</pre>
-  </div>
-
-  <div class="endpoint get"><span class="badge get">GET</span> /api/rules/moisture/{deviceId}</div>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl $API/api/rules/moisture/$DEVICE</pre>
-  </div>
-
-  <div class="response-label">Response — HTTP 200 (mảng rule)</div>
-  <div class="code-block response-block">
-    <pre>[
-  {
-    "id": "65f8a1a1a1a1a1a1a1a1a1a1",
-    "deviceId": "ESP32S3_Zone1",
-    "name": "Tuoi tu dong",
-    "minMoisture": 30,
-    "maxMoisture": 70,
-    "waterDurationMs": 5000,
-    "isEnabled": true,
-    "cooldownMs": 1800000,
-    "lastTriggeredAt": "2026-05-24T08:30:00Z",
-    "createdAt": "2026-05-24T08:10:00Z"
-  }
-]</pre>
-  </div>
-
-  <div class="endpoint put"><span class="badge put">PUT</span> /api/rules/moisture/{ruleId}</div>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X PUT $API/api/rules/moisture/&lt;ruleId&gt; \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Tuoi tu dong","minMoisture":25,"maxMoisture":70,"waterDurationMs":8000,"isEnabled":true,"cooldownMs":1800000}'</pre>
-  </div>
-
-  <div class="endpoint delete"><span class="badge delete">DELETE</span> /api/rules/moisture/{ruleId}</div>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X DELETE $API/api/rules/moisture/&lt;ruleId&gt;</pre>
-  </div>
-</section>
-
-<section id="api-rules-light">
-  <h2>Rules — Light (Ánh sáng)</h2>
-  <p>Server tự sinh <code>LIGHT_ON</code> khi lux &lt; <code>minLight</code>, <code>LIGHT_OFF</code> khi lux ≥ <code>maxLight</code>.</p>
-
-  <div class="endpoint post"><span class="badge post">POST</span> /api/rules/light</div>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/rules/light \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Den chieu sang","minLight":25,"maxLight":60,"isEnabled":true,"cooldownMs":600000}'</pre>
-  </div>
-
-  <div class="response-label">Response — HTTP 201 Created</div>
+  <div class="response-label">Nếu thiết bị chưa gửi config — HTTP 200</div>
   <div class="code-block response-block">
     <pre>{
-  "id": "65f8a0a0a0a0a0a0a0a0a0a0",
   "deviceId": "ESP32S3_Zone1",
-  "name": "Den chieu sang",
-  "minLight": 25,
-  "maxLight": 60,
-  "isEnabled": true,
-  "cooldownMs": 600000,
-  "lastTriggeredAt": null,
-  "createdAt": "2026-05-24T08:12:00.123456Z"
+  "config": null,
+  "note": "No config received from device yet"
 }</pre>
   </div>
 
-  <h4>Trigger LIGHT_ON với light hiện tại (420.5 lux): min=500</h4>
+  <div class="endpoint put"><span class="badge put">PUT</span> /api/control/{deviceId}/config</div>
+  <p>Đặt/đổi ngưỡng. Body = các khoá muốn đổi (snake_case) — <strong>chỉ gửi khoá cần đổi</strong>. Server publish <code>{"config":{...}}</code> xuống <code>xmini/control</code> (thiết bị lưu NVS, không đổi mode).</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/rules/light \
+    <pre>curl -X PUT $API/api/control/$DEVICE/config \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo bat den","minLight":500,"maxLight":600,"isEnabled":true,"cooldownMs":60000}'</pre>
+  -d '{"soil_on_pct":25,"soil_off_pct":65,"light_auto_pwm":200}'</pre>
   </div>
 
-  <h4>Trigger LIGHT_OFF với light hiện tại: max=400</h4>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/rules/light \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","name":"Demo tat den","minLight":100,"maxLight":400,"isEnabled":true,"cooldownMs":60000}'</pre>
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Config sent",
+  "deviceId": "ESP32S3_Zone1",
+  "published": { "config": { "soil_on_pct": 25, "soil_off_pct": 65, "light_auto_pwm": 200 } }
+}</pre>
   </div>
 
-  <div class="endpoint get"><span class="badge get">GET</span> /api/rules/light/{deviceId}</div>
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}/config/refresh</div>
+  <p>Yêu cầu thiết bị gửi lại cấu hình hiện tại — server publish <code>{"config":{}}</code> xuống <code>xmini/control</code>.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl $API/api/rules/light/$DEVICE</pre>
+    <pre>curl -X POST $API/api/control/$DEVICE/config/refresh</pre>
   </div>
 
-  <div class="endpoint put"><span class="badge put">PUT</span> /api/rules/light/{ruleId}</div>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X PUT $API/api/rules/light/&lt;ruleId&gt; \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Den chieu sang","minLight":20,"maxLight":70,"isEnabled":true,"cooldownMs":600000}'</pre>
-  </div>
-
-  <div class="endpoint delete"><span class="badge delete">DELETE</span> /api/rules/light/{ruleId}</div>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X DELETE $API/api/rules/light/&lt;ruleId&gt;</pre>
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Config refresh requested",
+  "deviceId": "ESP32S3_Zone1",
+  "published": { "config": {} }
+}</pre>
   </div>
 </section>
 
 <section id="api-control">
   <h2>Control — Điều khiển thủ công</h2>
+  <p>Gửi lệnh THỦ CÔNG dạng <strong>object phẳng</strong>. Server publish nguyên khoá phẳng xuống <code>xmini/control</code> (QoS 0). Có thể gộp nhiều khoá trong 1 body. Lệnh chấp hành (<code>pump</code>/<code>light</code>/<code>light_pwm</code>) sẽ ép thiết bị sang MANUAL.</p>
 
-  <div class="endpoint post"><span class="badge post">POST</span> /api/control/commands</div>
-  <h4>Bật bơm 5 giây</h4>
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}</div>
+  <p>Khoá cho phép: <code>pump</code>(bool), <code>light</code>(bool), <code>light_pwm</code>(int 0–255), <code>mode</code>("auto"|"manual"), <code>auto</code>(bool), <code>message</code>(str), <code>message_secs</code>(int), <code>config</code>(object 15 ngưỡng, hoặc <code>{}</code> để yêu cầu gửi lại).</p>
+
+  <h4>Bật máy bơm (ép MANUAL)</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/commands \
+    <pre>curl -X POST $API/api/control/$DEVICE \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","command":"WATER_ON","parameters":{"duration":5000}}'</pre>
+  -d '{"pump":true}'</pre>
   </div>
 
   <div class="response-label">Response — HTTP 200</div>
   <div class="code-block response-block">
     <pre>{
-  "message": "Command sent successfully",
-  "commandId": "65f8b2c3d4e5f6789012abcd"
+  "message": "Command published",
+  "deviceId": "ESP32S3_Zone1",
+  "published": { "pump": true }
 }</pre>
   </div>
 
-  <h4>Tắt bơm</h4>
+  <h4>Tắt máy bơm</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/commands \
+    <pre>curl -X POST $API/api/control/$DEVICE \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","command":"WATER_OFF"}'</pre>
+  -d '{"pump":false}'</pre>
   </div>
 
-  <h4>Bật / tắt đèn</h4>
+  <h4>Bật / tắt đèn, đặt độ sáng PWM</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/commands \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","command":"LIGHT_ON"}'
-
-curl -X POST $API/api/control/commands \
-  -H "Content-Type: application/json" \
-  -d '{"deviceId":"ESP32S3_Zone1","command":"LIGHT_OFF"}'</pre>
+    <pre>curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"light":true}'
+curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"light":false}'
+curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"light_pwm":180}'</pre>
   </div>
 
-  <div class="endpoint get"><span class="badge get">GET</span> /api/control/commands/{deviceId}</div>
-  <p>ESP32 polling pending command.</p>
+  <h4>Đổi chế độ (auto / manual)</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl $API/api/control/commands/$DEVICE</pre>
+    <pre>curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"mode":"auto"}'
+curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"mode":"manual"}'</pre>
   </div>
 
-  <div class="response-label">Response — HTTP 200 (mảng pending commands)</div>
+  <h4>Hiển thị tin nhắn lên màn hình TFT (ASCII, "" để xoá)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/control/$DEVICE \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Tuoi cho toi nhe","message_secs":15}'</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/control/commands/{deviceId}?limit=N</div>
+  <p>Nhật ký lệnh đã publish (không phải hàng đợi polling — thiết bị nhận lệnh realtime qua MQTT).</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl "$API/api/control/commands/$DEVICE?limit=20"</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200 (mảng, mới nhất trước)</div>
   <div class="code-block response-block">
     <pre>[
   {
-    "id": "65f8b2c3d4e5f6789012abcd",
     "deviceId": "ESP32S3_Zone1",
-    "command": "WATER_ON",
-    "parameters": {
-      "duration": 5000,
-      "reason": "moisture_rule",
-      "ruleId": "65f8a1a1a1a1a1a1a1a1a1a1",
-      "ruleName": "Tuoi tu dong",
-      "threshold": 30,
-      "currentMoisture": 20
-    },
-    "executed": false,
-    "executedAt": null,
+    "payload": { "pump": true },
     "createdAt": "2026-05-24T08:30:00Z"
+  },
+  {
+    "deviceId": "ESP32S3_Zone1",
+    "payload": { "message": "Tuoi cho toi nhe", "message_secs": 15 },
+    "createdAt": "2026-05-24T08:28:12Z"
   }
 ]</pre>
   </div>
 
-  <div class="endpoint post"><span class="badge post">POST</span> /api/control/commands/{commandId}/executed</div>
-  <p>ESP32 báo đã thực hiện xong.</p>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/commands/&lt;commandId&gt;/executed</pre>
-  </div>
-
-  <div class="response-label">Response — HTTP 200</div>
-  <div class="code-block response-block">
-    <pre>{
-  "message": "Command marked as executed"
-}</pre>
-  </div>
-
-  <div class="endpoint post"><span class="badge post">POST</span> /api/control/auto-water/{deviceId}</div>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST "$API/api/control/auto-water/$DEVICE?threshold=30.0"</pre>
-  </div>
-
-  <div class="response-label">Response — soil &lt; threshold → tự sinh WATER_ON</div>
-  <div class="code-block response-block">
-    <pre>{
-  "message": "Auto water command sent",
-  "currentMoisture": 20,
-  "threshold": 30,
-  "commandId": "65f8b2c3d4e5f6789012abcd"
-}</pre>
-  </div>
-
-  <div class="response-label">Response — soil đủ ẩm, không tưới</div>
-  <div class="code-block response-block">
-    <pre>{
-  "message": "Soil moisture is adequate, no watering needed",
-  "currentMoisture": 61.8,
-  "threshold": 30
-}</pre>
-  </div>
-
-  <div class="endpoint post"><span class="badge post">POST</span> /api/control/auto-light/{deviceId}</div>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST "$API/api/control/auto-light/$DEVICE?threshold=200.0"</pre>
-  </div>
-
-  <div class="response-label">Response — light &lt; threshold → LIGHT_ON; ngược lại LIGHT_OFF</div>
-  <div class="code-block response-block">
-    <pre>{
-  "message": "Auto light command sent: LIGHT_ON",
-  "currentLight": 50,
-  "threshold": 200,
-  "commandId": "65f8c3d4e5f67890123456ef"
-}</pre>
+  <div class="alert info">
+    Ngưỡng auto (<code>config</code>) có endpoint riêng — xem tab <a href="#" onclick="document.querySelector('[data-target=api-thresholds]').click(); return false;">Ngưỡng auto (Config)</a>.
   </div>
 </section>
 
@@ -1231,7 +1076,7 @@ curl -X POST $API/api/control/commands \
     Server phải đang chạy. Docker deploy mặc định <code>http://localhost:8080</code> (bare <code>dotnet run</code> = <code>http://localhost:8000</code>). Nếu mở file HTML qua <code>file://</code>, request vẫn chạy được vì server đã bật CORS <code>AllowAnyOrigin</code>.
   </div>
   <div class="alert">
-    <strong>Cần đăng nhập trước.</strong> Từ v1.1 API yêu cầu xác thực: <b>Đăng ký/Đăng nhập</b> để lấy JWT (dùng cho hầu hết các nút). Nút <b>Upload sensor</b> &amp; <b>Heartbeat</b> giả lập ESP32 nên cần <b>Device Secret</b> — lấy từ response khi Execute <code>POST /api/devices/register</code> (tự điền vào ô Device Secret).
+    <strong>Cần đăng nhập trước.</strong> API yêu cầu xác thực: <b>Đăng ký/Đăng nhập</b> để lấy JWT (dùng cho <b>tất cả</b> các nút). ESP32 dùng MQTT (HiveMQ) nên không cần device secret ở đây.
   </div>
 
   <div class="conn-bar">
@@ -1262,13 +1107,6 @@ curl -X POST $API/api/control/commands \
     <button class="run-btn" id="btn-login">Đăng nhập</button>
     <button class="run-btn" id="btn-register" style="background:#334155;color:#e2e8f0">Đăng ký</button>
     <div class="conn-status">Auth: <b id="auth-status">chưa đăng nhập</b></div>
-  </div>
-
-  <div class="conn-bar">
-    <div class="field" style="flex:1">
-      <label for="conn-device-secret">Device Secret <span style="text-transform:none">(giả lập ESP32 — dùng cho Upload sensor &amp; Heartbeat)</span></label>
-      <input id="conn-device-secret" style="width:100%" placeholder="dán deviceSecret nhận khi đăng ký device (tự điền sau khi Execute Register)">
-    </div>
   </div>
 
   <h3>Smoke test nhanh</h3>
@@ -1330,6 +1168,26 @@ curl -X POST $API/api/control/commands \
       <div class="try-result" id="r-d-del"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
   </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/devices/{deviceId}/share</span><span class="title">Chia sẻ device cho user khác (chỉ owner)</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:10px">Chia sẻ device (ở tab Kết nối) cho 1 tài khoản khác qua email — họ sẽ xem + điều khiển được.</p>
+      <div class="try-grid">
+        <div class="try-field full"><label>Email user nhận chia sẻ</label><input id="d-share-email" placeholder="nguoikhac@gmail.com"></div>
+      </div>
+      <button class="run-btn" id="run-d-share">Execute</button>
+      <div class="try-result" id="r-d-share"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/devices/{deviceId}/members</span><span class="title">Xem owner + người được chia sẻ</span></div>
+    <div class="try-body">
+      <button class="run-btn" id="run-d-members">Execute</button>
+      <div class="try-result" id="r-d-members"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
 </section>
 
 <section id="try-sensors">
@@ -1337,15 +1195,15 @@ curl -X POST $API/api/control/commands \
   <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
 
   <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/sensordata/upload</span><span class="title">Gửi sensor + tự eval rule</span></div>
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/sensordata/upload</span><span class="title">Gửi telemetry (snake_case)</span></div>
     <div class="try-body">
-      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Payload gửi theo snake_case (<code>device_id</code> lấy từ tab Kết nối). Nếu khớp rule, response trả <code>triggeredCommands</code> và server publish lệnh xuống <code>xmini/control</code>.</p>
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Payload gửi theo snake_case đúng hợp đồng (<code>device_id</code> lấy từ tab Kết nối). Server lưu telemetry và trả <code>{message, timestamp}</code> — thiết bị tự chạy auto nên không có <code>triggeredCommands</code>.</p>
       <div class="try-grid">
         <div class="try-field"><label>temperature_c</label><input id="s-temp" type="number" step="0.1" placeholder="28"></div>
         <div class="try-field"><label>humidity_percent</label><input id="s-hum" type="number" step="0.1" placeholder="65"></div>
         <div class="try-field"><label>light_lux</label><input id="s-light" type="number" step="0.1" placeholder="55"></div>
-        <div class="try-field"><label>soil_moisture_percent</label><input id="s-moist" type="number" step="0.1" placeholder="20"></div>
-        <div class="try-field"><label>soil_moisture_raw</label><input id="s-raw" type="number" placeholder="3681"></div>
+        <div class="try-field"><label>soil_percent (int)</label><input id="s-moist" type="number" step="1" placeholder="20"></div>
+        <div class="try-field"><label>battery_percent (int)</label><input id="s-batt" type="number" step="1" placeholder="88"></div>
       </div>
       <button class="run-btn" id="run-s-upload">Execute</button>
       <div class="try-result" id="r-s-upload"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
@@ -1373,72 +1231,53 @@ curl -X POST $API/api/control/commands \
 </section>
 
 <section id="try-rules">
-  <h2>🧪 Test — Rules</h2>
+  <h2>🧪 Test — Ngưỡng auto (Device Config)</h2>
   <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
 
-  <h3>Moisture (độ ẩm)</h3>
-  <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/rules/moisture</span><span class="title">Tạo rule tưới</span></div>
-    <div class="try-body">
-      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">moisture &lt; min → <code>WATER_ON</code> · moisture ≥ max → <code>WATER_OFF</code>. Cooldown = số <b>mili-giây</b> chờ trước khi rule được trigger lại (60000 = 1 phút).</p>
-      <div class="try-grid">
-        <div class="try-field"><label>Name</label><input id="rm-name" placeholder="Auto Water"></div>
-        <div class="try-field"><label>minMoisture %</label><input id="rm-min" type="number" step="0.1" placeholder="30"></div>
-        <div class="try-field"><label>maxMoisture %</label><input id="rm-max" type="number" step="0.1" placeholder="70"></div>
-        <div class="try-field"><label>waterDurationMs</label><input id="rm-dur" type="number" placeholder="5000"></div>
-        <div class="try-field"><label>cooldownMs</label><input id="rm-cd" type="number" placeholder="1800000"></div>
-      </div>
-      <button class="run-btn" id="run-rm-create">Execute</button>
-      <div class="try-result" id="r-rm-create"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
-    </div>
+  <div class="alert info">
+    Thiết bị tự chạy auto theo 15 ngưỡng lưu trong NVS. Bấm <b>Tải cấu hình</b> để GET ngưỡng hiện tại, sửa ô cần đổi rồi <b>Lưu</b> (PUT — chỉ gửi khoá đã đổi). Nếu BE chưa nghe được config, bấm <b>Yêu cầu gửi lại</b>.
   </div>
+
   <div class="try-card">
-    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/rules/moisture/{deviceId}</span><span class="title">Xem rules độ ẩm</span></div>
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/control/{deviceId}/config</span><span class="title">Ngưỡng auto hiện tại</span></div>
     <div class="try-body">
-      <button class="run-btn" id="run-rm-get">Execute</button>
-      <div class="try-result" id="r-rm-get"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+      <button class="run-btn" id="run-cfg-load">Tải cấu hình</button>
+      <div class="try-result" id="r-cfg-load"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
   </div>
 
-  <h3>Light (ánh sáng)</h3>
   <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/rules/light</span><span class="title">Tạo rule đèn</span></div>
+    <div class="try-head"><span class="badge put">PUT</span><span class="path">/api/control/{deviceId}/config</span><span class="title">Đặt ngưỡng (chỉ gửi khoá đã đổi)</span></div>
     <div class="try-body">
-      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">light &lt; min → <code>LIGHT_ON</code> · light ≥ max → <code>LIGHT_OFF</code>.</p>
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Để trống = không đổi khoá đó. Bấm <b>Tải cấu hình</b> trước để prefill giá trị hiện tại rồi chỉ sửa ô cần thay.</p>
       <div class="try-grid">
-        <div class="try-field"><label>Name</label><input id="rl-name" placeholder="Auto Light"></div>
-        <div class="try-field"><label>minLight lux</label><input id="rl-min" type="number" step="0.1" placeholder="25"></div>
-        <div class="try-field"><label>maxLight lux</label><input id="rl-max" type="number" step="0.1" placeholder="60"></div>
-        <div class="try-field"><label>cooldownMs</label><input id="rl-cd" type="number" placeholder="600000"></div>
+        <div class="try-field"><label>soil_on_pct</label><input id="cfg-soil_on_pct" type="number" step="1" placeholder="30"></div>
+        <div class="try-field"><label>soil_off_pct</label><input id="cfg-soil_off_pct" type="number" step="1" placeholder="60"></div>
+        <div class="try-field"><label>pump_max_run_s</label><input id="cfg-pump_max_run_s" type="number" step="1" placeholder="30"></div>
+        <div class="try-field"><label>pump_cooldown_s</label><input id="cfg-pump_cooldown_s" type="number" step="1" placeholder="300"></div>
+        <div class="try-field"><label>lux_on</label><input id="cfg-lux_on" type="number" step="0.1" placeholder="50"></div>
+        <div class="try-field"><label>lux_off</label><input id="cfg-lux_off" type="number" step="0.1" placeholder="200"></div>
+        <div class="try-field"><label>light_auto_pwm</label><input id="cfg-light_auto_pwm" type="number" step="1" placeholder="180"></div>
+        <div class="try-field"><label>batt_warn_pct</label><input id="cfg-batt_warn_pct" type="number" step="1" placeholder="20"></div>
+        <div class="try-field"><label>batt_recover_pct</label><input id="cfg-batt_recover_pct" type="number" step="1" placeholder="30"></div>
+        <div class="try-field"><label>soil_dry</label><input id="cfg-soil_dry" type="number" step="1" placeholder="3200"></div>
+        <div class="try-field"><label>soil_wet</label><input id="cfg-soil_wet" type="number" step="1" placeholder="1400"></div>
+        <div class="try-field"><label>batt_full_on_v</label><input id="cfg-batt_full_on_v" type="number" step="0.01" placeholder="4.15"></div>
+        <div class="try-field"><label>batt_full_off_v</label><input id="cfg-batt_full_off_v" type="number" step="0.01" placeholder="4.05"></div>
+        <div class="try-field"><label>batt_crit_v</label><input id="cfg-batt_crit_v" type="number" step="0.01" placeholder="3.30"></div>
+        <div class="try-field"><label>batt_crit_recover_v</label><input id="cfg-batt_crit_recover_v" type="number" step="0.01" placeholder="3.50"></div>
       </div>
-      <button class="run-btn" id="run-rl-create">Execute</button>
-      <div class="try-result" id="r-rl-create"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
-    </div>
-  </div>
-  <div class="try-card">
-    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/rules/light/{deviceId}</span><span class="title">Xem rules ánh sáng</span></div>
-    <div class="try-body">
-      <button class="run-btn" id="run-rl-get">Execute</button>
-      <div class="try-result" id="r-rl-get"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+      <button class="run-btn" id="run-cfg-save">Lưu ngưỡng (PUT)</button>
+      <div class="try-result" id="r-cfg-save"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
   </div>
 
-  <h3>⚙️ Quản lý rules — Sửa / Xóa trực tiếp</h3>
   <div class="try-card">
-    <div class="try-head"><span class="badge get">GET</span><span class="badge put">PUT</span><span class="badge delete">DEL</span><span class="path">/api/rules/moisture/{ruleId}</span><span class="title">Moisture — list, edit inline, delete</span></div>
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}/config/refresh</span><span class="title">Yêu cầu thiết bị gửi lại cấu hình</span></div>
     <div class="try-body">
-      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Bấm <b>Load</b> để lấy rule của device hiện tại, sửa giá trị ngay trên dòng rồi <b>Lưu</b> (PUT) hoặc <b>Xóa</b> (DELETE).</p>
-      <button class="run-btn" id="run-rm-manage">Load rules độ ẩm</button>
-      <div id="rm-manage-msg" class="rule-msg"></div>
-      <div id="rm-manage-list" class="rule-list"></div>
-    </div>
-  </div>
-  <div class="try-card">
-    <div class="try-head"><span class="badge get">GET</span><span class="badge put">PUT</span><span class="badge delete">DEL</span><span class="path">/api/rules/light/{ruleId}</span><span class="title">Light — list, edit inline, delete</span></div>
-    <div class="try-body">
-      <button class="run-btn" id="run-rl-manage">Load rules ánh sáng</button>
-      <div id="rl-manage-msg" class="rule-msg"></div>
-      <div id="rl-manage-list" class="rule-list"></div>
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:10px">Publish <code>{"config":{}}</code> xuống <code>xmini/control</code> — thiết bị sẽ publish lại 15 ngưỡng lên <code>xmini/config</code>.</p>
+      <button class="run-btn" id="run-cfg-refresh">Yêu cầu gửi lại cấu hình</button>
+      <div class="try-result" id="r-cfg-refresh"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
   </div>
 </section>
@@ -1447,52 +1286,122 @@ curl -X POST $API/api/control/commands \
   <h2>🧪 Test — Control</h2>
   <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
 
+  <div class="try-card" style="border-color:#3b82f6">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}/water · /light · /auto</span><span class="title">App — điều khiển nhanh (endpoint chuyên dụng)</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Endpoint gọn cho App. Lệnh <strong>Tưới</strong>/<strong>Đèn</strong> ép thiết bị sang <strong>MANUAL</strong> (ưu tiên hơn auto); bấm <strong>Về Auto</strong> để trả quyền lại cho chế độ tự động.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="run-btn" id="run-c-water-on">💧 Tưới BẬT — /water {"on":true}</button>
+        <button class="run-btn" id="run-c-water-off" style="background:#334155;color:#e2e8f0">Tưới TẮT — /water {"on":false}</button>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="run-btn" id="run-c-lite-on">💡 Đèn BẬT — /light {"on":true}</button>
+        <button class="run-btn" id="run-c-lite-off" style="background:#334155;color:#e2e8f0">Đèn TẮT — /light {"on":false}</button>
+      </div>
+      <div class="try-grid">
+        <div class="try-field"><label>pwm đèn (0–255) — /light {"pwm":n}</label><input id="c-lite-pwm" type="number" min="0" max="255" step="1" placeholder="180"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="run-btn" id="run-c-lite-pwm">Đặt PWM đèn</button>
+        <button class="run-btn" id="run-c-return-auto" style="background:#16a34a">🔄 Về Auto — /auto</button>
+      </div>
+      <div class="try-result" id="r-c-app"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
   <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/commands</span><span class="title">Gửi lệnh (publish MQTT xmini/control)</span></div>
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Máy bơm (ép MANUAL)</span></div>
+    <div class="try-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="run-btn" id="run-c-pump-on">Bật bơm — {"pump":true}</button>
+        <button class="run-btn" id="run-c-pump-off" style="background:#334155;color:#e2e8f0">Tắt bơm — {"pump":false}</button>
+      </div>
+      <div class="try-result" id="r-c-pump"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Đèn + PWM (ép MANUAL)</span></div>
+    <div class="try-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="run-btn" id="run-c-light-on">Bật đèn — {"light":true}</button>
+        <button class="run-btn" id="run-c-light-off" style="background:#334155;color:#e2e8f0">Tắt đèn — {"light":false}</button>
+      </div>
+      <div class="try-grid">
+        <div class="try-field"><label>light_pwm (0–255)</label><input id="c-pwm" type="number" min="0" max="255" step="1" placeholder="180"></div>
+      </div>
+      <button class="run-btn" id="run-c-pwm">Đặt PWM đèn</button>
+      <div class="try-result" id="r-c-light"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Chế độ auto / manual</span></div>
+    <div class="try-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="run-btn" id="run-c-mode-auto">Auto — {"mode":"auto"}</button>
+        <button class="run-btn" id="run-c-mode-manual" style="background:#334155;color:#e2e8f0">Manual — {"mode":"manual"}</button>
+      </div>
+      <div class="try-result" id="r-c-mode"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Tin nhắn màn hình TFT</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Chuỗi ASCII hiển thị lên màn TFT. Để trống <code>message</code> = xoá. <code>message_secs</code> = số giây hiển thị (để trống = không gửi khoá này).</p>
+      <div class="try-grid">
+        <div class="try-field full"><label>message</label><input id="c-msg" placeholder="Tuoi cho toi nhe"></div>
+        <div class="try-field"><label>message_secs</label><input id="c-msg-secs" type="number" step="1" placeholder="15"></div>
+      </div>
+      <button class="run-btn" id="run-c-msg">Gửi tin nhắn</button>
+      <div class="try-result" id="r-c-msg"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/control/commands/{deviceId}</span><span class="title">Nhật ký lệnh đã gửi</span></div>
     <div class="try-body">
       <div class="try-grid">
-        <div class="try-field"><label>Command</label>
-          <select id="c-cmd">
-            <option value="WATER_ON">WATER_ON — Bật máy bơm</option>
-            <option value="WATER_OFF">WATER_OFF — Tắt máy bơm</option>
-            <option value="LIGHT_ON">LIGHT_ON — Bật đèn</option>
-            <option value="LIGHT_OFF">LIGHT_OFF — Tắt đèn</option>
-          </select>
+        <div class="try-field"><label>limit</label><input id="c-log-limit" type="number" value="20" placeholder="20"></div>
+      </div>
+      <button class="run-btn" id="run-c-log">Execute</button>
+      <div class="try-result" id="r-c-log"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="try-assistant">
+  <h2>🤖 Trợ lý AI — Chat</h2>
+  <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
+  <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">
+    Gọi <code>POST /api/assistant/chat</code> — .NET proxy tới AI server (tree-grow-helper) → MCP → điều khiển thiết bị.
+    Cần <strong>đăng nhập</strong> (Bearer) ở tab Kết nối và <strong>AI server đang chạy</strong> (mặc định <code>http://localhost:8787</code>).
+    Nếu là lệnh điều khiển, trợ lý hỏi <strong>Có/Không</strong> trước khi thực thi — bấm nút để gọi <code>/api/assistant/confirm</code>.
+  </p>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/assistant/chat</span><span class="title">Hội thoại (giữ sessionId)</span></div>
+    <div class="try-body">
+      <div id="chat-log" style="max-height:340px;overflow:auto;background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:12px;font-size:14px;line-height:1.5">
+        <div style="color:#64748b">Chưa có tin nhắn. Ví dụ: "Tưới nước cho <em>&lt;deviceId&gt;</em> giúp mình" hoặc "Độ ẩm đất bao nhiêu?"</div>
+      </div>
+      <div id="chat-pending" style="display:none;background:#1e293b;border:1px solid #f59e0b;border-radius:8px;padding:10px;margin-bottom:12px">
+        <div style="color:#fbbf24;font-size:13px;margin-bottom:8px" id="chat-pending-summary"></div>
+        <div style="display:flex;gap:10px">
+          <button class="run-btn" id="chat-confirm-yes" style="background:#16a34a">✓ Có (thực thi)</button>
+          <button class="run-btn" id="chat-confirm-no" style="background:#334155;color:#e2e8f0">✗ Không (huỷ)</button>
         </div>
-        <div class="try-field full"><label>Parameters (JSON, để trống = {})</label><textarea id="c-params" placeholder='{"duration": 5000}'></textarea></div>
       </div>
-      <button class="run-btn" id="run-c-send">Execute</button>
-      <div class="try-result" id="r-c-send"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
-    </div>
-  </div>
-
-  <div class="try-card">
-    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/control/commands/{deviceId}</span><span class="title">Lệnh đang chờ (device polling)</span></div>
-    <div class="try-body">
-      <button class="run-btn" id="run-c-pending">Execute</button>
-      <div class="try-result" id="r-c-pending"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
-    </div>
-  </div>
-
-  <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/auto-water/{deviceId}</span><span class="title">Auto water theo threshold</span></div>
-    <div class="try-body">
       <div class="try-grid">
-        <div class="try-field"><label>threshold %</label><input id="c-aw-threshold" type="number" step="0.1" value="30"></div>
+        <div class="try-field full"><label>Tin nhắn</label><input id="chat-msg" placeholder="Nhập câu chat rồi Enter…"></div>
+        <div class="try-field"><label>sessionId (tuỳ chọn)</label><input id="chat-session" placeholder="tự tạo nếu để trống"></div>
       </div>
-      <button class="run-btn" id="run-c-aw">Execute</button>
-      <div class="try-result" id="r-c-aw"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
-    </div>
-  </div>
-
-  <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/auto-light/{deviceId}</span><span class="title">Auto light theo threshold</span></div>
-    <div class="try-body">
-      <div class="try-grid">
-        <div class="try-field"><label>threshold lux</label><input id="c-al-threshold" type="number" step="0.1" value="200"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="run-btn" id="chat-send">Gửi</button>
+        <button class="run-btn" id="chat-reset" style="background:#334155;color:#e2e8f0">Xoá hội thoại</button>
       </div>
-      <button class="run-btn" id="run-c-al">Execute</button>
-      <div class="try-result" id="r-c-al"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+      <div class="try-result" id="r-chat"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
   </div>
 </section>
@@ -1510,10 +1419,10 @@ curl -X POST $API/api/control/commands \
     <tr><td>Broker host</td><td><code>ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud</code></td><td>HiveMQ Cloud (managed, truy cập qua internet)</td></tr>
     <tr><td>Port</td><td><code>8883</code></td><td>MQTT over TLS</td></tr>
     <tr><td>TLS</td><td>✅ Có</td><td>Bắt buộc TLS. ESP32 dùng <code>WiFiClientSecure</code> + <code>setInsecure()</code>.</td></tr>
-    <tr><td>Username</td><td><code>nod-iot-plant</code></td><td>Xác thực bằng username/password</td></tr>
+    <tr><td>Username</td><td><code>nod-iot-plant</code></td><td>Có thể khác credentials firmware đang dùng — miễn là <strong>cùng broker</strong> HiveMQ ở trên</td></tr>
     <tr><td>Password</td><td><code>Nod-iot-plant1234</code></td><td>—</td></tr>
     <tr><td>Client ID</td><td>tự do</td><td>ESP32 nên đặt <code>esp32-&lt;mac-suffix&gt;</code> để dễ debug</td></tr>
-    <tr><td>QoS</td><td>1 (AtLeastOnce)</td><td>Server publish command với QoS 1</td></tr>
+    <tr><td>QoS</td><td>0 (AtMostOnce)</td><td>Không retained. Server publish lệnh với QoS 0</td></tr>
     <tr><td>Keep-alive</td><td>60s</td><td>Default PubSubClient</td></tr>
   </table>
 
@@ -1523,57 +1432,33 @@ curl -X POST $API/api/control/commands \
       <li>✅ ESP32 và server <strong>không cần cùng Wi-Fi/LAN</strong> — chỉ cần có internet là kết nối được broker</li>
       <li>✅ ESP32 ở bất kỳ mạng nào (Wi-Fi văn phòng, 4G, ship đi Đà Lạt…) vẫn tới được server qua HiveMQ Cloud</li>
     </ul>
-    MQTT không đi qua Cloudflare Tunnel (và không cần), vì HiveMQ Cloud đã public sẵn. Nếu muốn, vẫn có thể dùng HTTP polling endpoint <code>/api/control/commands/&lt;deviceId&gt;</code> qua tunnel HTTPS (xem <a href="#" onclick="document.querySelector('[data-target=api-control]').click(); return false;">Control API</a>).
+    MQTT không đi qua Cloudflare Tunnel (và không cần), vì HiveMQ Cloud đã public sẵn. App/MCP gửi lệnh qua REST <code>POST /api/control/&lt;deviceId&gt;</code>; server publish khoá phẳng xuống <code>xmini/control</code> để thiết bị nhận realtime (xem <a href="#" onclick="document.querySelector('[data-target=api-control]').click(); return false;">Control API</a>).
   </div>
 
   <h3>Topics MQTT</h3>
-
-  <h4>Format A — Topic chuẩn project</h4>
-  <table>
-    <tr><th>Topic</th><th>Hướng</th><th>Mô tả</th></tr>
-    <tr>
-      <td><code>planttree/{deviceId}/sensors</code></td>
-      <td>ESP32 → Server</td>
-      <td>Publish sensor data, payload <strong>camelCase</strong></td>
-    </tr>
-    <tr>
-      <td><code>planttree/{deviceId}/commands</code></td>
-      <td>Server → ESP32</td>
-      <td>Subscribe để nhận lệnh tự động (WATER_ON/OFF, LIGHT_ON/OFF…)</td>
-    </tr>
-  </table>
-
-  <h4>Format B — Topic xmini board (đã hỗ trợ payload IoT team)</h4>
+  <p>Chỉ <strong>3 topic</strong>, đều dùng chung tiền tố <code>xmini/</code>. QoS <strong>0</strong>, không retained.</p>
   <table>
     <tr><th>Topic</th><th>Hướng</th><th>Mô tả</th></tr>
     <tr>
       <td><code>xmini/sensor_data</code></td>
-      <td>ESP32 → Server</td>
-      <td>Publish sensor data, payload <strong>snake_case</strong> (giống HTTP IoT team)</td>
+      <td>Thiết bị → Server</td>
+      <td>Publish telemetry ~10s, payload <strong>snake_case phẳng</strong> (<code>device_id</code>, <code>soil_percent</code>…)</td>
+    </tr>
+    <tr>
+      <td><code>xmini/config</code></td>
+      <td>Thiết bị → Server</td>
+      <td>Publish 15 ngưỡng auto hiện tại (khi kết nối + sau mỗi lần đổi), bọc trong khoá <code>config</code></td>
     </tr>
     <tr>
       <td><code>xmini/control</code></td>
-      <td>Server → ESP32</td>
-      <td>Subscribe để nhận lệnh</td>
+      <td>Server → Thiết bị</td>
+      <td>Subscribe để nhận lệnh — 1 JSON object <strong>phẳng</strong> (pump/light/light_pwm/mode/config/message)</td>
     </tr>
   </table>
 
   <h3>Payload mẫu</h3>
 
-  <h4>Publish sensor (camelCase, topic <code>planttree/&lt;id&gt;/sensors</code>)</h4>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>{
-  "temperature": 28.4,
-  "humidity": 65.0,
-  "soilMoisture": 61.8,
-  "lightLevel": 420.5,
-  "waterLevel": 85.0,
-  "phLevel": 6.5
-}</pre>
-  </div>
-
-  <h4>Publish sensor (snake_case, topic <code>xmini/sensor_data</code>)</h4>
+  <h4>Publish telemetry (snake_case, topic <code>xmini/sensor_data</code>)</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>{
@@ -1583,31 +1468,46 @@ curl -X POST $API/api/control/commands \
   "pressure_hpa": 1014.28,
   "altitude_m": 38.2,
   "light_lux": 57.5,
-  "soil_moisture_percent": 45.5,
-  "soil_moisture_raw": 2540,
-  "relay_on": false
+  "soil_percent": 45,
+  "battery_voltage_v": 4.02,
+  "battery_percent": 88,
+  "mode": "auto",
+  "pump_on": false,
+  "light_on": false,
+  "light_pwm": 0
 }</pre>
   </div>
   <div class="alert">
-    <strong>Lưu ý</strong>: Topic <code>xmini/sensor_data</code> không có deviceId trong topic path — server đọc <code>device_id</code> từ <strong>payload JSON</strong>. Server parse tất cả fields: temperature, humidity, pressure, altitude, light, soil moisture (%), raw ADC value, relay state.
+    <strong>Lưu ý</strong>: Topic <code>xmini/sensor_data</code> không có deviceId trong topic path — server đọc <code>device_id</code> từ <strong>payload JSON</strong>. <code>soil_percent</code> là số nguyên 0–100 (không null); trường cảm biến lỗi = <code>null</code> (riêng <code>battery_percent</code> = <code>-1</code>). Không có trường <code>soil_moisture_raw</code>/<code>relay_on</code>.
   </div>
 
-  <h4>Subscribe command (server publish to xmini/control)</h4>
-  <p>ESP32 subscribe <code>xmini/control</code> sẽ nhận command từ server:</p>
-  <div class="code-block response-block">
+  <h4>Publish config (topic <code>xmini/config</code>, bọc trong khoá <code>config</code>)</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
     <pre>{
-  "command": "WATER_ON",
-  "parameters": {
-    "duration": 5000,
-    "reason": "moisture_rule",
-    "ruleId": "rule-123",
-    "ruleName": "Auto Water",
-    "threshold": 30,
-    "currentMoisture": 25
+  "config": {
+    "soil_on_pct": 30, "soil_off_pct": 60,
+    "pump_max_run_s": 30, "pump_cooldown_s": 300,
+    "lux_on": 50, "lux_off": 200, "light_auto_pwm": 180,
+    "batt_warn_pct": 20, "batt_recover_pct": 30,
+    "soil_dry": 3200, "soil_wet": 1400,
+    "batt_full_on_v": 4.15, "batt_full_off_v": 4.05,
+    "batt_crit_v": 3.30, "batt_crit_recover_v": 3.50
   }
 }</pre>
   </div>
-  <p>Giá trị <code>command</code> có thể là: <code>WATER_ON</code>, <code>WATER_OFF</code>, <code>LIGHT_ON</code>, <code>LIGHT_OFF</code>, <code>FAN_ON</code>, <code>FAN_OFF</code>.</p>
+
+  <h4>Subscribe command (server publish tới <code>xmini/control</code>)</h4>
+  <p>Thiết bị subscribe <code>xmini/control</code> nhận <strong>1 JSON object phẳng</strong> — chỉ các khoá dưới đây (khoá lạ bị bỏ qua):</p>
+  <div class="code-block response-block">
+    <pre>{"pump": true}                        // bật/tắt bơm (ép MANUAL)
+{"light": true}                       // bật/tắt đèn (ép MANUAL)
+{"light_pwm": 180}                    // độ sáng đèn 0–255 (ép MANUAL)
+{"mode": "auto"}                      // hoặc {"auto": true} — đổi chế độ
+{"config": { "soil_on_pct": 25 }}     // đặt ngưỡng (lưu NVS); {"config":{}} = yêu cầu gửi lại
+{"message": "Tuoi cho toi nhe", "message_secs": 15}   // hiển thị TFT ("" để xoá)</pre>
+  </div>
+  <p><strong>TUYỆT ĐỐI KHÔNG</strong> dùng <code>{"command":"WATER_ON",...}</code> hay bọc <code>{"command":...,"parameters":...}</code> — thiết bị không hiểu (no-op). Không có quạt (FAN).</p>
 
   <h3>Test bằng MQTTx (UI)</h3>
 
@@ -1625,34 +1525,34 @@ curl -X POST $API/api/control/commands \
       </ul>
     </li>
     <li>Bấm <strong>Connect</strong></li>
-    <li>Bấm <strong>+ New Subscription</strong> → topic <code>planttree/#</code> (wildcard, xem tất cả device) hoặc <code>xmini/#</code></li>
-    <li>Tab <strong>Publisher</strong> → topic <code>planttree/esp32-test/sensors</code> → paste payload mẫu → <strong>Send</strong></li>
-    <li>Verify trên Mac log <code>dotnet run</code> phải thấy <code>MQTT received from esp32-test</code></li>
+    <li>Bấm <strong>+ New Subscription</strong> → topic <code>xmini/#</code> (wildcard, xem tất cả topic)</li>
+    <li>Tab <strong>Publisher</strong> → topic <code>xmini/sensor_data</code> → paste payload mẫu → <strong>Send</strong></li>
+    <li>Verify trên Mac log <code>dotnet run</code> phải thấy <code>MQTT received from ESP32S3_Zone1</code></li>
   </ol>
 
   <h3>Test bằng mosquitto_pub / mosquitto_sub (CLI)</h3>
 
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre># Subscribe tất cả topic planttree (terminal 1) — HiveMQ Cloud, TLS + auth
+    <pre># Subscribe tất cả topic xmini (terminal 1) — HiveMQ Cloud, TLS + auth
 mosquitto_sub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --capath /etc/ssl/certs \
   -u nod-iot-plant -P Nod-iot-plant1234 \
-  -t 'planttree/#' -v
+  -t 'xmini/#' -v
 
-# Publish sensor data (terminal 2)
-mosquitto_pub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --capath /etc/ssl/certs \
-  -u nod-iot-plant -P Nod-iot-plant1234 \
-  -t 'planttree/esp32-test/sensors' \
-  -m '{"temperature":28,"soilMoisture":20,"lightLevel":50}'
-
-# Hoặc dùng topic xmini với payload snake_case
+# Publish telemetry (terminal 2) — payload snake_case đúng hợp đồng
 mosquitto_pub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --capath /etc/ssl/certs \
   -u nod-iot-plant -P Nod-iot-plant1234 \
   -t 'xmini/sensor_data' \
-  -m '{"device_id":"ESP32S3_Zone1","temperature_c":28,"humidity_percent":65,"light_lux":57.5,"soil_moisture_percent":45.5,"soil_moisture_raw":2540,"relay_on":false}'</pre>
+  -m '{"device_id":"ESP32S3_Zone1","temperature_c":28,"humidity_percent":65,"light_lux":57.5,"soil_percent":45,"battery_percent":88,"mode":"auto","pump_on":false}'
+
+# Gửi lệnh thủ công xuống thiết bị (khoá phẳng) — QoS 0
+mosquitto_pub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --capath /etc/ssl/certs \
+  -u nod-iot-plant -P Nod-iot-plant1234 \
+  -t 'xmini/control' \
+  -m '{"pump":true}'</pre>
   </div>
 
-  <p><strong>Nếu có moisture/light rule cho device đó</strong>, server sẽ tự evaluate và publish lệnh xuống <code>xmini/control</code> — terminal subscribe sẽ thấy: <code>{"command":"WATER_ON","parameters":{...}}</code></p>
+  <p><strong>App/MCP gửi lệnh</strong> qua <code>POST /api/control/{deviceId}</code> — server publish khoá phẳng xuống <code>xmini/control</code>, terminal subscribe sẽ thấy: <code>{"pump":true}</code>. Thiết bị TỰ chạy auto theo ngưỡng nên server KHÔNG tự sinh lệnh tưới/đèn.</p>
 
   <h3>Code ESP32 mẫu (PubSubClient)</h3>
 
@@ -1672,29 +1572,29 @@ const char* MQTT_USERNAME = "nod-iot-plant";
 const char* MQTT_PASSWORD = "Nod-iot-plant1234";
 
 const char* DEVICE_ID     = "ESP32S3_Zone1";
+const char* TOPIC_SENSOR  = "xmini/sensor_data";   // publish telemetry
+const char* TOPIC_CONFIG  = "xmini/config";        // publish 15 nguong hien tai
+const char* TOPIC_CONTROL = "xmini/control";       // subscribe nhan lenh
 
 WiFiClientSecure wifiClient;                     // TLS bắt buộc cho HiveMQ Cloud
 PubSubClient mqtt(wifiClient);
 
-char sensorTopic[64];
-char commandTopic[64];
-
-void onCommand(char* topic, byte* payload, unsigned int len) {
-  String msg;
-  for (unsigned int i = 0; i &lt; len; i++) msg += (char)payload[i];
-
+// Nhan lenh: 1 JSON object PHANG, chi cac khoa duoi day (khoa la bo qua)
+void onControl(char* topic, byte* payload, unsigned int len) {
   StaticJsonDocument&lt;512&gt; doc;
-  deserializeJson(doc, msg);
+  if (deserializeJson(doc, payload, len)) return;
 
-  String command = doc["command"];   // WATER_ON / WATER_OFF / LIGHT_ON / ...
-  if (command == "WATER_ON") {
-    int duration = doc["parameters"]["duration"] | 5000;
-    digitalWrite(PUMP_PIN, HIGH);
-    delay(duration);
-    digitalWrite(PUMP_PIN, LOW);
-  } else if (command == "LIGHT_ON") {
-    digitalWrite(LIGHT_PIN, HIGH);
-  } // ...
+  if (doc.containsKey("pump"))      setPump(doc["pump"]);            // ep MANUAL
+  if (doc.containsKey("light"))     setLight(doc["light"]);         // ep MANUAL
+  if (doc.containsKey("light_pwm")) setLightPwm(doc["light_pwm"]);  // 0-255, ep MANUAL
+  if (doc.containsKey("mode"))      setMode(doc["mode"]);           // "auto" | "manual"
+  if (doc.containsKey("auto"))      setMode(doc["auto"] ? "auto" : "manual");
+  if (doc.containsKey("message"))   showOnTft(doc["message"] | "", doc["message_secs"] | 0);
+  if (doc.containsKey("config")) {
+    JsonObject cfg = doc["config"].as&lt;JsonObject&gt;();
+    if (cfg.size() == 0) publishConfig();          // {"config":{}} = yeu cau gui lai
+    else { applyConfig(cfg); saveNvs(); publishConfig(); }
+  }
 }
 
 void setup() {
@@ -1702,34 +1602,39 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) delay(500);
 
-  snprintf(sensorTopic,  sizeof(sensorTopic),  "planttree/%s/sensors", DEVICE_ID);
-  snprintf(commandTopic, sizeof(commandTopic), "planttree/%s/commands", DEVICE_ID);
-
   wifiClient.setInsecure();                        // bỏ verify cert (đủ cho demo)
   mqtt.setServer(MQTT_BROKER, MQTT_PORT);
-  mqtt.setCallback(onCommand);
+  mqtt.setCallback(onControl);
   mqtt.setBufferSize(512);
 }
 
 void reconnect() {
   while (!mqtt.connected()) {
     if (mqtt.connect(DEVICE_ID, MQTT_USERNAME, MQTT_PASSWORD)) {   // auth HiveMQ Cloud
-      mqtt.subscribe(commandTopic);
+      mqtt.subscribe(TOPIC_CONTROL, 0);            // QoS 0
+      publishConfig();                             // gui 15 nguong hien tai khi ket noi
     } else {
       delay(5000);
     }
   }
 }
 
+// Telemetry snake_case PHANG -> xmini/sensor_data
 void publishSensor() {
-  StaticJsonDocument&lt;256&gt; doc;
-  doc["temperature"]  = readTemp();
-  doc["soilMoisture"] = readSoil();
-  doc["lightLevel"]   = readLight();
+  StaticJsonDocument&lt;384&gt; doc;
+  doc["device_id"]        = DEVICE_ID;
+  doc["temperature_c"]    = readTemp();
+  doc["humidity_percent"] = readHumidity();
+  doc["light_lux"]        = readLight();
+  doc["soil_percent"]     = readSoilPercent();     // int 0-100
+  doc["battery_percent"]  = readBattPercent();
+  doc["mode"]             = currentMode();         // "auto" | "manual"
+  doc["pump_on"]          = pumpState();
+  doc["light_on"]         = lightState();
 
-  char buf[256];
+  char buf[384];
   size_t n = serializeJson(doc, buf);
-  mqtt.publish(sensorTopic, buf, n);
+  mqtt.publish(TOPIC_SENSOR, buf, n);              // QoS 0
 }
 
 void loop() {
@@ -1737,7 +1642,7 @@ void loop() {
   mqtt.loop();
 
   static unsigned long last = 0;
-  if (millis() - last &gt; 30000) {        // 30s
+  if (millis() - last &gt; 10000) {        // ~10s
     publishSensor();
     last = millis();
   }
@@ -1768,32 +1673,31 @@ Host:   ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud
 Port:   8883 (MQTT over TLS)
 TLS:    CÓ (bắt buộc)
 Auth:   username/password (nod-iot-plant / Nod-iot-plant1234)
-QoS:    1 (AtLeastOnce)
+        (co the khac cred firmware — mien la CUNG broker nay)
+QoS:    0 (AtMostOnce), khong retained
 
 ESP32 và server KHÔNG cần cùng Wi-Fi/LAN — broker public trên
 internet nên ESP32 ở bất kỳ mạng nào (Wi-Fi, 4G, đi Đà Lạt…)
-đều tới được server. Có thể dùng thêm HTTP polling endpoint
-GET /api/control/commands/{deviceId} nếu cần.
+đều tới được server. Thiet bi TU chay auto theo nguong trong NVS.
 
-TOPICS:
-  ESP32 publish sensor (chọn 1 trong 2 format):
-    A. planttree/{deviceId}/sensors  (payload camelCase)
-       {"temperature":28,"soilMoisture":60,"lightLevel":400}
+TOPICS (chi 3, deu tien to xmini/):
+  Thiet bi -> Server:
+    xmini/sensor_data  (telemetry snake_case PHANG, ~10s)
+      {"device_id":"ESP32S3_Zone1","temperature_c":28,
+       "light_lux":400,"soil_percent":45,"battery_percent":88,
+       "mode":"auto","pump_on":false}
+    xmini/config       (15 nguong hien tai, boc trong khoa "config")
+      {"config":{"soil_on_pct":30,"soil_off_pct":60,...}}
 
-    B. xmini/sensor_data             (payload snake_case)
-       {"device_id":"ESP32S3_Zone1","temperature_c":28,
-        "light_lux":400,"pressure_hpa":1008,"altitude_m":38}
+  Server -> Thiet bi:
+    xmini/control      (1 JSON object PHANG, chi cac khoa:)
+      {"pump":true} | {"light":true} | {"light_pwm":180}
+      {"mode":"auto"} | {"auto":true}
+      {"config":{...}}  ({"config":{}} = yeu cau gui lai)
+      {"message":"...","message_secs":15}
 
-  ESP32 subscribe command:
-    A. planttree/{deviceId}/commands   (nếu publish format A)
-    B. xmini/control                   (nếu publish format B)
-
-  Server publish payload:
-    {"command":"WATER_ON","commandId":"...",
-     "parameters":{"duration":5000,...}}
-
-  Command values: WATER_ON, WATER_OFF, LIGHT_ON, LIGHT_OFF,
-                  FAN_ON, FAN_OFF
+  KHONG dung {"command":"WATER_ON",...} — thiet bi khong hieu.
+  KHONG co quat (FAN).
 
 TEST CLIENT:
   - MQTTx (UI):           https://mqttx.app
@@ -1802,6 +1706,61 @@ TEST CLIENT:
 
 Liên hệ: Phong Nguyen — phong.nguyen@treehousei.com
 ========================================================</pre>
+  </div>
+</section>
+
+<section id="mcp-try">
+  <h2>🧪 Test MCP tools (gọi trực tiếp MCP server)</h2>
+  <p>Gọi <strong>MCP tool thật</strong> qua streamable-HTTP JSON-RPC ngay trên trang này — không cần AI client. Dùng để verify MCP server sống, tool trả đúng data trước khi cắm vào Claude Desktop / Ollama.</p>
+
+  <div class="alert info">
+    <strong>Yêu cầu:</strong> MCP server phải chạy ở chế độ HTTP (mặc định <code>http://localhost:8100/mcp</code>). Browser gọi cross-origin nên server đã bật sẵn CORS. Khởi động:
+  </div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># mcp-server/ (đã activate venv)
+# Mac / Linux
+MCP_TRANSPORT=streamable-http python server.py
+
+# Windows PowerShell
+$env:MCP_TRANSPORT="streamable-http"; python server.py</pre>
+  </div>
+  <div class="alert">
+    Trình duyệt tự lo handshake MCP: <code>initialize</code> → <code>notifications/initialized</code> → <code>tools/call</code>. Response là <code>text/event-stream</code> (SSE) nên panel này tự parse. Nếu lỗi <em>Failed to fetch</em> → mở F12 xem Console/Network (thường do server chưa chạy HTTP hoặc CORS).
+  </div>
+
+  <div class="conn-bar">
+    <div class="field" style="flex:1">
+      <label for="mcp-url">MCP endpoint</label>
+      <input id="mcp-url" style="width:100%" placeholder="http://localhost:8100/mcp">
+    </div>
+    <button class="run-btn" id="mcp-btn-init">Kết nối (initialize)</button>
+    <div class="conn-status">MCP: <b id="mcp-status">chưa kết nối</b></div>
+  </div>
+  <div class="try-result" id="r-mcp-conn"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge rpc">JSON-RPC</span><span class="path">tools/list</span><span class="title">Liệt kê tool MCP server đang expose</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:10px">Trả về schema của cả 12 tool (tên + mô tả + tham số) — đúng những gì AI client nhìn thấy.</p>
+      <button class="run-btn" id="mcp-btn-list">Execute</button>
+      <div class="try-result" id="r-mcp-list"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge rpc">JSON-RPC</span><span class="path">tools/call</span><span class="title">Gọi 1 tool</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:10px">Chọn tool → template arguments tự điền (<code>device_id</code> lấy từ tab <b>Kết nối</b>). Response gồm data tool trả về (đã decode) + raw JSON-RPC result.</p>
+      <div class="try-grid">
+        <div class="try-field"><label>Tool</label>
+          <select id="mcp-tool"></select>
+        </div>
+        <div class="try-field full"><label>Arguments (JSON)</label><textarea id="mcp-args" rows="6" placeholder='{ "device_id": "ESP32S3_Zone1" }'></textarea></div>
+      </div>
+      <button class="run-btn" id="mcp-btn-call">Execute</button>
+      <div class="try-result" id="r-mcp-call"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
   </div>
 </section>
 
@@ -1860,76 +1819,70 @@ Liên hệ: Phong Nguyen — phong.nguyen@treehousei.com
   "deviceId": "ESP32S3_Zone1",
   "timestamp": "2026-05-24T08:17:47Z",
   "temperature": 28.4,
-  "soilMoisture": 61.8,
+  "humidity": 65,
+  "soilPercent": 62,
   "lightLevel": 420.5,
-  "pressure": 1008.6,
-  "altitude": 38.2,
-  "soilMoistureRaw": 2540,
-  "relayOn": false
+  "batteryPercent": 88,
+  "mode": "auto",
+  "pumpOn": false,
+  "lightOn": false,
+  "lowBatt": false
 }</pre>
   </div>
   <div class="response-label">AI trả lời user:</div>
   <div class="code-block response-block">
     <pre>Cây Zone 1 đang ổn:
 🌡️  Nhiệt độ: 28.4°C
-💧 Độ ẩm đất: 61.8% (đủ ẩm, chưa cần tưới)
+💧 Độ ẩm đất: 62% (đủ ẩm, chưa cần tưới)
 ☀️  Ánh sáng: 420.5 lux (vừa đủ)
+🔋 Pin: 88% · Chế độ: auto
 🔌 Máy bơm: đang TẮT
 
 Dữ liệu cập nhật lúc 08:17 hôm nay.</pre>
   </div>
 
-  <h3>3. send_command(device_id, command, parameters)</h3>
-  <p>AI nhận lệnh user: <em>"Tưới cây Zone 1 trong 10 giây"</em></p>
-  <div class="response-label">MCP gọi POST /api/control/commands với body:</div>
+  <h3>3. set_pump(device_id, on)</h3>
+  <p>AI nhận lệnh user: <em>"Bật máy bơm cho cây Zone 1"</em></p>
+  <div class="response-label">MCP gọi POST /api/control/ESP32S3_Zone1 với body:</div>
   <div class="code-block response-block">
     <pre>{
-  "deviceId": "ESP32S3_Zone1",
-  "command": "WATER_ON",
-  "parameters": {"duration": 10000}
+  "pump": true
 }</pre>
   </div>
   <div class="response-label">Server response cho MCP:</div>
   <div class="code-block response-block">
     <pre>{
-  "message": "Command sent successfully",
-  "commandId": "65f8b2c3d4e5f6789012abcd"
+  "message": "Command published",
+  "deviceId": "ESP32S3_Zone1",
+  "published": { "pump": true }
 }</pre>
   </div>
   <div class="response-label">AI xác nhận với user:</div>
   <div class="code-block response-block">
-    <pre>✅ Đã gửi lệnh tưới cây Zone 1 trong 10 giây.
-ESP32 sẽ nhận lệnh ở lần polling tiếp theo (trong vòng ~5 giây).
-Command ID: 65f8b2c3d4e5f6789012abcd</pre>
+    <pre>✅ Đã bật máy bơm cho cây Zone 1 (thiết bị chuyển sang chế độ MANUAL).
+Lệnh đã publish xuống xmini/control — ESP32 nhận realtime qua MQTT.</pre>
   </div>
 
-  <h3>4. set_moisture_rule(device_id, ...)</h3>
-  <p>AI nhận lệnh: <em>"Đặt rule tự động tưới khi độ ẩm dưới 25%"</em></p>
-  <div class="response-label">MCP gọi POST /api/rules/moisture:</div>
+  <h3>4. set_device_config(device_id, **thresholds)</h3>
+  <p>AI nhận lệnh: <em>"Đặt ngưỡng tự tưới khi độ ẩm đất dưới 25%"</em></p>
+  <div class="response-label">MCP gọi PUT /api/control/ESP32S3_Zone1/config (chỉ khoá đã đổi):</div>
   <div class="code-block response-block">
     <pre>{
-  "deviceId": "ESP32S3_Zone1",
-  "name": "Auto-set by AI",
-  "minMoisture": 25,
-  "maxMoisture": 75,
-  "waterDurationMs": 5000,
-  "cooldownMs": 1800000
+  "soil_on_pct": 25
 }</pre>
   </div>
   <div class="response-label">Server response:</div>
   <div class="code-block response-block">
     <pre>{
-  "id": "65f8a1a1a1a1a1a1a1a1a1a1",
+  "message": "Config sent",
   "deviceId": "ESP32S3_Zone1",
-  "name": "Auto-set by AI",
-  "minMoisture": 25,
-  "maxMoisture": 75,
-  "waterDurationMs": 5000,
-  "isEnabled": true,
-  "cooldownMs": 1800000,
-  "lastTriggeredAt": null,
-  "createdAt": "2026-05-24T08:45:00Z"
+  "published": { "config": { "soil_on_pct": 25 } }
 }</pre>
+  </div>
+  <div class="response-label">AI xác nhận với user:</div>
+  <div class="code-block response-block">
+    <pre>✅ Đã đặt ngưỡng bật bơm khi độ ẩm đất dưới 25% (soil_on_pct=25).
+Thiết bị TỰ chạy auto theo ngưỡng này — đã lưu vào NVS.</pre>
   </div>
 
   <h3>5. get_sensor_history(device_id, limit)</h3>
@@ -1937,11 +1890,11 @@ Command ID: 65f8b2c3d4e5f6789012abcd</pre>
   <div class="response-label">MCP gọi GET /api/sensordata/history/ESP32S3_Zone1?limit=5:</div>
   <div class="code-block response-block">
     <pre>[
-  {"timestamp":"2026-05-24T08:17:47Z","temperature":28.4,"soilMoisture":61.8,"lightLevel":420.5},
-  {"timestamp":"2026-05-24T08:15:00Z","temperature":28.1,"soilMoisture":62.1,"lightLevel":415.2},
-  {"timestamp":"2026-05-24T08:12:00Z","temperature":27.9,"soilMoisture":62.5,"lightLevel":408.7},
-  {"timestamp":"2026-05-24T08:09:00Z","temperature":27.8,"soilMoisture":63.0,"lightLevel":402.1},
-  {"timestamp":"2026-05-24T08:06:00Z","temperature":27.7,"soilMoisture":63.5,"lightLevel":398.4}
+  {"timestamp":"2026-05-24T08:17:47Z","temperature":28.4,"soilPercent":62,"lightLevel":420.5},
+  {"timestamp":"2026-05-24T08:15:00Z","temperature":28.1,"soilPercent":62,"lightLevel":415.2},
+  {"timestamp":"2026-05-24T08:12:00Z","temperature":27.9,"soilPercent":63,"lightLevel":408.7},
+  {"timestamp":"2026-05-24T08:09:00Z","temperature":27.8,"soilPercent":63,"lightLevel":402.1},
+  {"timestamp":"2026-05-24T08:06:00Z","temperature":27.7,"soilPercent":64,"lightLevel":398.4}
 ]</pre>
   </div>
   <div class="response-label">AI có thể tự phân tích trend rồi trả lời:</div>
@@ -1962,14 +1915,14 @@ Chưa cần tưới vì còn trên ngưỡng 25%.</pre>
     <tr><td><code>get_device_info</code></td><td><code>GET /api/devices/{id}</code></td><td>Thông tin 1 thiết bị</td></tr>
     <tr><td><code>get_latest_sensor</code></td><td><code>GET /api/sensordata/latest/{id}</code></td><td>Sensor mới nhất</td></tr>
     <tr><td><code>get_sensor_history</code></td><td><code>GET /api/sensordata/history/{id}</code></td><td>Lịch sử sensor</td></tr>
-    <tr><td><code>send_command</code></td><td><code>POST /api/control/commands</code></td><td>Gửi lệnh thủ công</td></tr>
-    <tr><td><code>get_pending_commands</code></td><td><code>GET /api/control/commands/{id}</code></td><td>Lệnh đang chờ ESP32</td></tr>
-    <tr><td><code>auto_water</code></td><td><code>POST /api/control/auto-water/{id}</code></td><td>Tự tưới theo ngưỡng</td></tr>
-    <tr><td><code>auto_light</code></td><td><code>POST /api/control/auto-light/{id}</code></td><td>Tự đèn theo ngưỡng</td></tr>
-    <tr><td><code>get_moisture_rule</code></td><td><code>GET /api/rules/moisture/{id}</code></td><td>Xem moisture rules</td></tr>
-    <tr><td><code>set_moisture_rule</code></td><td><code>POST /api/rules/moisture</code></td><td>Tạo moisture rule</td></tr>
-    <tr><td><code>get_light_rule</code></td><td><code>GET /api/rules/light/{id}</code></td><td>Xem light rules</td></tr>
-    <tr><td><code>set_light_rule</code></td><td><code>POST /api/rules/light</code></td><td>Tạo light rule</td></tr>
+    <tr><td><code>set_pump</code></td><td><code>POST /api/control/{id}</code> · <code>{"pump":bool}</code></td><td>Bật/tắt bơm (ép MANUAL)</td></tr>
+    <tr><td><code>set_light</code></td><td><code>POST /api/control/{id}</code> · <code>{"light":bool}</code> / <code>{"light_pwm":N}</code></td><td>Bật/tắt đèn hoặc đặt PWM</td></tr>
+    <tr><td><code>set_mode</code></td><td><code>POST /api/control/{id}</code> · <code>{"mode":"auto|manual"}</code></td><td>Đổi chế độ auto/manual</td></tr>
+    <tr><td><code>show_message</code></td><td><code>POST /api/control/{id}</code> · <code>{"message":...}</code></td><td>Hiển thị tin nhắn TFT</td></tr>
+    <tr><td><code>get_recent_commands</code></td><td><code>GET /api/control/commands/{id}</code></td><td>Nhật ký lệnh đã gửi</td></tr>
+    <tr><td><code>get_device_config</code></td><td><code>GET /api/control/{id}/config</code></td><td>Xem 15 ngưỡng auto</td></tr>
+    <tr><td><code>set_device_config</code></td><td><code>PUT /api/control/{id}/config</code></td><td>Đặt ngưỡng auto (khoá đã đổi)</td></tr>
+    <tr><td><code>refresh_device_config</code></td><td><code>POST /api/control/{id}/config/refresh</code></td><td>Yêu cầu gửi lại cấu hình</td></tr>
   </table>
 
   <div class="alert success">
@@ -2260,14 +2213,14 @@ Cách setup MCP server (xem demo-dashboard.html chi tiết):
 12 MCP tools sẵn có:
   - Devices:  list_devices, get_device_info
   - Sensors:  get_latest_sensor, get_sensor_history
-  - Control:  send_command, get_pending_commands, auto_water, auto_light
-  - Rules:    get_moisture_rule, set_moisture_rule, get_light_rule, set_light_rule
+  - Control:  set_pump, set_light, set_mode, show_message, get_recent_commands
+  - Config:   get_device_config, set_device_config, refresh_device_config
 
 Test endpoint thuần HTTP (không cần MCP):
   curl https://&lt;tunnel-url&gt;/api/devices
   curl -X POST https://&lt;tunnel-url&gt;/api/sensordata/upload \
     -H "Content-Type: application/json" \
-    -d '{"device_id":"...","temperature_c":28,"soil_moisture_percent":60,"light_lux":400}'
+    -d '{"device_id":"...","temperature_c":28,"soil_percent":60,"light_lux":400}'
 
 Liên hệ vấn đề kỹ thuật:
   Phong Nguyen — phong.nguyen@treehousei.com
@@ -2379,7 +2332,6 @@ Liên hệ vấn đề kỹ thuật:
     const devEl  = document.getElementById('conn-device');
     const emailEl = document.getElementById('conn-email');
     const pwEl = document.getElementById('conn-password');
-    const secretEl = document.getElementById('conn-device-secret');
     const authStatusEl = document.getElementById('auth-status');
     if (!hostEl) return; // tester not present
 
@@ -2388,7 +2340,6 @@ Liên hệ vấn đề kỹ thuật:
     hostEl.value = saved.host || defaults.host;
     portEl.value = saved.port || defaults.port;
     devEl.value  = saved.device || defaults.device;
-    if (secretEl) secretEl.value = saved.deviceSecret || '';
     let authToken = saved.token || '';
 
     function cfg() {
@@ -2402,14 +2353,13 @@ Liên hệ vấn đề kỹ thuật:
       return {
         base,
         device: devEl.value.trim(),
-        deviceSecret: secretEl ? secretEl.value.trim() : '',
         token: authToken
       };
     }
     function persist() {
       localStorage.setItem(LS, JSON.stringify({
         host: hostEl.value.trim(), port: portEl.value.trim(), device: devEl.value.trim(),
-        deviceSecret: secretEl ? secretEl.value.trim() : '', token: authToken
+        token: authToken
       }));
       refreshEcho();
     }
@@ -2425,15 +2375,10 @@ Liên hệ vấn đề kỹ thuật:
       authStatusEl.textContent = authToken ? '✓ đã đăng nhập' : 'chưa đăng nhập';
       authStatusEl.style.color = authToken ? '#4ade80' : '#94a3b8';
     }
-    // Gắn header theo loại request: 'user' -> Bearer JWT; 'device' -> X-Device-* (giả lập ESP32)
-    function authHeaders(auth) {
+    // Mọi request dùng Bearer JWT (ESP32 đi qua MQTT, không cần device auth ở dashboard)
+    function authHeaders() {
       const h = { 'Content-Type': 'application/json' };
-      if (auth === 'device') {
-        h['X-Device-Id'] = cfg().device;
-        h['X-Device-Secret'] = cfg().deviceSecret;
-      } else if (authToken) {
-        h['Authorization'] = 'Bearer ' + authToken;
-      }
+      if (authToken) h['Authorization'] = 'Bearer ' + authToken;
       return h;
     }
     async function doAuth(path) {
@@ -2450,14 +2395,13 @@ Liên hệ vấn đề kỹ thuật:
         else { authStatusEl.textContent = '✗ ' + (data.message || (typeof data === 'string' ? data : res.status)); authStatusEl.style.color = '#fca5a5'; }
       } catch (e) { authStatusEl.textContent = '✗ ' + e.message; authStatusEl.style.color = '#fca5a5'; }
     }
-    [hostEl, portEl, devEl, secretEl].forEach(el => el && el.addEventListener('input', persist));
+    [hostEl, portEl, devEl].forEach(el => el && el.addEventListener('input', persist));
     document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', refreshEcho));
     refreshEcho();
     setAuthStatus();
 
-    // Core request runner. resultId is the .try-result container.
-    // auth: 'user' (Bearer JWT, mặc định) | 'device' (X-Device-* giả lập ESP32)
-    async function run(resultId, method, path, body, auth = 'user') {
+    // Core request runner. resultId is the .try-result container. Mọi request dùng Bearer JWT.
+    async function run(resultId, method, path, body) {
       const box = document.getElementById(resultId);
       const pill = box.querySelector('.status-pill');
       const ms = box.querySelector('.ms');
@@ -2470,7 +2414,7 @@ Liên hệ vấn đề kỹ thuật:
 
       const started = performance.now();
       try {
-        const opts = { method, headers: authHeaders(auth) };
+        const opts = { method, headers: authHeaders() };
         if (body !== undefined) opts.body = JSON.stringify(body);
         const res = await fetch(cfg().base + path, opts);
         const dur = Math.round(performance.now() - started);
@@ -2515,180 +2459,365 @@ Liên hệ vấn đề kỹ thuật:
     on('run-ping', () => run('r-ping', 'GET', '/api/devices'));
 
     // --- Devices ---
-    on('run-d-reg', async () => {
+    on('run-d-reg', () => {
       const id = val('d-reg-id') || cfg().device;
-      await run('r-d-reg', 'POST', '/api/devices/register', {
+      run('r-d-reg', 'POST', '/api/devices/register', {
         deviceId: id, name: val('d-reg-name'), plantType: val('d-reg-plant'), location: val('d-reg-loc')
       });
-      // Device secret chỉ trả 1 lần — tự điền vào ô Device Secret để test upload/heartbeat ngay
-      try {
-        const secret = JSON.parse(document.querySelector('#r-d-reg pre').textContent).deviceSecret;
-        if (secret && secretEl) { secretEl.value = secret; persist(); }
-      } catch {}
     });
     on('run-d-list', () => run('r-d-list', 'GET', '/api/devices'));
     on('run-d-get', () => { const d = requireDevice('r-d-get'); if (d) run('r-d-get', 'GET', `/api/devices/${encodeURIComponent(d)}`); });
-    on('run-d-hb', () => { const d = requireDevice('r-d-hb'); if (d) run('r-d-hb', 'POST', `/api/devices/${encodeURIComponent(d)}/heartbeat`, undefined, 'device'); });
+    on('run-d-hb', () => { const d = requireDevice('r-d-hb'); if (d) run('r-d-hb', 'POST', `/api/devices/${encodeURIComponent(d)}/heartbeat`); });
     on('run-d-del', () => {
       const d = requireDevice('r-d-del'); if (!d) return;
       if (!confirm(`Xoá device "${d}" và toàn bộ dữ liệu liên quan? Không thể hoàn tác.`)) return;
       run('r-d-del', 'DELETE', `/api/devices/${encodeURIComponent(d)}`);
     });
+    on('run-d-share', () => {
+      const d = requireDevice('r-d-share'); if (!d) return;
+      run('r-d-share', 'POST', `/api/devices/${encodeURIComponent(d)}/share`, { email: val('d-share-email') });
+    });
+    on('run-d-members', () => { const d = requireDevice('r-d-members'); if (d) run('r-d-members', 'GET', `/api/devices/${encodeURIComponent(d)}/members`); });
 
     // --- Sensors ---
     on('run-s-upload', () => {
       const d = requireDevice('r-s-upload'); if (!d) return;
       const body = { device_id: d };
-      [['s-temp','temperature_c'],['s-hum','humidity_percent'],['s-light','light_lux'],['s-moist','soil_moisture_percent'],['s-raw','soil_moisture_raw']]
+      [['s-temp','temperature_c'],['s-hum','humidity_percent'],['s-light','light_lux'],['s-moist','soil_percent'],['s-batt','battery_percent']]
         .forEach(([id, key]) => { const v = num(id); if (v !== null) body[key] = v; });
-      run('r-s-upload', 'POST', '/api/sensordata/upload', body, 'device');
+      run('r-s-upload', 'POST', '/api/sensordata/upload', body);
     });
     on('run-s-latest', () => { const d = requireDevice('r-s-latest'); if (d) run('r-s-latest', 'GET', `/api/sensordata/latest/${encodeURIComponent(d)}`); });
     on('run-s-history', () => { const d = requireDevice('r-s-history'); if (d) run('r-s-history', 'GET', `/api/sensordata/history/${encodeURIComponent(d)}?limit=${num('s-history-limit') || 50}`); });
 
-    // --- Rules: moisture ---
-    on('run-rm-create', () => {
-      const d = requireDevice('r-rm-create'); if (!d) return;
-      run('r-rm-create', 'POST', '/api/rules/moisture', {
-        deviceId: d, name: val('rm-name'), minMoisture: num('rm-min'), maxMoisture: num('rm-max'),
-        waterDurationMs: num('rm-dur') ?? 5000, cooldownMs: num('rm-cd') ?? 1800000
-      });
-    });
-    on('run-rm-get', () => { const d = requireDevice('r-rm-get'); if (d) run('r-rm-get', 'GET', `/api/rules/moisture/${encodeURIComponent(d)}`); });
+    // --- Device Config (ngưỡng auto) ---
+    const CFG_KEYS = [
+      'soil_on_pct','soil_off_pct','pump_max_run_s','pump_cooldown_s',
+      'lux_on','lux_off','light_auto_pwm','batt_warn_pct','batt_recover_pct',
+      'soil_dry','soil_wet','batt_full_on_v','batt_full_off_v','batt_crit_v','batt_crit_recover_v'
+    ];
+    let cfgLoaded = {};  // ngưỡng đã load gần nhất — để chỉ gửi khoá đã đổi
 
-    // --- Rules: light ---
-    on('run-rl-create', () => {
-      const d = requireDevice('r-rl-create'); if (!d) return;
-      run('r-rl-create', 'POST', '/api/rules/light', {
-        deviceId: d, name: val('rl-name'), minLight: num('rl-min'), maxLight: num('rl-max'), cooldownMs: num('rl-cd') ?? 600000
-      });
+    on('run-cfg-load', async () => {
+      const d = requireDevice('r-cfg-load'); if (!d) return;
+      const box = document.getElementById('r-cfg-load');
+      const pill = box.querySelector('.status-pill');
+      const ms = box.querySelector('.ms');
+      const pre = box.querySelector('pre');
+      box.classList.add('show');
+      pill.className = 'status-pill wait'; pill.textContent = '… đang gọi'; ms.textContent = ''; pre.textContent = '';
+      const started = performance.now();
+      try {
+        const res = await fetch(cfg().base + `/api/control/${encodeURIComponent(d)}/config`, { method: 'GET', headers: authHeaders() });
+        const dur = Math.round(performance.now() - started);
+        const text = await res.text();
+        let out = text; let data = null;
+        try { data = JSON.parse(text); out = JSON.stringify(data, null, 2); } catch {}
+        pill.className = 'status-pill ' + (res.ok ? 'ok' : 'err');
+        pill.textContent = (res.ok ? '✓ ' : '✗ ') + res.status + ' ' + res.statusText;
+        ms.textContent = dur + ' ms';
+        pre.textContent = out || '(empty body)';
+        cfgLoaded = (data && data.config) ? data.config : {};
+        CFG_KEYS.forEach(k => {
+          const el = document.getElementById('cfg-' + k);
+          if (el) el.value = (cfgLoaded[k] !== undefined && cfgLoaded[k] !== null) ? cfgLoaded[k] : '';
+        });
+      } catch (err) {
+        const dur = Math.round(performance.now() - started);
+        pill.className = 'status-pill err'; pill.textContent = '✗ Failed to fetch'; ms.textContent = dur + ' ms';
+        pre.textContent = err.message + '\n\nKiểm tra: server đang chạy? Host/Port đúng? (xem tab Kết nối)';
+      }
     });
-    on('run-rl-get', () => { const d = requireDevice('r-rl-get'); if (d) run('r-rl-get', 'GET', `/api/rules/light/${encodeURIComponent(d)}`); });
 
-    // --- Control ---
-    on('run-c-send', () => {
-      const d = requireDevice('r-c-send'); if (!d) return;
-      let params = {};
-      const raw = val('c-params');
+    on('run-cfg-save', () => {
+      const d = requireDevice('r-cfg-save'); if (!d) return;
+      const body = {};
+      CFG_KEYS.forEach(k => {
+        const el = document.getElementById('cfg-' + k);
+        if (!el) return;
+        const raw = el.value.trim();
+        if (raw === '') return;                                          // để trống = không đổi khoá này
+        const v = Number(raw);
+        if (cfgLoaded[k] === undefined || Number(cfgLoaded[k]) !== v) body[k] = v;  // chỉ gửi khoá đã đổi
+      });
+      if (Object.keys(body).length === 0) {
+        const box = document.getElementById('r-cfg-save');
+        box.classList.add('show');
+        box.querySelector('.status-pill').className = 'status-pill err';
+        box.querySelector('.status-pill').textContent = '✗ Không có khoá nào thay đổi';
+        box.querySelector('.ms').textContent = '';
+        box.querySelector('pre').textContent = 'Bấm "Tải cấu hình" rồi sửa ít nhất 1 ô ngưỡng.';
+        return;
+      }
+      run('r-cfg-save', 'PUT', `/api/control/${encodeURIComponent(d)}/config`, body);
+    });
+
+    on('run-cfg-refresh', () => {
+      const d = requireDevice('r-cfg-refresh'); if (!d) return;
+      run('r-cfg-refresh', 'POST', `/api/control/${encodeURIComponent(d)}/config/refresh`);
+    });
+
+    // --- Control (khoá phẳng → POST /api/control/{deviceId}) ---
+    function sendControl(resultId, payload) {
+      const d = requireDevice(resultId); if (!d) return;
+      run(resultId, 'POST', `/api/control/${encodeURIComponent(d)}`, payload);
+    }
+    on('run-c-pump-on',   () => sendControl('r-c-pump', { pump: true }));
+    on('run-c-pump-off',  () => sendControl('r-c-pump', { pump: false }));
+    on('run-c-light-on',  () => sendControl('r-c-light', { light: true }));
+    on('run-c-light-off', () => sendControl('r-c-light', { light: false }));
+    on('run-c-pwm', () => {
+      const v = num('c-pwm');
+      sendControl('r-c-light', { light_pwm: v === null ? 0 : Math.max(0, Math.min(255, Math.round(v))) });
+    });
+    on('run-c-mode-auto',   () => sendControl('r-c-mode', { mode: 'auto' }));
+    on('run-c-mode-manual', () => sendControl('r-c-mode', { mode: 'manual' }));
+    on('run-c-msg', () => {
+      const payload = { message: val('c-msg') };
+      const secs = num('c-msg-secs');
+      if (secs !== null) payload.message_secs = secs;
+      sendControl('r-c-msg', payload);
+    });
+    on('run-c-log', () => { const d = requireDevice('r-c-log'); if (d) run('r-c-log', 'GET', `/api/control/commands/${encodeURIComponent(d)}?limit=${num('c-log-limit') || 20}`); });
+
+    // --- App — điều khiển nhanh (endpoint chuyên dụng /water /light /auto) ---
+    function appControl(resultId, subpath, payload) {
+      const d = requireDevice(resultId); if (!d) return;
+      run(resultId, 'POST', `/api/control/${encodeURIComponent(d)}/${subpath}`, payload);
+    }
+    on('run-c-water-on',    () => appControl('r-c-app', 'water', { on: true }));
+    on('run-c-water-off',   () => appControl('r-c-app', 'water', { on: false }));
+    on('run-c-lite-on',     () => appControl('r-c-app', 'light', { on: true }));
+    on('run-c-lite-off',    () => appControl('r-c-app', 'light', { on: false }));
+    on('run-c-lite-pwm',    () => {
+      const v = num('c-lite-pwm');
+      appControl('r-c-app', 'light', { pwm: v === null ? 0 : Math.max(0, Math.min(255, Math.round(v))) });
+    });
+    on('run-c-return-auto', () => appControl('r-c-app', 'auto', undefined));
+
+    // --- Trợ lý AI (chat) ---
+    const chatLog = document.getElementById('chat-log');
+    const chatMsgEl = document.getElementById('chat-msg');
+    const chatSessionEl = document.getElementById('chat-session');
+    const chatPendingEl = document.getElementById('chat-pending');
+    const chatPendingSummaryEl = document.getElementById('chat-pending-summary');
+    let chatPending = null; // { id, summary }
+
+    function chatAppend(role, text) {
+      if (!chatLog) return;
+      // Xoá placeholder ban đầu ở lần append đầu tiên.
+      if (chatLog.dataset.started !== '1') { chatLog.innerHTML = ''; chatLog.dataset.started = '1'; }
+      const who = role === 'user' ? 'Bạn' : (role === 'assistant' ? 'Trợ lý' : 'Hệ thống');
+      const color = role === 'user' ? '#93c5fd' : (role === 'assistant' ? '#86efac' : '#fca5a5');
+      const div = document.createElement('div');
+      div.style.margin = '6px 0';
+      div.innerHTML = `<b style="color:${color}">${who}:</b> <span></span>`;
+      div.querySelector('span').textContent = text;
+      chatLog.appendChild(div);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+    function showPending(p) {
+      chatPending = p ? { id: p.id, summary: p.summary || '(hành động điều khiển)' } : null;
+      if (chatPending && chatPendingEl) {
+        chatPendingSummaryEl.textContent = 'Xác nhận: ' + chatPending.summary;
+        chatPendingEl.style.display = 'block';
+      } else if (chatPendingEl) {
+        chatPendingEl.style.display = 'none';
+      }
+    }
+    function chatSessionId() {
+      let s = (chatSessionEl.value || '').trim();
+      if (!s) { s = 'demo-' + Math.random().toString(36).slice(2, 8); chatSessionEl.value = s; }
+      return s;
+    }
+    // Gọi assistant, hiển thị reply + pendingAction. path = 'chat' | 'confirm'.
+    async function assistantCall(path, body) {
+      const box = document.getElementById('r-chat');
+      const pill = box.querySelector('.status-pill'); const ms = box.querySelector('.ms'); const pre = box.querySelector('pre');
+      box.classList.add('show'); pill.className = 'status-pill wait'; pill.textContent = '… đang gọi'; ms.textContent = ''; pre.textContent = '';
+      const started = performance.now();
+      try {
+        const res = await fetch(cfg().base + `/api/assistant/${path}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+        const dur = Math.round(performance.now() - started);
+        const text = await res.text(); let data = null, out = text;
+        try { data = JSON.parse(text); out = JSON.stringify(data, null, 2); } catch {}
+        pill.className = 'status-pill ' + (res.ok ? 'ok' : 'err');
+        pill.textContent = (res.ok ? '✓ ' : '✗ ') + res.status + ' ' + res.statusText;
+        ms.textContent = dur + ' ms'; pre.textContent = out || '(empty body)';
+        if (res.ok && data) {
+          if (data.sessionId) chatSessionEl.value = data.sessionId;
+          if (data.reply) chatAppend('assistant', data.reply);
+          showPending(data.pendingAction || null);
+        } else {
+          chatAppend('system', 'Lỗi ' + res.status + ': ' + (typeof data === 'string' ? data : out));
+        }
+      } catch (err) {
+        const dur = Math.round(performance.now() - started);
+        pill.className = 'status-pill err'; pill.textContent = '✗ Failed to fetch'; ms.textContent = dur + ' ms';
+        pre.textContent = err.message + '\n\nKiểm tra: server .NET chạy? AI server (8787) chạy? Đã đăng nhập?';
+        chatAppend('system', 'Không gọi được: ' + err.message);
+      }
+    }
+    function chatSend() {
+      const msg = (chatMsgEl.value || '').trim();
+      if (!msg) return;
+      if (!authToken) { chatAppend('system', 'Chưa đăng nhập — vào tab Kết nối lấy Bearer trước.'); return; }
+      chatAppend('user', msg);
+      chatMsgEl.value = '';
+      assistantCall('chat', { message: msg, sessionId: chatSessionId() });
+    }
+    on('chat-send', chatSend);
+    if (chatMsgEl) chatMsgEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); chatSend(); } });
+    on('chat-confirm-yes', () => { if (chatPending) { chatAppend('user', 'Có'); assistantCall('confirm', { sessionId: chatSessionId(), actionId: chatPending.id, approved: true }); showPending(null); } });
+    on('chat-confirm-no',  () => { if (chatPending) { chatAppend('user', 'Không'); assistantCall('confirm', { sessionId: chatSessionId(), actionId: chatPending.id, approved: false }); showPending(null); } });
+    on('chat-reset', () => {
+      if (chatLog) { chatLog.innerHTML = '<div style="color:#64748b">Đã xoá hội thoại.</div>'; chatLog.dataset.started = '0'; }
+      chatSessionEl.value = ''; showPending(null);
+    });
+
+    // ===== MCP tool caller (streamable-HTTP JSON-RPC) =====
+    // Gọi thẳng MCP server (FastMCP streamable-http). Handshake:
+    //   initialize -> notifications/initialized -> tools/list | tools/call
+    // Response mặc định là SSE (text/event-stream) nên phải tự parse.
+    const MCP_LS = 'planttree-mcp-cfg';
+    const mcpUrlEl = document.getElementById('mcp-url');
+    const mcpStatusEl = document.getElementById('mcp-status');
+    const mcpToolEl = document.getElementById('mcp-tool');
+    const mcpArgsEl = document.getElementById('mcp-args');
+    let mcpSession = null, mcpProto = null, mcpRpcId = 0;
+
+    // Metadata 12 tool: template arguments (snake_case — khớp chữ ký Python).
+    const MCP_TOOLS = [
+      { name: 'list_devices',          args: {} },
+      { name: 'get_device_info',       args: { device_id: '{{device}}' } },
+      { name: 'get_latest_sensor',     args: { device_id: '{{device}}' } },
+      { name: 'get_sensor_history',    args: { device_id: '{{device}}', limit: 10 } },
+      { name: 'set_pump',              args: { device_id: '{{device}}', on: true } },
+      { name: 'set_light',             args: { device_id: '{{device}}', on: true, pwm: 180 } },
+      { name: 'set_mode',              args: { device_id: '{{device}}', auto: true } },
+      { name: 'show_message',          args: { device_id: '{{device}}', text: 'Tuoi cho toi nhe', secs: 15 } },
+      { name: 'get_recent_commands',   args: { device_id: '{{device}}' } },
+      { name: 'get_device_config',     args: { device_id: '{{device}}' } },
+      { name: 'set_device_config',     args: { device_id: '{{device}}', soil_on_pct: 25, soil_off_pct: 65 } },
+      { name: 'refresh_device_config', args: { device_id: '{{device}}' } },
+    ];
+
+    function mcpEndpoint() { return (mcpUrlEl && mcpUrlEl.value.trim()) || 'http://localhost:8100/mcp'; }
+    function setMcpStatus(txt, color) { if (mcpStatusEl) { mcpStatusEl.textContent = txt; mcpStatusEl.style.color = color || '#94a3b8'; } }
+
+    if (mcpUrlEl) {
+      try { const s = JSON.parse(localStorage.getItem(MCP_LS)) || {}; if (s.url) mcpUrlEl.value = s.url; } catch {}
+      if (!mcpUrlEl.value) mcpUrlEl.value = 'http://localhost:8100/mcp';
+      mcpUrlEl.addEventListener('input', () => localStorage.setItem(MCP_LS, JSON.stringify({ url: mcpUrlEl.value.trim() })));
+
+      MCP_TOOLS.forEach(t => { const o = document.createElement('option'); o.value = t.name; o.textContent = t.name; mcpToolEl.appendChild(o); });
+      const fillArgs = () => {
+        const t = MCP_TOOLS.find(x => x.name === mcpToolEl.value) || MCP_TOOLS[0];
+        const dev = cfg().device || 'ESP32S3_Zone1';
+        const filled = JSON.parse(JSON.stringify(t.args).replace(/\{\{device\}\}/g, dev));
+        mcpArgsEl.value = JSON.stringify(filled, null, 2);
+      };
+      mcpToolEl.addEventListener('change', fillArgs);
+      fillArgs();
+    }
+
+    // SSE (text/event-stream) hoặc JSON -> mảng message JSON-RPC
+    function parseRpcBody(ct, text) {
+      if (ct && ct.includes('text/event-stream')) {
+        return text.split(/\r?\n\r?\n/)
+          .map(block => block.split(/\r?\n/).filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join(''))
+          .filter(Boolean)
+          .map(d => { try { return JSON.parse(d); } catch { return null; } })
+          .filter(Boolean);
+      }
+      try { const j = JSON.parse(text); return Array.isArray(j) ? j : [j]; } catch { return []; }
+    }
+
+    async function mcpPost(payload) {
+      const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' };
+      if (mcpSession) headers['Mcp-Session-Id'] = mcpSession;
+      if (mcpProto) headers['MCP-Protocol-Version'] = mcpProto;
+      const res = await fetch(mcpEndpoint(), { method: 'POST', headers, body: JSON.stringify(payload) });
+      const sid = res.headers.get('Mcp-Session-Id'); if (sid) mcpSession = sid;
+      const ct = res.headers.get('Content-Type') || '';
+      const text = await res.text();
+      return { res, ct, text };
+    }
+
+    async function mcpInitialize() {
+      mcpSession = null; mcpProto = null;
+      const { res, ct, text } = await mcpPost({
+        jsonrpc: '2.0', id: ++mcpRpcId, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'demo-dashboard', version: '1.0' } }
+      });
+      if (!res.ok) throw new Error(`initialize HTTP ${res.status}: ${text.slice(0, 300)}`);
+      const init = parseRpcBody(ct, text).find(m => m.result);
+      if (init && init.result && init.result.protocolVersion) mcpProto = init.result.protocolVersion;
+      await mcpPost({ jsonrpc: '2.0', method: 'notifications/initialized' }); // notification -> không id
+      setMcpStatus('✓ đã kết nối' + (mcpSession ? ' · session ' + mcpSession.slice(0, 8) + '…' : ''), '#4ade80');
+      return init ? init.result : null;
+    }
+
+    async function mcpRpc(method, params) {
+      if (!mcpSession) await mcpInitialize();
+      const payload = { jsonrpc: '2.0', id: ++mcpRpcId, method, params };
+      let r = await mcpPost(payload);
+      if (r.res.status === 404 || r.res.status === 400) { await mcpInitialize(); r = await mcpPost(payload); } // session hết hạn -> init lại 1 lần
+      if (!r.res.ok) throw new Error(`HTTP ${r.res.status}: ${r.text.slice(0, 400)}`);
+      const msgs = parseRpcBody(r.ct, r.text);
+      const msg = msgs.find(m => m.id === payload.id) || msgs.find(m => m.result || m.error);
+      if (!msg) throw new Error('Không parse được response MCP:\n' + r.text.slice(0, 300));
+      if (msg.error) throw new Error(`JSON-RPC ${msg.error.code}: ${msg.error.message}`);
+      return msg.result;
+    }
+
+    async function mcpRunResult(resultId, fn, label) {
+      const box = document.getElementById(resultId);
+      const pill = box.querySelector('.status-pill');
+      const ms = box.querySelector('.ms');
+      const pre = box.querySelector('pre');
+      box.classList.add('show');
+      pill.className = 'status-pill wait'; pill.textContent = '… đang gọi MCP'; ms.textContent = ''; pre.textContent = '';
+      const started = performance.now();
+      try {
+        const result = await fn();
+        const dur = Math.round(performance.now() - started);
+        pill.className = 'status-pill ok'; pill.textContent = '✓ ' + (label || 'OK'); ms.textContent = dur + ' ms';
+        // tools/call: content[].text chính là JSON API trả về -> decode cho dễ đọc, kèm raw result
+        if (result && Array.isArray(result.content)) {
+          const textPart = result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
+          let decoded = textPart; try { decoded = JSON.stringify(JSON.parse(textPart), null, 2); } catch {}
+          const flag = result.isError ? '⚠️ tool báo lỗi\n\n' : '';
+          pre.textContent = flag + decoded + '\n\n──── raw JSON-RPC result ────\n' + JSON.stringify(result, null, 2);
+        } else {
+          pre.textContent = JSON.stringify(result, null, 2);
+        }
+      } catch (err) {
+        const dur = Math.round(performance.now() - started);
+        pill.className = 'status-pill err'; pill.textContent = '✗ ' + err.message.split('\n')[0].slice(0, 70); ms.textContent = dur + ' ms';
+        pre.textContent = err.message + '\n\nKiểm tra:\n• MCP server chạy HTTP chưa?  MCP_TRANSPORT=streamable-http python server.py\n• URL đúng? (mặc định http://localhost:8100/mcp)\n• CORS đã bật? (server.py đã thêm sẵn cho streamable-http)\n• Mở F12 → Console / Network để xem lỗi CORS.';
+        setMcpStatus('✗ lỗi', '#fca5a5');
+      }
+    }
+
+    on('mcp-btn-init', () => mcpRunResult('r-mcp-conn', () => mcpInitialize(), 'initialize'));
+    on('mcp-btn-list', () => mcpRunResult('r-mcp-list', () => mcpRpc('tools/list', {}), 'tools/list'));
+    on('mcp-btn-call', () => {
+      let args = {};
+      const raw = (mcpArgsEl.value || '').trim();
       if (raw) {
-        try { params = JSON.parse(raw); }
+        try { args = JSON.parse(raw); }
         catch {
-          const box = document.getElementById('r-c-send');
-          box.classList.add('show');
+          const box = document.getElementById('r-mcp-call'); box.classList.add('show');
           box.querySelector('.status-pill').className = 'status-pill err';
-          box.querySelector('.status-pill').textContent = '✗ Parameters không phải JSON hợp lệ';
+          box.querySelector('.status-pill').textContent = '✗ Arguments không phải JSON hợp lệ';
           box.querySelector('.ms').textContent = '';
-          box.querySelector('pre').textContent = 'Ví dụ: {"duration": 5000}';
+          box.querySelector('pre').textContent = 'Ví dụ: { "device_id": "ESP32S3_Zone1" }';
           return;
         }
       }
-      run('r-c-send', 'POST', '/api/control/commands', { deviceId: d, command: val('c-cmd'), parameters: params });
+      mcpRunResult('r-mcp-call', () => mcpRpc('tools/call', { name: mcpToolEl.value, arguments: args }), 'tools/call · ' + mcpToolEl.value);
     });
-    on('run-c-pending', () => { const d = requireDevice('r-c-pending'); if (d) run('r-c-pending', 'GET', `/api/control/commands/${encodeURIComponent(d)}`); });
-    on('run-c-aw', () => { const d = requireDevice('r-c-aw'); if (d) run('r-c-aw', 'POST', `/api/control/auto-water/${encodeURIComponent(d)}?threshold=${num('c-aw-threshold') || 30}`); });
-    on('run-c-al', () => { const d = requireDevice('r-c-al'); if (d) run('r-c-al', 'POST', `/api/control/auto-light/${encodeURIComponent(d)}?threshold=${num('c-al-threshold') || 200}`); });
-
-    // --- Rules manager: list + inline edit (PUT) + delete (DELETE) ---
-    const RULE_TYPES = {
-      moisture: {
-        path: 'moisture', listId: 'rm-manage-list', msgId: 'rm-manage-msg',
-        fields: [
-          { key: 'name', label: 'Name', type: 'text', flex: '1 1 130px' },
-          { key: 'minMoisture', label: 'min %', type: 'number' },
-          { key: 'maxMoisture', label: 'max %', type: 'number' },
-          { key: 'waterDurationMs', label: 'durationMs', type: 'number' },
-          { key: 'cooldownMs', label: 'cooldownMs', type: 'number' },
-        ],
-      },
-      light: {
-        path: 'light', listId: 'rl-manage-list', msgId: 'rl-manage-msg',
-        fields: [
-          { key: 'name', label: 'Name', type: 'text', flex: '1 1 130px' },
-          { key: 'minLight', label: 'min lux', type: 'number' },
-          { key: 'maxLight', label: 'max lux', type: 'number' },
-          { key: 'cooldownMs', label: 'cooldownMs', type: 'number' },
-        ],
-      },
-    };
-
-    function ruleMsg(id, text, ok) {
-      const el = document.getElementById(id);
-      el.textContent = text;
-      el.style.cssText = 'margin:8px 0;font-size:13px;color:' + (ok ? '#34d399' : '#f87171');
-    }
-
-    async function apiJson(method, path, body, auth = 'user') {
-      const opts = { method, headers: authHeaders(auth) };
-      if (body !== undefined) opts.body = JSON.stringify(body);
-      const res = await fetch(cfg().base + path, opts);
-      let data = null; try { data = await res.json(); } catch {}
-      return { ok: res.ok, status: res.status, data };
-    }
-
-    function ruleField(f, value) {
-      const wrap = document.createElement('label');
-      wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;font-size:11px;color:#94a3b8;flex:' + (f.flex || '0 1 95px');
-      const input = document.createElement('input');
-      input.type = f.type;
-      if (f.type === 'number') input.step = '0.1';
-      input.value = value ?? '';
-      input.style.cssText = 'background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:5px 7px;font-size:13px;width:100%';
-      wrap.appendChild(document.createTextNode(f.label));
-      wrap.appendChild(input);
-      return { wrap, input };
-    }
-
-    function buildRuleRow(typeKey, rule) {
-      const t = RULE_TYPES[typeKey];
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;background:#0b1220;border:1px solid #1e293b;border-radius:8px;padding:10px;margin-bottom:8px';
-      const inputs = {};
-      t.fields.forEach(f => { const { wrap, input } = ruleField(f, rule[f.key]); inputs[f.key] = input; row.appendChild(wrap); });
-
-      const enWrap = document.createElement('label');
-      enWrap.style.cssText = 'display:flex;align-items:center;gap:5px;font-size:12px;color:#94a3b8';
-      const en = document.createElement('input'); en.type = 'checkbox'; en.checked = !!rule.isEnabled;
-      enWrap.appendChild(en); enWrap.appendChild(document.createTextNode('enabled'));
-      row.appendChild(enWrap);
-
-      const save = document.createElement('button'); save.textContent = '💾 Lưu'; save.className = 'run-btn'; save.style.cssText = 'padding:6px 12px';
-      const del = document.createElement('button'); del.textContent = '🗑 Xóa'; del.className = 'run-btn'; del.style.cssText = 'padding:6px 12px;background:#7f1d1d';
-      row.appendChild(save); row.appendChild(del);
-
-      save.addEventListener('click', async () => {
-        const body = { deviceId: rule.deviceId, isEnabled: en.checked };
-        t.fields.forEach(f => { const v = inputs[f.key].value.trim(); body[f.key] = f.type === 'number' ? Number(v) : v; });
-        save.disabled = true;
-        const { ok, status, data } = await apiJson('PUT', `/api/rules/${t.path}/${rule.id}`, body);
-        save.disabled = false;
-        ruleMsg(t.msgId, ok ? `✓ Đã lưu rule ${rule.id}` : `✗ Lỗi ${status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`, ok);
-      });
-      del.addEventListener('click', async () => {
-        if (!confirm(`Xóa rule "${rule.name || rule.id}"?`)) return;
-        del.disabled = true;
-        const { ok, status } = await apiJson('DELETE', `/api/rules/${t.path}/${rule.id}`);
-        if (ok) { row.remove(); ruleMsg(t.msgId, `✓ Đã xóa rule ${rule.id}`, true); }
-        else { del.disabled = false; ruleMsg(t.msgId, `✗ Xóa thất bại (${status})`, false); }
-      });
-      return row;
-    }
-
-    async function loadRules(typeKey) {
-      const t = RULE_TYPES[typeKey];
-      const listEl = document.getElementById(t.listId);
-      const d = cfg().device;
-      if (!d) { ruleMsg(t.msgId, '✗ Thiếu Device ID — đặt ở tab "Kết nối" trước.', false); return; }
-      ruleMsg(t.msgId, '… đang tải', true);
-      listEl.innerHTML = '';
-      const { ok, data } = await apiJson('GET', `/api/rules/${t.path}/${encodeURIComponent(d)}`);
-      if (!ok || !Array.isArray(data)) { ruleMsg(t.msgId, '✗ Không tải được rules', false); return; }
-      if (data.length === 0) { ruleMsg(t.msgId, `Chưa có rule ${typeKey} nào cho device ${d}.`, true); return; }
-      ruleMsg(t.msgId, `${data.length} rule cho device ${d}`, true);
-      data.forEach(rule => listEl.appendChild(buildRuleRow(typeKey, rule)));
-    }
-
-    on('run-rm-manage', () => loadRules('moisture'));
-    on('run-rl-manage', () => loadRules('light'));
   })();
 </script>
 </body>

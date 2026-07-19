@@ -29,6 +29,10 @@ test_endpoint() {
         response=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
                   -H "Content-Type: application/json" \
                   -d "$5" "$BASE_URL$endpoint")
+    elif [ "$method" = "PUT" ]; then
+        response=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+                  -H "Content-Type: application/json" \
+                  -d "$5" "$BASE_URL$endpoint")
     fi
 
     if [ "$response" -eq "$expected_status" ]; then
@@ -62,12 +66,12 @@ test_endpoint "POST" "/api/devices/register" 201 "Register new device" '{
   "plantType": "Test Plant"
 }'
 
-# Test sensor data upload
+# Test sensor data upload (telemetry snake_case theo hop dong)
 test_endpoint "POST" "/api/sensordata/upload" 200 "Upload sensor data" '{
-  "deviceId": "ESP32_TEST",
-  "temperature": 25.5,
-  "humidity": 60.0,
-  "soilMoisture": 45.0
+  "device_id": "ESP32_TEST",
+  "temperature_c": 25.5,
+  "humidity_percent": 60.0,
+  "soil_percent": 45
 }'
 
 # Test get latest sensor data
@@ -76,11 +80,18 @@ test_endpoint "GET" "/api/sensordata/latest/ESP32_TEST" 200 "Get latest sensor d
 # Test get sensor history
 test_endpoint "GET" "/api/sensordata/history/ESP32_TEST?limit=10" 200 "Get sensor data history"
 
-# Test control commands
-test_endpoint "GET" "/api/control/commands/ESP32_TEST" 200 "Get pending commands"
+# Test command log (nhat ky lenh da gui)
+test_endpoint "GET" "/api/control/commands/ESP32_TEST" 200 "Get command log"
 
-# Test auto water
-test_endpoint "POST" "/api/control/auto-water/ESP32_TEST" 200 "Auto water command"
+# Test manual control (khoa phang -> ep MANUAL, publish xuong xmini/control)
+test_endpoint "POST" "/api/control/ESP32_TEST" 200 "Manual pump on" '{
+  "pump": true
+}'
+
+# Test dat nguong auto cua thiet bi (device tu chay auto theo nguong)
+test_endpoint "PUT" "/api/control/ESP32_TEST/config" 200 "Set auto threshold (soil_on_pct)" '{
+  "soil_on_pct": 25
+}'
 
 echo ""
 echo "=========================================="

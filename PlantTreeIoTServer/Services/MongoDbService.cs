@@ -28,12 +28,22 @@ public class MongoDbService
                 new CreateIndexOptions { Unique = true }));
         }
         catch { /* ignore */ }
+
+        // Mỗi thiết bị chỉ giữ 1 bản cấu hình ngưỡng auto (upsert theo deviceId).
+        try
+        {
+            DeviceConfigs.Indexes.CreateOne(new CreateIndexModel<DeviceConfig>(
+                Builders<DeviceConfig>.IndexKeys.Ascending(c => c.DeviceId),
+                new CreateIndexOptions { Unique = true }));
+        }
+        catch { /* ignore */ }
     }
 
     // Collections
     public IMongoCollection<SensorData> SensorData => _database.GetCollection<SensorData>("SensorData");
     public IMongoCollection<Device> Devices => _database.GetCollection<Device>("Devices");
     public IMongoCollection<ControlCommand> ControlCommands => _database.GetCollection<ControlCommand>("ControlCommands");
+    public IMongoCollection<DeviceConfig> DeviceConfigs => _database.GetCollection<DeviceConfig>("DeviceConfigs");
     public IMongoCollection<User> Users => _database.GetCollection<User>("Users");
 
     // User Operations
@@ -85,19 +95,26 @@ public class MongoDbService
         await Devices.InsertOneAsync(device);
     }
 
-    // Device ownership + secret
-    public async Task<List<Device>> GetDevicesByOwnerAsync(string ownerId)
-        => await Devices.Find(d => d.OwnerId == ownerId).ToListAsync();
+    // Device ownership + sharing
+    /// <summary>Device user có quyền: là owner HOẶC nằm trong Members (được chia sẻ).</summary>
+    public async Task<List<Device>> GetDevicesForUserAsync(string userId)
+        => await Devices.Find(d => d.OwnerId == userId || d.Members.Contains(userId)).ToListAsync();
 
-    /// <summary>Trả về device nếu user là chủ sở hữu, ngược lại null (chặn truy cập chéo).</summary>
+    /// <summary>Chỉ trả về khi user là CHỦ SỞ HỮU (dùng cho xoá / chia sẻ / claim).</summary>
     public async Task<Device?> GetOwnedDeviceAsync(string deviceId, string ownerId)
         => await Devices.Find(d => d.DeviceId == deviceId && d.OwnerId == ownerId).FirstOrDefaultAsync();
 
-    public async Task SetDeviceSecretAsync(string deviceId, string secretHash)
-    {
-        var update = Builders<Device>.Update.Set(d => d.DeviceSecretHash, secretHash);
-        await Devices.UpdateOneAsync(d => d.DeviceId == deviceId, update);
-    }
+    /// <summary>Trả về khi user là owner HOẶC member (dùng cho xem / điều khiển).</summary>
+    public async Task<Device?> GetAccessibleDeviceAsync(string deviceId, string userId)
+        => await Devices.Find(d => d.DeviceId == deviceId && (d.OwnerId == userId || d.Members.Contains(userId))).FirstOrDefaultAsync();
+
+    public async Task AddDeviceMemberAsync(string deviceId, string userId)
+        => await Devices.UpdateOneAsync(d => d.DeviceId == deviceId,
+            Builders<Device>.Update.AddToSet(d => d.Members, userId));
+
+    public async Task RemoveDeviceMemberAsync(string deviceId, string userId)
+        => await Devices.UpdateOneAsync(d => d.DeviceId == deviceId,
+            Builders<Device>.Update.Pull(d => d.Members, userId));
 
     public async Task SetDeviceOwnerAsync(string deviceId, string ownerId)
     {
@@ -106,14 +123,13 @@ public class MongoDbService
     }
 
     // Xoá device kèm toàn bộ dữ liệu liên quan; trả về số bản ghi đã xoá mỗi loại.
-    public async Task<(long SensorData, long MoistureRules, long LightRules, long Commands)> DeleteDeviceAndDataAsync(string deviceId)
+    public async Task<(long SensorData, long DeviceConfigs, long Commands)> DeleteDeviceAndDataAsync(string deviceId)
     {
         await Devices.DeleteOneAsync(d => d.DeviceId == deviceId);
         var s = await SensorData.DeleteManyAsync(x => x.DeviceId == deviceId);
-        var m = await MoistureRules.DeleteManyAsync(x => x.DeviceId == deviceId);
-        var l = await LightRules.DeleteManyAsync(x => x.DeviceId == deviceId);
+        var cfg = await DeviceConfigs.DeleteManyAsync(x => x.DeviceId == deviceId);
         var c = await ControlCommands.DeleteManyAsync(x => x.DeviceId == deviceId);
-        return (s.DeletedCount, m.DeletedCount, l.DeletedCount, c.DeletedCount);
+        return (s.DeletedCount, cfg.DeletedCount, c.DeletedCount);
     }
 
     public async Task UpdateDeviceLastSeenAsync(string deviceId)
@@ -124,113 +140,58 @@ public class MongoDbService
         await Devices.UpdateOneAsync(d => d.DeviceId == deviceId, update);
     }
 
-    // Moisture Rule Operations
-    public IMongoCollection<MoistureRule> MoistureRules => _database.GetCollection<MoistureRule>("MoistureRules");
+    // Device Config (ngưỡng auto) Operations
+    public async Task<DeviceConfig?> GetDeviceConfigAsync(string deviceId)
+        => await DeviceConfigs.Find(c => c.DeviceId == deviceId).FirstOrDefaultAsync();
 
-    public async Task<List<MoistureRule>> GetMoistureRulesAsync(string deviceId)
+    /// <summary>
+    /// Ghi/hợp nhất cấu hình ngưỡng auto của thiết bị. Chỉ set các trường KHÁC null
+    /// (echo đầy đủ từ topic xmini/config sẽ ghi cả 15 trường; PUT một phần sẽ chỉ merge trường được gửi).
+    /// </summary>
+    public async Task UpsertDeviceConfigAsync(DeviceConfig config)
     {
-        return await MoistureRules
-            .Find(r => r.DeviceId == deviceId)
-            .ToListAsync();
+        var b = Builders<DeviceConfig>.Update;
+        var updates = new List<UpdateDefinition<DeviceConfig>>
+        {
+            b.SetOnInsert(c => c.DeviceId, config.DeviceId),
+            b.Set(c => c.UpdatedAt, config.UpdatedAt),
+        };
+
+        if (config.SoilOnPct.HasValue) updates.Add(b.Set(c => c.SoilOnPct, config.SoilOnPct));
+        if (config.SoilOffPct.HasValue) updates.Add(b.Set(c => c.SoilOffPct, config.SoilOffPct));
+        if (config.PumpMaxRunS.HasValue) updates.Add(b.Set(c => c.PumpMaxRunS, config.PumpMaxRunS));
+        if (config.PumpCooldownS.HasValue) updates.Add(b.Set(c => c.PumpCooldownS, config.PumpCooldownS));
+        if (config.LuxOn.HasValue) updates.Add(b.Set(c => c.LuxOn, config.LuxOn));
+        if (config.LuxOff.HasValue) updates.Add(b.Set(c => c.LuxOff, config.LuxOff));
+        if (config.LightAutoPwm.HasValue) updates.Add(b.Set(c => c.LightAutoPwm, config.LightAutoPwm));
+        if (config.BattWarnPct.HasValue) updates.Add(b.Set(c => c.BattWarnPct, config.BattWarnPct));
+        if (config.BattRecoverPct.HasValue) updates.Add(b.Set(c => c.BattRecoverPct, config.BattRecoverPct));
+        if (config.SoilDry.HasValue) updates.Add(b.Set(c => c.SoilDry, config.SoilDry));
+        if (config.SoilWet.HasValue) updates.Add(b.Set(c => c.SoilWet, config.SoilWet));
+        if (config.BattFullOnV.HasValue) updates.Add(b.Set(c => c.BattFullOnV, config.BattFullOnV));
+        if (config.BattFullOffV.HasValue) updates.Add(b.Set(c => c.BattFullOffV, config.BattFullOffV));
+        if (config.BattCritV.HasValue) updates.Add(b.Set(c => c.BattCritV, config.BattCritV));
+        if (config.BattCritRecoverV.HasValue) updates.Add(b.Set(c => c.BattCritRecoverV, config.BattCritRecoverV));
+
+        await DeviceConfigs.UpdateOneAsync(
+            c => c.DeviceId == config.DeviceId,
+            b.Combine(updates),
+            new UpdateOptions { IsUpsert = true });
     }
 
-    public async Task<MoistureRule?> GetMoistureRuleAsync(string ruleId)
-    {
-        return await MoistureRules.Find(r => r.Id == ruleId).FirstOrDefaultAsync();
-    }
-
-    public async Task InsertMoistureRuleAsync(MoistureRule rule)
-    {
-        await MoistureRules.InsertOneAsync(rule);
-    }
-
-    public async Task<bool> UpdateMoistureRuleAsync(string ruleId, MoistureRule updated)
-    {
-        var update = Builders<MoistureRule>.Update
-            .Set(r => r.Name, updated.Name)
-            .Set(r => r.MinMoisture, updated.MinMoisture)
-            .Set(r => r.MaxMoisture, updated.MaxMoisture)
-            .Set(r => r.WaterDurationMs, updated.WaterDurationMs)
-            .Set(r => r.IsEnabled, updated.IsEnabled)
-            .Set(r => r.CooldownMs, updated.CooldownMs);
-
-        var result = await MoistureRules.UpdateOneAsync(r => r.Id == ruleId, update);
-        // MatchedCount: rule có tồn tại không (ModifiedCount = 0 khi giá trị không đổi -> vẫn coi là thành công)
-        return result.MatchedCount > 0;
-    }
-
-    public async Task UpdateRuleLastTriggeredAsync(string ruleId)
-    {
-        var update = Builders<MoistureRule>.Update
-            .Set(r => r.LastTriggeredAt, DateTime.UtcNow);
-        await MoistureRules.UpdateOneAsync(r => r.Id == ruleId, update);
-    }
-
-    public async Task<bool> DeleteMoistureRuleAsync(string ruleId)
-    {
-        var result = await MoistureRules.DeleteOneAsync(r => r.Id == ruleId);
-        return result.DeletedCount > 0;
-    }
-
-    // Light Rule Operations
-    public IMongoCollection<LightRule> LightRules => _database.GetCollection<LightRule>("LightRules");
-
-    public async Task<List<LightRule>> GetLightRulesAsync(string deviceId)
-        => await LightRules.Find(r => r.DeviceId == deviceId).ToListAsync();
-
-    public async Task<LightRule?> GetLightRuleAsync(string ruleId)
-        => await LightRules.Find(r => r.Id == ruleId).FirstOrDefaultAsync();
-
-    public async Task InsertLightRuleAsync(LightRule rule)
-        => await LightRules.InsertOneAsync(rule);
-
-    public async Task<bool> UpdateLightRuleAsync(string ruleId, LightRule updated)
-    {
-        var update = Builders<LightRule>.Update
-            .Set(r => r.Name, updated.Name)
-            .Set(r => r.MinLight, updated.MinLight)
-            .Set(r => r.MaxLight, updated.MaxLight)
-            .Set(r => r.IsEnabled, updated.IsEnabled)
-            .Set(r => r.CooldownMs, updated.CooldownMs);
-        var result = await LightRules.UpdateOneAsync(r => r.Id == ruleId, update);
-        return result.MatchedCount > 0;
-    }
-
-    public async Task UpdateLightRuleLastTriggeredAsync(string ruleId)
-    {
-        var update = Builders<LightRule>.Update.Set(r => r.LastTriggeredAt, DateTime.UtcNow);
-        await LightRules.UpdateOneAsync(r => r.Id == ruleId, update);
-    }
-
-    public async Task<bool> DeleteLightRuleAsync(string ruleId)
-    {
-        var result = await LightRules.DeleteOneAsync(r => r.Id == ruleId);
-        return result.DeletedCount > 0;
-    }
-
-    // Control Command Operations
-    public async Task<List<ControlCommand>> GetPendingCommandsAsync(string deviceId)
-    {
-        return await ControlCommands
-            .Find(cmd => cmd.DeviceId == deviceId && !cmd.Executed)
-            .SortBy(cmd => cmd.CreatedAt)
-            .ToListAsync();
-    }
-
-    public async Task<ControlCommand?> GetControlCommandAsync(string commandId)
-        => await ControlCommands.Find(cmd => cmd.Id == commandId).FirstOrDefaultAsync();
-
+    // Control Command (nhật ký lệnh đã publish) Operations
     public async Task InsertControlCommandAsync(ControlCommand command)
     {
         await ControlCommands.InsertOneAsync(command);
     }
 
-    public async Task MarkCommandExecutedAsync(string commandId)
+    /// <summary>Nhật ký các lệnh gần nhất BE đã publish xuống xmini/control (mới nhất trước).</summary>
+    public async Task<List<ControlCommand>> GetRecentControlCommandsAsync(string deviceId, int limit = 50)
     {
-        var update = Builders<ControlCommand>.Update
-            .Set(cmd => cmd.Executed, true)
-            .Set(cmd => cmd.ExecutedAt, DateTime.UtcNow);
-
-        await ControlCommands.UpdateOneAsync(cmd => cmd.Id == commandId, update);
+        return await ControlCommands
+            .Find(cmd => cmd.DeviceId == deviceId)
+            .SortByDescending(cmd => cmd.CreatedAt)
+            .Limit(limit)
+            .ToListAsync();
     }
 }

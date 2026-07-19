@@ -1,54 +1,65 @@
+import json
 import respx
 import httpx
-from tools.control import send_command, get_pending_commands, auto_water, auto_light
+from tools.control import set_pump, set_light, set_mode, show_message, get_recent_commands
 
 BASE = "http://localhost:5000"
 
+
 @respx.mock
-def test_send_valid_command():
-    respx.post(f"{BASE}/api/control/commands").mock(
+def test_set_pump_publishes_flat_key():
+    route = respx.post(f"{BASE}/api/control/dev1").mock(
         return_value=httpx.Response(200, json={
-            "message": "Command sent successfully",
-            "commandId": "cmd1"
+            "message": "Đã gửi lệnh xuống xmini/control",
+            "deviceId": "dev1",
+            "published": {"pump": True},
         })
     )
-    result = send_command("dev1", "WATER_ON", duration=5000)
-    assert result["commandId"] == "cmd1"
+    result = set_pump("dev1", True)
+    assert result["published"] == {"pump": True}
+    # Body gửi lên đúng khoá phẳng theo hợp đồng (không bọc command/parameters)
+    assert json.loads(route.calls.last.request.content) == {"pump": True}
 
-def test_send_invalid_command_returns_error():
-    result = send_command("dev1", "INVALID_CMD")
+
+@respx.mock
+def test_set_light_pwm_takes_precedence():
+    route = respx.post(f"{BASE}/api/control/dev1").mock(
+        return_value=httpx.Response(200, json={"published": {"light_pwm": 180}})
+    )
+    result = set_light("dev1", on=True, pwm=180)
+    assert json.loads(route.calls.last.request.content) == {"light_pwm": 180}
+    assert result["published"]["light_pwm"] == 180
+
+
+def test_set_light_without_args_returns_error():
+    result = set_light("dev1")
     assert "error" in result
 
+
 @respx.mock
-def test_get_pending_commands():
+def test_set_mode_auto():
+    route = respx.post(f"{BASE}/api/control/dev1").mock(
+        return_value=httpx.Response(200, json={"published": {"mode": "auto"}})
+    )
+    set_mode("dev1", True)
+    assert json.loads(route.calls.last.request.content) == {"mode": "auto"}
+
+
+@respx.mock
+def test_show_message_with_secs():
+    route = respx.post(f"{BASE}/api/control/dev1").mock(
+        return_value=httpx.Response(200, json={"published": {"message": "Toi khat nuoc", "message_secs": 15}})
+    )
+    show_message("dev1", "Toi khat nuoc", secs=15)
+    assert json.loads(route.calls.last.request.content) == {"message": "Toi khat nuoc", "message_secs": 15}
+
+
+@respx.mock
+def test_get_recent_commands():
     respx.get(f"{BASE}/api/control/commands/dev1").mock(
         return_value=httpx.Response(200, json=[
-            {"id": "cmd1", "command": "WATER_ON", "executed": False}
+            {"deviceId": "dev1", "payload": {"pump": True}}
         ])
     )
-    result = get_pending_commands("dev1")
-    assert result[0]["command"] == "WATER_ON"
-
-@respx.mock
-def test_auto_water_sends_command():
-    respx.post(f"{BASE}/api/control/auto-water/dev1").mock(
-        return_value=httpx.Response(200, json={
-            "message": "Auto water command sent",
-            "currentMoisture": 20.0,
-            "threshold": 30.0
-        })
-    )
-    result = auto_water("dev1", threshold=30.0)
-    assert "currentMoisture" in result
-
-@respx.mock
-def test_auto_light_sends_command():
-    respx.post(f"{BASE}/api/control/auto-light/dev1").mock(
-        return_value=httpx.Response(200, json={
-            "message": "Auto light command sent: LIGHT_ON",
-            "currentLight": 100.0,
-            "threshold": 200.0
-        })
-    )
-    result = auto_light("dev1", threshold=200.0)
-    assert "currentLight" in result
+    result = get_recent_commands("dev1")
+    assert result[0]["payload"] == {"pump": True}
