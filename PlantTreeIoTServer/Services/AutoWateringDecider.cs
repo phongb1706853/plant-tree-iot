@@ -11,9 +11,9 @@ public enum PumpAction
 /// <summary>
 /// Bộ quyết định auto tưới — HÀM THUẦN, không I/O, dễ test.
 /// Chỉ can thiệp khi thiết bị báo mode="auto". Hysteresis theo soil_percent:
-///   - đang tắt + 0 &lt; soil &lt; soilOnPct + hết cooldown  -> TurnOn
-///   - đang bật + soil &gt; soilOffPct                        -> TurnOff (cooldown KHÔNG chặn tắt)
-/// soil &lt;= 0 (hoặc null) coi như cảm biến lỗi/chưa cắm -> None.
+///   - đang tắt + soil &lt; soilOnPct + hết cooldown  -> TurnOn (soil=0 coi là rất khô, vẫn tưới)
+///   - đang bật + soil &gt; soilOffPct                 -> TurnOff (cooldown KHÔNG chặn tắt)
+/// soil null (thiếu dữ liệu telemetry) -> None.
 /// </summary>
 public static class AutoWateringDecider
 {
@@ -30,8 +30,8 @@ public static class AutoWateringDecider
         int soilOffPct,
         bool cooldownActive)
     {
-        if (mode != "auto") return PumpAction.None;               // tôn trọng chế độ tay
-        if (soilPercent is null or <= 0) return PumpAction.None;  // nghi cảm biến lỗi/chưa cắm
+        if (mode != "auto") return PumpAction.None;   // tôn trọng chế độ tay
+        if (soilPercent is null) return PumpAction.None;  // thiếu dữ liệu telemetry -> không quyết định
 
         if (pumpOn == true)
             return soilPercent > soilOffPct ? PumpAction.TurnOff : PumpAction.None;

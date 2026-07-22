@@ -84,13 +84,14 @@ public class AutoWateringDeciderTests
     }
 
     [Fact]
-    public void Soil_zero_treated_as_sensor_fault_never_turns_on()
+    public void Soil_zero_is_very_dry_and_turns_on()
     {
+        // soil=0 coi là RẤT KHÔ -> vẫn tưới (yêu cầu: 0 thì cũng bật bơm).
         var action = AutoWateringDecider.Decide(
             mode: "auto", soilPercent: 0, pumpOn: false,
             soilOnPct: OnPct, soilOffPct: OffPct, cooldownActive: false);
 
-        Assert.Equal(PumpAction.None, action);
+        Assert.Equal(PumpAction.TurnOn, action);
     }
 
     [Fact]
