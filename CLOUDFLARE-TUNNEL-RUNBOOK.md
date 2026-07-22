@@ -9,7 +9,7 @@
 Internet → https://api.windy-dev.site → [Cloudflare edge, Proxied 🟠]
         → tunnel "planttree" (cloudflared chạy nền trên Mac)
         → http://localhost:8080  (Docker: planttree-iot-server-1, map 8080→8000)
-        → .NET API (auth JWT + device token)
+        → .NET API (auth JWT)
 ```
 
 ## Thông số quan trọng (ghi lại để khôi phục)
