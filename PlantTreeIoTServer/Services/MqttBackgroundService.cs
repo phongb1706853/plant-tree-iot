@@ -13,8 +13,9 @@ namespace PlantTreeIoTServer.Services;
 /// Nghe MQTT theo hợp đồng firmware Xmini (mqtt-api.md):
 ///   - xmini/sensor_data : telemetry ~10s (21 trường phẳng)  -> lưu SensorData
 ///   - xmini/config      : ngưỡng auto thiết bị đang dùng      -> upsert DeviceConfig
-/// QoS 0, không retained. Thiết bị TỰ chạy auto; BE không sinh lệnh tưới/đèn ở đây nữa
-/// (điều khiển đi qua ControlController -> xmini/control dưới dạng khoá phẳng).
+/// QoS 0, không retained. Ngoài việc lưu telemetry, BE còn TỰ ĐỘNG TƯỚI: xét soil_percent theo
+/// ngưỡng (DeviceConfig, fallback mặc định) rồi publish {"pump":...} xuống xmini/control khi
+/// thiết bị đang mode="auto" (logic ở AutoWateringDecider). Điều khiển tay vẫn qua ControlController.
 /// </summary>
 public class MqttBackgroundService : BackgroundService
 {
@@ -22,6 +23,7 @@ public class MqttBackgroundService : BackgroundService
     public const string TopicConfig = "xmini/config";
 
     private readonly MongoDbService _mongoDbService;
+    private readonly MqttPublisherService _mqttPublisher;
     private readonly ILogger<MqttBackgroundService> _logger;
     private readonly IConfiguration _configuration;
     private IMqttClient? _mqttClient;
@@ -30,12 +32,21 @@ public class MqttBackgroundService : BackgroundService
     // (mqtt-api.md mục 3) nên gán cấu hình cho thiết bị telemetry gần nhất vừa thấy.
     private volatile string? _lastSeenDeviceId;
 
+    // Trạng thái auto tưới theo từng thiết bị (đọc/ghi trong _stateLock).
+    // _lastPumpOn: trạng thái bơm ở telemetry trước (phát hiện chuyển BẬT->TẮT để mở cooldown).
+    // _cooldownUntil: mốc UTC hết cooldown; trước mốc này không auto BẬT lại.
+    private readonly object _stateLock = new();
+    private readonly Dictionary<string, bool?> _lastPumpOn = new();
+    private readonly Dictionary<string, DateTime> _cooldownUntil = new();
+
     public MqttBackgroundService(
         MongoDbService mongoDbService,
+        MqttPublisherService mqttPublisher,
         ILogger<MqttBackgroundService> logger,
         IConfiguration configuration)
     {
         _mongoDbService = mongoDbService;
+        _mqttPublisher = mqttPublisher;
         _logger = logger;
         _configuration = configuration;
     }
@@ -166,6 +177,56 @@ public class MqttBackgroundService : BackgroundService
             "Telemetry from {DeviceId}: mode={Mode} soil={Soil}% light={Lux}lux batt={Batt}% pump={Pump} lightOn={Light}",
             telemetry.DeviceId, telemetry.Mode, telemetry.SoilPercent, telemetry.LightLux,
             sensorData.BatteryPercent, telemetry.PumpOn, telemetry.LightOn);
+
+        await EvaluateAutoWateringAsync(telemetry);
+    }
+
+    // Tự động tưới: dựa trên telemetry vừa nhận, quyết định bật/tắt bơm rồi publish xuống xmini/control.
+    // Ngưỡng lấy từ DeviceConfig đã lưu (fallback mặc định). Cooldown mở khi bơm chuyển BẬT->TẮT
+    // (do server tắt, đủ ẩm, hay firmware tự tắt an toàn — đều thấy qua telemetry pump_on).
+    private async Task EvaluateAutoWateringAsync(XminiTelemetry telemetry)
+    {
+        var deviceId = telemetry.DeviceId!;
+
+        var cfg = await _mongoDbService.GetDeviceConfigAsync(deviceId);
+        int onPct     = cfg?.SoilOnPct     ?? AutoWateringDecider.DefaultSoilOnPct;
+        int offPct    = cfg?.SoilOffPct    ?? AutoWateringDecider.DefaultSoilOffPct;
+        int cooldownS = cfg?.PumpCooldownS ?? AutoWateringDecider.DefaultPumpCooldownS;
+
+        bool cooldownActive;
+        lock (_stateLock)
+        {
+            if (_lastPumpOn.TryGetValue(deviceId, out var prev) && prev == true && telemetry.PumpOn == false)
+                _cooldownUntil[deviceId] = DateTime.UtcNow.AddSeconds(cooldownS);
+            _lastPumpOn[deviceId] = telemetry.PumpOn;
+
+            cooldownActive = _cooldownUntil.TryGetValue(deviceId, out var until) && DateTime.UtcNow < until;
+        }
+
+        var action = AutoWateringDecider.Decide(
+            telemetry.Mode, telemetry.SoilPercent, telemetry.PumpOn, onPct, offPct, cooldownActive);
+        if (action == PumpAction.None)
+            return;
+
+        var pump = action == PumpAction.TurnOn;
+        var flat = new Dictionary<string, object?> { ["pump"] = pump };
+
+        if (!await _mqttPublisher.PublishControlAsync(deviceId, flat))
+        {
+            _logger.LogWarning("Auto-water: publisher chưa kết nối broker, bỏ lệnh pump={Pump} cho {DeviceId}", pump, deviceId);
+            return;
+        }
+
+        await _mongoDbService.InsertControlCommandAsync(new ControlCommand
+        {
+            DeviceId = deviceId,
+            Payload = flat,
+            CreatedAt = DateTime.UtcNow,
+        });
+
+        _logger.LogInformation(
+            "Auto-water: {DeviceId} soil={Soil}% mode={Mode} -> pump={Pump} (on<{On} off>{Off})",
+            deviceId, telemetry.SoilPercent, telemetry.Mode, pump, onPct, offPct);
     }
 
     private async Task HandleConfigAsync(string payload)
