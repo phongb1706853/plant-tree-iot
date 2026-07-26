@@ -72,6 +72,20 @@ builder.Services.AddHttpClient<AiServerClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(120); // LLM có thể chậm
 });
 
+// ===== Notify service (team thông báo) — .NET đẩy sự kiện cây sang qua webhook =====
+// NOTIFY_URL + NOTIFY_API_KEY (env) hoặc Notify:BaseUrl / Notify:ApiKey (appsettings).
+// Chưa cấu hình -> NotifyClient tự tắt (no-op), không chặn gì. Xem NOTIFY-INTEGRATION-GUIDE.md.
+var notifyUrl = Environment.GetEnvironmentVariable("NOTIFY_URL")
+    ?? builder.Configuration["Notify:BaseUrl"];
+
+builder.Services.AddHttpClient(NotifyClient.HttpClientName, client =>
+{
+    if (!string.IsNullOrWhiteSpace(notifyUrl))
+        client.BaseAddress = new Uri(notifyUrl);
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+builder.Services.AddSingleton<NotifyClient>();
+
 // Configure CORS for ESP32 communication
 builder.Services.AddCors(options =>
 {
