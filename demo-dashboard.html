@@ -1375,13 +1375,13 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
   <h2>🤖 Trợ lý AI — Chat</h2>
   <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
   <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">
-    Gọi <code>POST /api/assistant/chat</code> — .NET proxy tới AI server (tree-grow-helper) → MCP → điều khiển thiết bị.
+    Gọi <code>POST /api/assistant/v1/chat/completions</code> (OpenAI-compatible) — .NET proxy tới AI server (tree-grow-helper) → MCP → điều khiển thiết bị.
     Cần <strong>đăng nhập</strong> (Bearer) ở tab Kết nối và <strong>AI server đang chạy</strong> (mặc định <code>http://localhost:8787</code>).
-    Nếu là lệnh điều khiển, trợ lý hỏi <strong>Có/Không</strong> trước khi thực thi — bấm nút để gọi <code>/api/assistant/confirm</code>.
+    Endpoint <strong>stateless</strong>: trang giữ toàn bộ <code>messages[]</code> và gửi lại mỗi lượt. Nếu là lệnh điều khiển, trợ lý trả <code>tool_calls</code> + hỏi <strong>Có/Không</strong>; bấm nút sẽ thêm câu "có/không" vào <code>messages[]</code> rồi gửi lại (giữ nguyên assistant message kèm <code>tool_calls</code>).
   </p>
 
   <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/assistant/chat</span><span class="title">Hội thoại (giữ sessionId)</span></div>
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/assistant/v1/chat/completions</span><span class="title">Hội thoại (giữ messages[])</span></div>
     <div class="try-body">
       <div id="chat-log" style="max-height:340px;overflow:auto;background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:12px;font-size:14px;line-height:1.5">
         <div style="color:#64748b">Chưa có tin nhắn. Ví dụ: "Tưới nước cho <em>&lt;deviceId&gt;</em> giúp mình" hoặc "Độ ẩm đất bao nhiêu?"</div>
@@ -1395,7 +1395,6 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
       </div>
       <div class="try-grid">
         <div class="try-field full"><label>Tin nhắn</label><input id="chat-msg" placeholder="Nhập câu chat rồi Enter…"></div>
-        <div class="try-field"><label>sessionId (tuỳ chọn)</label><input id="chat-session" placeholder="tự tạo nếu để trống"></div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="run-btn" id="chat-send">Gửi</button>
@@ -2595,13 +2594,13 @@ Liên hệ vấn đề kỹ thuật:
     });
     on('run-c-return-auto', () => appControl('r-c-app', 'auto', undefined));
 
-    // --- Trợ lý AI (chat) ---
+    // --- Trợ lý AI (chat) — OpenAI-compatible, STATELESS: trang giữ messages[] và gửi lại mỗi lượt ---
     const chatLog = document.getElementById('chat-log');
     const chatMsgEl = document.getElementById('chat-msg');
-    const chatSessionEl = document.getElementById('chat-session');
     const chatPendingEl = document.getElementById('chat-pending');
     const chatPendingSummaryEl = document.getElementById('chat-pending-summary');
-    let chatPending = null; // { id, summary }
+    let chatMessages = [];   // toàn bộ hội thoại theo shape OpenAI (kèm assistant.tool_calls)
+    let chatBusy = false;
 
     function chatAppend(role, text) {
       if (!chatLog) return;
@@ -2616,28 +2615,35 @@ Liên hệ vấn đề kỹ thuật:
       chatLog.appendChild(div);
       chatLog.scrollTop = chatLog.scrollHeight;
     }
-    function showPending(p) {
-      chatPending = p ? { id: p.id, summary: p.summary || '(hành động điều khiển)' } : null;
-      if (chatPending && chatPendingEl) {
-        chatPendingSummaryEl.textContent = 'Xác nhận: ' + chatPending.summary;
+    // Tóm tắt tool_calls (function name + arguments) để hiện ở ô xác nhận.
+    function summarizeToolCalls(tcs) {
+      try {
+        return tcs.map(tc => {
+          const fn = tc.function || {};
+          const name = fn.name || tc.type || 'tool';
+          const args = typeof fn.arguments === 'string' ? fn.arguments : JSON.stringify(fn.arguments || {});
+          return name + '(' + args + ')';
+        }).join(', ');
+      } catch { return '(hành động điều khiển)'; }
+    }
+    function showPending(tcs) {
+      if (tcs && tcs.length && chatPendingEl) {
+        chatPendingSummaryEl.textContent = 'Xác nhận: ' + summarizeToolCalls(tcs);
         chatPendingEl.style.display = 'block';
       } else if (chatPendingEl) {
         chatPendingEl.style.display = 'none';
       }
     }
-    function chatSessionId() {
-      let s = (chatSessionEl.value || '').trim();
-      if (!s) { s = 'demo-' + Math.random().toString(36).slice(2, 8); chatSessionEl.value = s; }
-      return s;
-    }
-    // Gọi assistant, hiển thị reply + pendingAction. path = 'chat' | 'confirm'.
-    async function assistantCall(path, body) {
+    // Gửi TOÀN BỘ chatMessages tới endpoint OpenAI; .NET tự ép user/stream/model.
+    async function postChat() {
       const box = document.getElementById('r-chat');
       const pill = box.querySelector('.status-pill'); const ms = box.querySelector('.ms'); const pre = box.querySelector('pre');
       box.classList.add('show'); pill.className = 'status-pill wait'; pill.textContent = '… đang gọi'; ms.textContent = ''; pre.textContent = '';
       const started = performance.now();
       try {
-        const res = await fetch(cfg().base + `/api/assistant/${path}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+        const res = await fetch(cfg().base + '/api/assistant/v1/chat/completions', {
+          method: 'POST', headers: authHeaders(), body: JSON.stringify({ messages: chatMessages })
+        });
         const dur = Math.round(performance.now() - started);
         const text = await res.text(); let data = null, out = text;
         try { data = JSON.parse(text); out = JSON.stringify(data, null, 2); } catch {}
@@ -2645,9 +2651,14 @@ Liên hệ vấn đề kỹ thuật:
         pill.textContent = (res.ok ? '✓ ' : '✗ ') + res.status + ' ' + res.statusText;
         ms.textContent = dur + ' ms'; pre.textContent = out || '(empty body)';
         if (res.ok && data) {
-          if (data.sessionId) chatSessionEl.value = data.sessionId;
-          if (data.reply) chatAppend('assistant', data.reply);
-          showPending(data.pendingAction || null);
+          const m = data.choices && data.choices[0] && data.choices[0].message;
+          if (m) {
+            chatMessages.push(m);   // giữ NGUYÊN assistant message (kèm tool_calls) cho lượt xác nhận
+            chatAppend('assistant', m.content || '(đề nghị hành động — xác nhận bên dưới)');
+            showPending(m.tool_calls || null);
+          } else {
+            chatAppend('system', 'Phản hồi không có choices[].message.');
+          }
         } else {
           chatAppend('system', 'Lỗi ' + res.status + ': ' + (typeof data === 'string' ? data : out));
         }
@@ -2656,23 +2667,35 @@ Liên hệ vấn đề kỹ thuật:
         pill.className = 'status-pill err'; pill.textContent = '✗ Failed to fetch'; ms.textContent = dur + ' ms';
         pre.textContent = err.message + '\n\nKiểm tra: server .NET chạy? AI server (8787) chạy? Đã đăng nhập?';
         chatAppend('system', 'Không gọi được: ' + err.message);
+      } finally {
+        chatBusy = false;
       }
+    }
+    // Thêm 1 câu user vào messages[] rồi gửi (chặn gửi chồng khi đang chờ).
+    function sendUser(content) {
+      if (chatBusy) return;
+      chatBusy = true;
+      chatAppend('user', content);
+      chatMessages.push({ role: 'user', content });
+      showPending(null);
+      postChat();
     }
     function chatSend() {
       const msg = (chatMsgEl.value || '').trim();
       if (!msg) return;
       if (!authToken) { chatAppend('system', 'Chưa đăng nhập — vào tab Kết nối lấy Bearer trước.'); return; }
-      chatAppend('user', msg);
       chatMsgEl.value = '';
-      assistantCall('chat', { message: msg, sessionId: chatSessionId() });
+      sendUser(msg);
     }
     on('chat-send', chatSend);
     if (chatMsgEl) chatMsgEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); chatSend(); } });
-    on('chat-confirm-yes', () => { if (chatPending) { chatAppend('user', 'Có'); assistantCall('confirm', { sessionId: chatSessionId(), actionId: chatPending.id, approved: true }); showPending(null); } });
-    on('chat-confirm-no',  () => { if (chatPending) { chatAppend('user', 'Không'); assistantCall('confirm', { sessionId: chatSessionId(), actionId: chatPending.id, approved: false }); showPending(null); } });
+    // Xác nhận: assistant message (kèm tool_calls) đã nằm trong chatMessages — chỉ cần thêm "có"/"không".
+    on('chat-confirm-yes', () => sendUser('có'));
+    on('chat-confirm-no',  () => sendUser('không'));
     on('chat-reset', () => {
+      chatMessages = [];
       if (chatLog) { chatLog.innerHTML = '<div style="color:#64748b">Đã xoá hội thoại.</div>'; chatLog.dataset.started = '0'; }
-      chatSessionEl.value = ''; showPending(null);
+      showPending(null);
     });
 
     // ===== MCP tool caller (streamable-HTTP JSON-RPC) =====

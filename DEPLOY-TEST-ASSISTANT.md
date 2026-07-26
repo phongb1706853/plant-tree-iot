@@ -1,6 +1,6 @@
 # Deploy & Test luồng Chat (App → .NET → AI → MCP → tool)
 
-Hướng dẫn dựng đủ 5 mảnh để test endpoint `POST /api/assistant/chat` kích hoạt tool điều khiển thật.
+Hướng dẫn dựng đủ 5 mảnh để test endpoint `POST /api/assistant/v1/chat/completions` kích hoạt tool điều khiển thật.
 
 ## Sơ đồ & cổng
 
@@ -99,23 +99,30 @@ curl http://localhost:8787/health     # -> {"status":"ok","phase":"ready"}
 TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"mcp@plant-tree.local","password":"<mat-khau-mcp>"}' | jq -r .token)
 
-# (A) Câu hỏi/đọc dữ liệu -> trả lời ngay, pendingAction=null
-curl -s -X POST http://localhost:8080/api/assistant/chat \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"message":"Độ ẩm đất của ESP32S3_Zone1 bao nhiêu?"}' | jq
+CC=http://localhost:8080/api/assistant/v1/chat/completions
 
-# (B) Lệnh điều khiển -> trả pendingAction (CHƯA thực thi). Nhớ nêu deviceId trong câu.
-RESP=$(curl -s -X POST http://localhost:8080/api/assistant/chat \
+# (A) Câu hỏi/đọc dữ liệu -> trả lời ngay (choices[].message.content), không tool_calls
+curl -s -X POST "$CC" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"message":"Tưới nước cho ESP32S3_Zone1 giúp mình"}')
+  -d '{"messages":[{"role":"user","content":"Độ ẩm đất của ESP32S3_Zone1 bao nhiêu?"}]}' | jq
+
+# (B) Lệnh điều khiển -> choices[].message có tool_calls + câu hỏi Có/Không (CHƯA thực thi). Nhớ nêu deviceId.
+RESP=$(curl -s -X POST "$CC" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"Tưới nước cho ESP32S3_Zone1 giúp mình"}]}')
 echo "$RESP" | jq
-SID=$(echo "$RESP" | jq -r .sessionId)
-AID=$(echo "$RESP" | jq -r .pendingAction.id)
+# Lấy nguyên assistant message (kèm tool_calls) để gửi lại ở lượt xác nhận
+ASSISTANT=$(echo "$RESP" | jq '.choices[0].message')
 
-# (C) Xác nhận -> AI gọi MCP -> MCP gọi /api/control -> MQTT -> bơm chạy
-curl -s -X POST http://localhost:8080/api/assistant/confirm \
+# (C) Xác nhận -> gửi lại messages[]: câu user + assistant (kèm tool_calls) + "có"
+#     AI gọi MCP -> MCP gọi /api/control -> MQTT -> bơm chạy
+curl -s -X POST "$CC" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"sessionId\":\"$SID\",\"actionId\":\"$AID\",\"approved\":true}" | jq
+  -d "$(jq -n --argjson a "$ASSISTANT" '{messages:[
+        {role:"user",content:"Tưới nước cho ESP32S3_Zone1 giúp mình"},
+        $a,
+        {role:"user",content:"có"}
+      ]}')" | jq
 
 # (D) Kiểm chứng lệnh đã publish thật
 curl -s "http://localhost:8080/api/control/commands/ESP32S3_Zone1?limit=5" \
@@ -128,7 +135,7 @@ curl -s "http://localhost:8080/api/control/commands/ESP32S3_Zone1?limit=5" \
 
 | Triệu chứng | Nguyên nhân & cách xử lý |
 |---|---|
-| `/api/assistant/chat` → **503** "Không kết nối được AI server" | `AI_SERVER_URL` sai hoặc AI server chưa chạy. Từ container .NET dùng `http://host.docker.internal:8787`. |
+| `/api/assistant/v1/chat/completions` → **503** "Không kết nối được AI server" | `AI_SERVER_URL` sai hoặc AI server chưa chạy. Từ container .NET dùng `http://host.docker.internal:8787`. |
 | **503** "AI server chưa cấu hình" | Chưa `/setup` LLM trên AI server → vào `http://localhost:8787/setup`. |
 | Trợ lý báo không điều khiển được / tool trả **404 device** | Service-account MCP không sở hữu device → làm lại **Bước 4** (register/share device cho `PLANT_MCP_EMAIL`). |
 | AI server không thấy tool / không gọi được MCP | MCP chưa chạy `streamable-http`, sai `MCP_URL`, hoặc sai cổng 8100. Kiểm tra `curl http://localhost:8100/mcp` sống, và `MCP_URL=http://host.docker.internal:8100/mcp` trong /setup. |

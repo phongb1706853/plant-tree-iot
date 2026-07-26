@@ -1,5 +1,5 @@
 # Smoke test cho các endpoint MỚI: /api/auth/dev-token, /api/control/{id}/water|light|auto,
-# /api/assistant/chat|confirm. Kiểm tra routing + auth + validation + xử lý lỗi.
+# /api/assistant/v1/chat/completions. Kiểm tra routing + auth + validation + xử lý lỗi.
 #
 # Yêu cầu: đã `dotnet build`, MongoDB chạy ở localhost:27017.
 # KHÔNG cần MQTT broker (để trống -> /water|/light|/auto trả 503 sau khi qua auth+ownership).
@@ -82,14 +82,14 @@ try {
   $a = Invoke-Api POST "/api/control/$dev/auto" @{ Authorization="Bearer $token" } $null
   Check '9. /auto owned -> 503/200' ($a.Status -eq 503 -or $a.Status -eq 200) "status=$($a.Status)"
 
-  # --- B. Assistant proxy ---
-  Check '10. /assistant/chat no token -> 401' ((Invoke-Api POST '/api/assistant/chat' @{} (@{ message='xin chao' } | ConvertTo-Json -Compress)).Status -eq 401) '401'
-  Check '11. /assistant/chat empty message -> 400' ((Invoke-Api POST '/api/assistant/chat' @{ Authorization="Bearer $token" } (@{ message='' } | ConvertTo-Json -Compress)).Status -eq 400) '400'
+  # --- B. Assistant proxy (OpenAI-compatible /v1/chat/completions) ---
+  $cc = '/api/assistant/v1/chat/completions'
+  $msg = @{ messages = @(@{ role='user'; content='Do am dat bao nhieu?' }) } | ConvertTo-Json -Depth 5 -Compress
+  Check '10. /chat/completions no token -> 401' ((Invoke-Api POST $cc @{} $msg).Status -eq 401) '401'
+  Check '11. /chat/completions empty messages -> 400' ((Invoke-Api POST $cc @{ Authorization="Bearer $token" } (@{ messages=@() } | ConvertTo-Json -Compress)).Status -eq 400) '400'
   # AI server khong chay -> 503 (AiServerUnavailableException)
-  $ch = Invoke-Api POST '/api/assistant/chat' @{ Authorization="Bearer $token" } (@{ message='Do am dat bao nhieu?' } | ConvertTo-Json -Compress)
-  Check '12. /assistant/chat AI down -> 503' ($ch.Status -eq 503) "status=$($ch.Status)"
-  $cf = Invoke-Api POST '/api/assistant/confirm' @{ Authorization="Bearer $token" } (@{ sessionId='s1'; actionId='x'; approved=$true } | ConvertTo-Json -Compress)
-  Check '13. /assistant/confirm AI down -> 503' ($cf.Status -eq 503) "status=$($cf.Status)"
+  $ch = Invoke-Api POST $cc @{ Authorization="Bearer $token" } $msg
+  Check '12. /chat/completions AI down -> 503' ($ch.Status -eq 503) "status=$($ch.Status)"
 }
 finally {
   if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
