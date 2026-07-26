@@ -19,6 +19,9 @@ builder.Services.AddSingleton<MongoDbService>();
 builder.Services.AddSingleton<MqttPublisherService>();
 builder.Services.AddHostedService<PlantTreeIoTServer.Services.MqttBackgroundService>();
 
+// Cờ chế độ auto/manual do server làm chủ (dùng chung controller + background service).
+builder.Services.AddSingleton<DeviceModeStore>();
+
 // ===== Authentication (JWT Bearer — người dùng / app / MCP service account) =====
 // ESP32 dùng MQTT (HiveMQ) nên không cần xác thực HTTP riêng cho thiết bị.
 

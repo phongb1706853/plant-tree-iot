@@ -140,6 +140,16 @@ public class MongoDbService
         await Devices.UpdateOneAsync(d => d.DeviceId == deviceId, update);
     }
 
+    // Cờ chế độ auto/manual do server làm chủ, lưu trên Device doc để bền qua redeploy.
+    /// <summary>Đọc controlMode của thiết bị (null nếu chưa đặt hoặc thiết bị chưa đăng ký).</summary>
+    public async Task<string?> GetDeviceControlModeAsync(string deviceId)
+        => (await GetDeviceAsync(deviceId))?.ControlMode;
+
+    /// <summary>Ghi controlMode (chỉ khi thiết bị đã đăng ký — không upsert; caller đã kiểm ownership).</summary>
+    public async Task SetDeviceControlModeAsync(string deviceId, string mode)
+        => await Devices.UpdateOneAsync(d => d.DeviceId == deviceId,
+            Builders<Device>.Update.Set(d => d.ControlMode, mode));
+
     // Device Config (ngưỡng auto) Operations
     public async Task<DeviceConfig?> GetDeviceConfigAsync(string deviceId)
         => await DeviceConfigs.Find(c => c.DeviceId == deviceId).FirstOrDefaultAsync();

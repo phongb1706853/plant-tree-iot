@@ -14,8 +14,9 @@ namespace PlantTreeIoTServer.Services;
 ///   - xmini/sensor_data : telemetry ~10s (21 trường phẳng)  -> lưu SensorData
 ///   - xmini/config      : ngưỡng auto thiết bị đang dùng      -> upsert DeviceConfig
 /// QoS 0, không retained. Ngoài việc lưu telemetry, BE còn TỰ ĐỘNG TƯỚI: xét soil_percent theo
-/// ngưỡng (DeviceConfig, fallback mặc định) rồi publish {"pump":...} xuống xmini/control khi
-/// thiết bị đang mode="auto" (logic ở AutoWateringDecider). Điều khiển tay vẫn qua ControlController.
+/// ngưỡng (DeviceConfig, fallback mặc định) rồi publish {"pump":..., "mode":"auto"} xuống xmini/control
+/// khi cờ mode do server giữ (DeviceModeStore) đang "auto" (logic ở AutoWateringDecider). Kèm mode:"auto"
+/// để firmware không rớt khỏi auto khi nhận pump. Điều khiển tay vẫn qua ControlController.
 /// </summary>
 public class MqttBackgroundService : BackgroundService
 {
@@ -24,6 +25,7 @@ public class MqttBackgroundService : BackgroundService
 
     private readonly MongoDbService _mongoDbService;
     private readonly MqttPublisherService _mqttPublisher;
+    private readonly DeviceModeStore _modeStore;
     private readonly ILogger<MqttBackgroundService> _logger;
     private readonly IConfiguration _configuration;
     private IMqttClient? _mqttClient;
@@ -42,11 +44,13 @@ public class MqttBackgroundService : BackgroundService
     public MqttBackgroundService(
         MongoDbService mongoDbService,
         MqttPublisherService mqttPublisher,
+        DeviceModeStore modeStore,
         ILogger<MqttBackgroundService> logger,
         IConfiguration configuration)
     {
         _mongoDbService = mongoDbService;
         _mqttPublisher = mqttPublisher;
+        _modeStore = modeStore;
         _logger = logger;
         _configuration = configuration;
     }
@@ -203,13 +207,18 @@ public class MqttBackgroundService : BackgroundService
             cooldownActive = _cooldownUntil.TryGetValue(deviceId, out var until) && DateTime.UtcNow < until;
         }
 
+        // Gate theo mode do SERVER làm chủ (không phải telemetry.Mode — firmware ép manual mỗi khi
+        // nhận pump/light nên telemetry không đáng tin làm nguồn sự thật cho auto).
+        var serverMode = await _modeStore.GetAsync(deviceId);
         var action = AutoWateringDecider.Decide(
-            telemetry.Mode, telemetry.SoilPercent, telemetry.PumpOn, onPct, offPct, cooldownActive);
+            serverMode, telemetry.SoilPercent, telemetry.PumpOn, onPct, offPct, cooldownActive);
         if (action == PumpAction.None)
             return;
 
+        // GỘP mode:"auto" vào lệnh: firmware xử lý pump trước (ép manual) rồi mode sau (kéo lại auto),
+        // nên auto-tưới không còn tự làm thiết bị rớt khỏi auto.
         var pump = action == PumpAction.TurnOn;
-        var flat = new Dictionary<string, object?> { ["pump"] = pump };
+        var flat = new Dictionary<string, object?> { ["pump"] = pump, ["mode"] = "auto" };
 
         if (!await _mqttPublisher.PublishControlAsync(deviceId, flat))
         {
