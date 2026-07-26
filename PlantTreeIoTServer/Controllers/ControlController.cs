@@ -14,12 +14,14 @@ public class ControlController : ControllerBase
 {
     private readonly MongoDbService _mongoDbService;
     private readonly MqttPublisherService _mqttPublisher;
+    private readonly DeviceModeStore _modeStore;
     private readonly ILogger<ControlController> _logger;
 
-    public ControlController(MongoDbService mongoDbService, MqttPublisherService mqttPublisher, ILogger<ControlController> logger)
+    public ControlController(MongoDbService mongoDbService, MqttPublisherService mqttPublisher, DeviceModeStore modeStore, ILogger<ControlController> logger)
     {
         _mongoDbService = mongoDbService;
         _mqttPublisher = mqttPublisher;
+        _modeStore = modeStore;
         _logger = logger;
     }
 
@@ -38,7 +40,8 @@ public class ControlController : ControllerBase
     /// Body là một JSON object có thể GỘP nhiều nhóm khoá (mqtt-api.md mục 4):
     ///   {"pump": true} | {"light": true} | {"light_pwm": 180} | {"mode": "auto"|"manual"} |
     ///   {"auto": true} | {"message": "..."} + {"message_secs": 15} | {"config": {...ngưỡng...}}.
-    /// ⚠ Lệnh chấp hành (pump/light/light_pwm) khiến thiết bị chuyển MANUAL cho tới khi gửi {"mode":"auto"}.
+    /// Mode do SERVER làm chủ: pump/light KHÔNG đổi mode (server tự gộp mode hiện tại vào lệnh để
+    /// firmware không rớt manual); chỉ {"mode":...}/{"auto":...} tường minh mới đổi mode. Xem ControlModeResolver.
     /// Khoá lạ bị bỏ qua. Không hỗ trợ WATER_ON/LIGHT_ON/FAN_* (thiết bị không hiểu).
     /// </summary>
     [HttpPost("{deviceId}")]
@@ -138,10 +141,11 @@ public class ControlController : ControllerBase
     }
 
     // ===== Endpoint chuyên dụng cho App (bọc mỏng quanh flat-key xmini/control) =====
-    // "Ưu tiên lệnh user hơn auto" do FIRMWARE lo: gửi pump/light -> thiết bị tự sang MANUAL và
-    // giữ nguyên (bỏ qua vòng auto theo ngưỡng) tới khi gọi /auto. BE không lưu thêm state.
+    // Mode do SERVER làm chủ (DeviceModeStore): lệnh tưới/đèn KHÔNG đổi mode — server gộp mode hiện
+    // tại vào payload (ControlModeResolver) nên thiết bị giữ nguyên auto/manual. Chỉ /auto và lệnh
+    // mode tường minh mới đổi mode. (Firmware vẫn ép manual khi thấy pump/light, nên server bù lại.)
 
-    /// <summary>Tưới nước (bật/tắt bơm). Lệnh tay -> thiết bị chuyển MANUAL cho tới khi gọi /auto.</summary>
+    /// <summary>Tưới nước (bật/tắt bơm). KHÔNG đổi mode: đang auto vẫn auto, đang manual vẫn manual.</summary>
     [HttpPost("{deviceId}/water")]
     public async Task<IActionResult> Water(string deviceId, [FromBody] WaterRequest request)
     {
@@ -162,7 +166,7 @@ public class ControlController : ControllerBase
 
     /// <summary>
     /// Điều khiển đèn. Ưu tiên 'pwm' (0–255) nếu có; ngược lại dùng 'on' để bật/tắt.
-    /// Lệnh 'on' -> thiết bị chuyển MANUAL; 'pwm' chỉ đổi độ sáng (không đổi mode) — bám firmware.
+    /// KHÔNG đổi mode: 'on' được server gộp kèm mode hiện tại; 'pwm' vốn không đổi mode ở firmware.
     /// </summary>
     [HttpPost("{deviceId}/light")]
     public async Task<IActionResult> Light(string deviceId, [FromBody] LightRequest request)
@@ -230,9 +234,16 @@ public class ControlController : ControllerBase
     // ---------------------------------------------------------------------------------
     private async Task<IActionResult> PublishAndLogAsync(string deviceId, Dictionary<string, object?> flat)
     {
+        // SERVER làm chủ mode: gộp mode hiện tại vào lệnh actuator (pump/light) để KHÔNG rớt auto;
+        // chỉ lệnh mode/auto tường minh mới đổi mode. Xem ControlModeResolver. (Apply SỬA flat: thêm mode.)
+        var newMode = ControlModeResolver.Apply(flat, await _modeStore.GetAsync(deviceId));
+
         var ok = await _mqttPublisher.PublishControlAsync(deviceId, flat);
         if (!ok)
             return StatusCode(503, "MQTT publisher chưa kết nối broker — không gửi được lệnh.");
+
+        // Chỉ ghi nhận mode intent (bền qua redeploy) khi đã gửi được lệnh xuống broker.
+        await _modeStore.SetAsync(deviceId, newMode);
 
         await _mongoDbService.InsertControlCommandAsync(new ControlCommand
         {

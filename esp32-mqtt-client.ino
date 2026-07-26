@@ -16,8 +16,8 @@
 //   - DHT sensor library by Adafruit
 //
 // AUTH: Client này giao tiếp hoàn toàn qua MQTT, xác thực bằng credential của
-// broker HiveMQ (MQTT_USERNAME/MQTT_PASSWORD bên dưới). Không dùng HTTP API nên
-// KHÔNG cần device token (X-Device-Id/X-Device-Secret).
+// broker HiveMQ (MQTT_USERNAME/MQTT_PASSWORD bên dưới). Không gọi HTTP API .NET
+// nên KHÔNG cần token gì thêm ở phía thiết bị (server chỉ xác thực user/app bằng JWT).
 //
 // HiveMQ Cloud nằm trên internet nên board có thể đặt ở bất kỳ đâu có WiFi
 // (không cần cùng mạng với server). WiFi/MQTT tự kết nối lại khi rớt.

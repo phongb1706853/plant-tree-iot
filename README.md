@@ -91,11 +91,10 @@ Server dev nghe ở **http://localhost:8000** (`ASPNETCORE_ENVIRONMENT=Developme
 
 ## Xác thực
 
-- **JWT Bearer** — cho user / dashboard / MCP service account (`POST /api/auth/register`, `POST /api/auth/login`).
-- **DeviceKey** — cho ESP32 gọi HTTP (header `X-Device-Id` + `X-Device-Secret`).
-- Kênh MQTT xác thực riêng bằng credential của broker HiveMQ.
+- **JWT Bearer** — cách xác thực HTTP **duy nhất** (user / dashboard / app / MCP service account): `POST /api/auth/register`, `POST /api/auth/login`.
+- **ESP32 không gọi HTTP** — chỉ dùng MQTT, xác thực bằng credential broker HiveMQ. Đã **bỏ device token/secret**.
 
-Dữ liệu scoped theo owner (mỗi user chỉ thấy thiết bị của mình).
+Mỗi device có **owner** + danh sách **members** (chia sẻ). `GET /api/devices` trả cả device sở hữu lẫn được chia sẻ; owner dùng `POST /api/devices/{id}/share` (body `{email}`), `GET .../members`, `DELETE .../share/{memberId}` để quản lý.
 
 ## Tài liệu
 

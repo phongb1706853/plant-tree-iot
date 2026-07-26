@@ -1,6 +1,8 @@
 # Hướng dẫn tích hợp Authentication — Plant Tree IoT
 
-> Tài liệu này mô tả **kiến trúc auth mới (JWT + device token + ownership)** và **các bước từng bên cần làm** để hệ thống kết nối lại đúng: .NET API, MCP server (12 tool), AI server (`tree-grow-helper`), và ESP32.
+> Tài liệu này mô tả **kiến trúc auth (JWT + sở hữu/chia sẻ device)** và **các bước từng bên cần làm** để hệ thống kết nối lại đúng: .NET API, MCP server (12 tool), AI server (`tree-grow-helper`), và ESP32.
+>
+> **Cập nhật:** ESP32 chỉ dùng **MQTT** (HiveMQ) nên **đã bỏ hoàn toàn device token/secret**. HTTP API giờ chỉ còn **một** cách xác thực: **JWT**. Device hỗ trợ **chia sẻ nhiều user** (owner + members).
 >
 > Liên quan: [plan chi tiết](docs/superpowers/plans/2026-07-05-auth-multi-user.md) · [API-GUIDE.md](API-GUIDE.md) · [smoke-test-auth.ps1](smoke-test-auth.ps1)
 
@@ -11,14 +13,14 @@
 ```
                                      Bearer JWT (service account)
   [tree-grow-helper] ──MCP/HTTP──► [MCP server] ──────────────────► [.NET API]
-   (AI server, Node)   /mcp         (12 tool Python)                 (MongoDB, rule engine)
-        ▲              KHÔNG auth                                       ▲   ▲
-        │ chat                                                         │   │
-     người dùng                       X-Device-Id/Secret ─────────────┘   │ Bearer JWT
-                          [ESP32 HTTP] ──────────────────────────────────┘
-                          [ESP32 MQTT] ──broker creds──► [HiveMQ] ◄──► [.NET MQTT bg service]
-                          [Dashboard / App] ──Bearer JWT──────────────► [.NET API]
+   (AI server, Node)   /mcp         (12 tool Python)                 (MongoDB)
+        ▲              KHÔNG auth                                           ▲
+        │ chat                                                             │ Bearer JWT
+     người dùng                                                           │
+                          [ESP32] ──broker creds──► [HiveMQ] ◄──► [.NET MQTT bg service]
+                          [Dashboard / App] ──Bearer JWT──────────────────┘
 ```
+> ESP32 **không gọi HTTP API** — chỉ publish telemetry / nhận lệnh qua MQTT. Không có đường "ESP32 → .NET HTTP", nên không cần token thiết bị.
 
 **Điểm mấu chốt:** `tree-grow-helper` **không gọi .NET trực tiếp** → nó gọi **MCP server (12 tool)**, và MCP server mới là bên xác thực với .NET.
 
@@ -38,7 +40,7 @@ Người dùng hỏi AI *"liệt kê thiết bị đang có"*:
 1. [tree-grow-helper]  LLM quyết định gọi tool  → callTool("list_devices")
 2. [MCP server]        chạy list_devices()      → request("GET","/api/devices")
 3. [api_client]        đính  Authorization: Bearer <JWT service account>
-4. [.NET API]          kiểm JWT + lọc theo OwnerId → trả JSON danh sách device
+4. [.NET API]          kiểm JWT + lọc device user sở hữu HOẶC được chia sẻ → trả JSON danh sách
 5. [MCP server]        trả kết quả tool về cho AI
 6. [tree-grow-helper]  LLM đọc kết quả → trả lời người dùng bằng tiếng Việt
 ```
@@ -48,9 +50,8 @@ Người dùng hỏi AI *"liệt kê thiết bị đang có"*:
 |---|---|---|
 | AI ↔ MCP | tree-grow-helper ↔ 12 tool | MCP protocol — **hiện chưa có auth** (chỉ cần đúng URL + MCP chạy HTTP) |
 | MCP ↔ .NET | 12 tool ↔ .NET API | **JWT Bearer** (service account) |
-| ESP32 ↔ .NET (HTTP) | thiết bị ↔ .NET API | **Device token** (`X-Device-Id` + `X-Device-Secret`) |
 | Dashboard/App ↔ .NET | người dùng ↔ .NET API | **JWT Bearer** (đăng nhập) |
-| ESP32 ↔ MQTT | thiết bị ↔ HiveMQ broker | Creds broker (không đổi, out-of-scope) |
+| ESP32 ↔ MQTT | thiết bị ↔ HiveMQ broker | Creds broker (không đổi, out-of-scope) — **ESP32 KHÔNG gọi .NET HTTP** |
 
 ---
 
@@ -82,15 +83,20 @@ python server.py                           # -> phục vụ http://<host>:8100/m
 - [ ] ⚠️ Default của họ là `:8000/mcp` — **trùng port .NET**. Đổi sang `:8100`.
 
 ### 4. Trên IoT team (ESP32)
-- [ ] Bạn đăng ký device hộ → đưa họ `DEVICE_ID` + `deviceSecret` (chỉ hiện 1 lần).
-- [ ] Họ nạp secret vào firmware và gửi header (xem mục C).
+- [ ] **Không cần token/secret gì thêm.** ESP32 chỉ cần đúng **DEVICE_ID** (để khớp device đã đăng ký) + creds broker HiveMQ (`MQTT_USERNAME`/`MQTT_PASSWORD`).
+- [ ] Bạn đăng ký device hộ (dashboard/JWT) rồi báo cho họ `DEVICE_ID` cần publish.
+
+### 5. Chia sẻ device cho nhiều người
+- [ ] Owner đăng nhập → `POST /api/devices/{deviceId}/share { "email" }` để thêm 1 user (đã có tài khoản) làm **member**.
+- [ ] Member đăng nhập bằng tài khoản riêng, thấy ngay device trong `GET /api/devices`, xem dữ liệu + gửi lệnh được.
+- [ ] Thu hồi: `DELETE /api/devices/{deviceId}/share/{memberId}` (lấy `memberId` từ `GET /api/devices/{deviceId}/members`).
 
 ---
 
 ## ⚠️ B. Lưu ý quan trọng
-1. **Breaking change**: mọi endpoint .NET giờ cần auth. Client cũ không gửi token/secret → **401**.
+1. **Breaking change**: mọi endpoint .NET giờ cần auth. Client cũ không gửi JWT → **401**.
 2. **`JWT_SECRET` bắt buộc ở Production** — thiếu là server chết (fail-closed, đúng thiết kế). Local (Development) có fallback trong code, không cần set.
-3. **Ownership**: MCP (và mỗi user) chỉ thấy device mình sở hữu. Muốn AI điều khiển device nào → device đó phải thuộc tài khoản MCP. **Mẹo demo**: dùng chung 1 tài khoản cho cả dashboard lẫn MCP.
+3. **Sở hữu & chia sẻ**: MCP (và mỗi user) thấy device mình **sở hữu HOẶC được chia sẻ**. Muốn AI điều khiển device nào → device đó phải thuộc (hoặc được share cho) tài khoản MCP. **Mẹo demo**: dùng chung 1 tài khoản cho cả dashboard lẫn MCP, hoặc share device sang tài khoản MCP.
 4. **MCP protocol không có auth**: ai truy cập được `http://host:8100/mcp` là gọi được tool (với quyền service account). → **Đừng mở port 8100 ra Internet**; giữ trong LAN/localhost, hoặc đặt sau reverse-proxy có auth.
 5. **Token hết hạn (24h)**: MCP server **tự đăng nhập lại** khi gặp 401 → trong suốt với AI server.
 6. **MQTT không đổi**: ESP32 qua MQTT vẫn xác thực bằng creds HiveMQ như cũ.
@@ -99,15 +105,18 @@ python server.py                           # -> phục vụ http://<host>:8100/m
 
 ## 📡 C. Chi tiết từng bên
 
-### IoT team (ESP32 — dùng HTTP)
-Thêm 2 header vào **mọi** request HTTP (upload sensor, poll lệnh, báo executed, heartbeat):
+### IoT team (ESP32 — chỉ dùng MQTT)
+ESP32 **không gọi HTTP API .NET** → **không cần token/secret gì thêm**. Thiết bị chỉ:
+- Kết nối HiveMQ bằng creds broker (`MQTT_USERNAME` / `MQTT_PASSWORD`).
+- Publish telemetry lên `xmini/sensor_data` với `device_id` khớp DEVICE_ID đã đăng ký.
+- Subscribe `xmini/control` để nhận lệnh (khoá phẳng: `pump` / `light` / `mode` / `config` / `message`).
+
 ```cpp
-http.addHeader("X-Device-Id", DEVICE_ID);
-http.addHeader("X-Device-Secret", DEVICE_SECRET);  // nhận từ bạn khi đăng ký device
+// KHÔNG có header/token nào ở phía thiết bị — auth hoàn toàn ở tầng MQTT broker.
+mqtt.connect(DEVICE_ID, MQTT_USERNAME, MQTT_PASSWORD);
 ```
-- ESP32 **không tự đăng ký** nữa (register cần JWT của người dùng) → bạn đăng ký hộ rồi giao secret.
+- ESP32 **không tự đăng ký** device (register cần JWT của người dùng) → bạn đăng ký hộ qua dashboard rồi báo `DEVICE_ID` cho họ dùng.
 - File firmware mẫu: [esp32-mqtt-client.ino](esp32-mqtt-client.ino).
-- Nếu team dùng MQTT ([esp32-mqtt-client.ino](esp32-mqtt-client.ino)) → **không cần header**, vẫn dùng creds HiveMQ.
 
 ### AI server (`tree-grow-helper`)
 - Thực chất là **Node/TypeScript**, kết nối MCP qua **Streamable HTTP** (`src/mcp/client.ts`).

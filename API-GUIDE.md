@@ -20,7 +20,7 @@ Muốn đổi hành vi auto → ghi NGƯỠNG qua {"config":{...}}; hoặc gửi
 
 ## 🔐 Authentication
 
-HTTP API yêu cầu xác thực: **JWT** cho người dùng, **Device Token** cho ESP32. Kênh MQTT xác thực riêng bằng credential broker HiveMQ (không đổi).
+HTTP API chỉ dùng **một** cách xác thực: **JWT** (người dùng / app / MCP). Thiết bị ESP32 **không gọi HTTP API** — nó nói chuyện hoàn toàn qua MQTT và xác thực bằng credential broker HiveMQ (không đổi). Vì vậy **không còn device token / device secret**.
 
 ### Người dùng (JWT)
 
@@ -30,20 +30,22 @@ POST /api/auth/login       { "email", "password" }                 -> { token }
 POST /api/auth/dev-token   (không body)                            -> { token }   # CHỈ Development
 ```
 
-Gắn `Authorization: Bearer <token>` cho: devices, sensordata (đọc), control (gửi lệnh thủ công / đọc-đặt ngưỡng), assistant. Mỗi user chỉ thấy device mình sở hữu.
+Gắn `Authorization: Bearer <token>` cho: devices, sensordata, control (gửi lệnh thủ công / đọc-đặt ngưỡng), assistant.
 
 > **`POST /api/auth/dev-token`** — lấy nhanh JWT để debug (curl/Swagger) mà không cần đăng ký. Tự seed user `dev@plant-tree.local`. **Chỉ hoạt động khi `ASPNETCORE_ENVIRONMENT=Development`**; Production trả `404`. OpenAPI (`/openapi/v1.json`) đã khai báo bearer scheme để công cụ hiện nút "Authorize".
 
-### Thiết bị ESP32 (Device Token)
+### Sở hữu & chia sẻ device (owner + members)
 
-User đăng ký device (JWT) → nhận `deviceSecret` **1 lần**. ESP32 gửi header:
+Mỗi device có **1 owner** (người đăng ký) và danh sách **members** (được chia sẻ). Cả owner lẫn member đều xem dữ liệu + gửi lệnh được; chỉ **owner** mới share / thu hồi / xoá device.
 
 ```
-X-Device-Id: <deviceId>
-X-Device-Secret: <deviceSecret>
+POST   /api/devices/{deviceId}/share            { "email": "<user cần chia sẻ>" }   # owner-only
+GET    /api/devices/{deviceId}/members                                              # owner + members
+DELETE /api/devices/{deviceId}/share/{memberId}                                     # owner-only, thu hồi
 ```
 
-cho: `POST /api/sensordata/upload`, `POST /api/devices/{id}/heartbeat`.
+- Truy cập device của người khác khi chưa được chia sẻ → `404` (ẩn sự tồn tại, không lộ `403`).
+- `GET /api/devices` trả về **cả device mình sở hữu lẫn device được chia sẻ**.
 
 > Thiết bị nhận lệnh điều khiển qua **MQTT** (subscribe `xmini/control`), không poll qua HTTP. Endpoint `GET /api/control/commands/{deviceId}` chỉ là **nhật ký lệnh (audit log)** cho app/MCP dùng Bearer token.
 
@@ -279,25 +281,27 @@ Cho phép App gửi câu lệnh **ngôn ngữ tự nhiên**. Luồng:
 App ──(JWT)──► .NET /api/assistant/* ──► AI server (tree-grow-helper) ──► MCP ──► gọi ngược .NET API ──► MQTT ──► ESP32
 ```
 
-`userId` LUÔN lấy từ JWT (App không tự khai). `sessionId` do App giữ để hỗ trợ multi-turn; thiếu thì mặc định `= userId`; response luôn kèm `sessionId`.
+Endpoint **tương thích OpenAI** và **STATELESS**: App giữ toàn bộ `messages[]` và gửi lại mỗi lượt. `userId` LUÔN lấy từ JWT (App không tự khai) — .NET ép vào trường `user`, đồng thời ép `stream=false` và mặc định `model="plant-assistant"` nếu App không gửi.
 
 ```
-POST /api/assistant/chat      { "message", "sessionId"? }                 -> { reply, pendingAction, sessionId }
-POST /api/assistant/confirm   { "sessionId", "actionId", "approved" }     -> { reply, pendingAction, sessionId }
+POST /api/assistant/v1/chat/completions   { "model"?, "messages": [ { "role", "content" }, ... ] }
+    -> { "choices": [ { "message": { "role", "content", "tool_calls"? } } ], "usage", ... }
 ```
 
-- **Cơ chế 2 bước:** câu hỏi/đọc dữ liệu → trả `reply` ngay. Lệnh **điều khiển** → `pendingAction` khác `null` (CHƯA thực thi), App hiện Có/Không → gọi `/confirm` với `pendingAction.id`. (Có thể thay `/confirm` bằng cách gửi tiếp `message:"có"/"không"` cùng `sessionId`.)
+- **Xác nhận điều khiển (turnkey):** khi cần xác nhận, `choices[].message.content` là câu hỏi "(Có/Không)" và kèm `tool_calls` mã hoá hành động. Lượt sau, App **giữ nguyên** assistant message đó (kèm `tool_calls`) trong `messages[]` rồi thêm câu trả lời của user (`"có"`/`"không"`) — AI server sẽ thực thi hoặc huỷ. Nếu **không giữ** `tool_calls`, `"có"` bị coi là yêu cầu mới (an toàn: không thực thi nhầm). Không còn endpoint `/confirm` riêng.
+- **Streaming:** chưa hỗ trợ ở proxy .NET (v1). App gửi `stream:true` cũng bị ép về `false`.
 - **Xác thực:** JWT chỉ áp cho lời gọi VÀO .NET. `.NET → AI server` là nội bộ (không JWT); MCP gọi ngược .NET dùng service-account như hiện tại.
 - **Cấu hình AI server:** env `AI_SERVER_URL` (ưu tiên) hoặc `AiServer:BaseUrl` (appsettings), mặc định `http://localhost:8787`.
-- **Lỗi:** AI server chưa cấu hình/không kết nối → `503`; AI server trả lỗi khác → `502`; chưa đăng nhập → `401`; `message` rỗng → `400`.
+- **Lỗi:** AI server chưa cấu hình/không kết nối → `503`; AI server trả lỗi khác → `502`; chưa đăng nhập → `401`; body không phải JSON object hoặc `messages` rỗng/thiếu → `400`.
 
 Ví dụ:
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/dev-token | jq -r .token)
-curl -X POST http://localhost:8000/api/assistant/chat \
+curl -X POST http://localhost:8000/api/assistant/v1/chat/completions \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"message":"Tưới nước cho ESP32S3_Zone1 giúp mình"}'
-# -> { "reply": "Bạn xác nhận... (Có/Không)", "pendingAction": { "id": "...", ... }, "sessionId": "..." }
+  -d '{"messages":[{"role":"user","content":"Tưới nước cho ESP32S3_Zone1 giúp mình"}]}'
+# -> { "choices": [ { "message": { "content": "Bạn xác nhận... (Có/Không)", "tool_calls": [ ... ] } } ], ... }
+# Xác nhận: gửi lại messages[] gồm câu user trên + assistant message (kèm tool_calls) + { "role":"user","content":"có" }
 ```
 
 ---

@@ -19,6 +19,9 @@ builder.Services.AddSingleton<MongoDbService>();
 builder.Services.AddSingleton<MqttPublisherService>();
 builder.Services.AddHostedService<PlantTreeIoTServer.Services.MqttBackgroundService>();
 
+// Cờ chế độ auto/manual do server làm chủ (dùng chung controller + background service).
+builder.Services.AddSingleton<DeviceModeStore>();
+
 // ===== Authentication (JWT Bearer — người dùng / app / MCP service account) =====
 // ESP32 dùng MQTT (HiveMQ) nên không cần xác thực HTTP riêng cho thiết bị.
 
@@ -68,6 +71,20 @@ builder.Services.AddHttpClient<AiServerClient>(client =>
     client.BaseAddress = new Uri(aiServerUrl);
     client.Timeout = TimeSpan.FromSeconds(120); // LLM có thể chậm
 });
+
+// ===== Notify service (team thông báo) — .NET đẩy sự kiện cây sang qua webhook =====
+// NOTIFY_URL + NOTIFY_API_KEY (env) hoặc Notify:BaseUrl / Notify:ApiKey (appsettings).
+// Chưa cấu hình -> NotifyClient tự tắt (no-op), không chặn gì. Xem NOTIFY-INTEGRATION-GUIDE.md.
+var notifyUrl = Environment.GetEnvironmentVariable("NOTIFY_URL")
+    ?? builder.Configuration["Notify:BaseUrl"];
+
+builder.Services.AddHttpClient(NotifyClient.HttpClientName, client =>
+{
+    if (!string.IsNullOrWhiteSpace(notifyUrl))
+        client.BaseAddress = new Uri(notifyUrl);
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+builder.Services.AddSingleton<NotifyClient>();
 
 // Configure CORS for ESP32 communication
 builder.Services.AddCors(options =>

@@ -60,41 +60,43 @@ Chi tiết body:
 Không thêm "tưới N giây" trong v1: firmware không nhận thời lượng một-lần trong hợp đồng phẳng; thời lượng
 do ngưỡng `pump_max_run_s` + auto-off an toàn quyết định (có thể chỉnh qua `PUT /api/control/{deviceId}/config`).
 
-## 4. Phần B — Proxy trợ lý AI (`AssistantController` mới + `AiServerClient`)
+## 4. Phần B — Proxy trợ lý AI (`AssistantController` + `AiServerClient`)
+
+> **Cập nhật 2026-07-22:** AI server (tree-grow-helper) đã thay `/chat` + `/chat/confirm` (stateful theo
+> `sessionId`) bằng **một** endpoint OpenAI-compatible **STATELESS** `POST /v1/chat/completions`. Mục 4
+> dưới đây phản ánh thiết kế mới; phần lịch sử (sessionId/pendingAction/confirm) không còn dùng.
+
+**Nguyên tắc mới:** App giữ toàn bộ `messages[]` và gửi lại mỗi lượt. .NET là proxy **mỏng, stateless** —
+không lưu hội thoại, không còn bước `/confirm` riêng. Xác nhận điều khiển: AI trả assistant message kèm
+`tool_calls` + câu hỏi "(Có/Không)"; App **giữ nguyên** assistant message đó trong `messages[]` rồi thêm
+câu trả lời user (`"có"`/`"không"`) ở lượt sau — AI thực thi hoặc huỷ.
 
 ### 4.1 `AiServerClient` (typed HttpClient, `Services/AiServerClient.cs`)
 
 - Đăng ký qua `builder.Services.AddHttpClient<AiServerClient>(...)`; `BaseAddress` = URL AI server;
-  `Timeout` ≈ 120s (LLM chậm).
-- Hai phương thức:
-  - `ChatAsync(userId, sessionId, message)` → gọi `POST {AI}/chat` với `{userId, sessionId, message}`.
-  - `ConfirmAsync(userId, sessionId, actionId, approved)` → gọi `POST {AI}/chat/confirm`.
-- Trả về `AiChatResult { string Reply; JsonElement? PendingAction }` (giữ nguyên `pendingAction` dạng
-  `{id, summary, tool, args}` để relay nguyên vẹn cho App).
+  `Timeout` ≈ 120s (LLM chậm). *(Không đổi.)*
+- Một phương thức: `ChatCompletionsAsync(string userId, JsonObject body, ct) → JsonNode`.
+  - Nhận request OpenAI thô của App, rồi **ép server-side** (ghi đè giá trị App gửi):
+    - `user = userId` (từ JWT — không tin App) để AI scope "thiết bị của bạn".
+    - `stream = false` (v1 chưa relay SSE).
+    - `model = "plant-assistant"` nếu App không gửi (passthrough nếu có).
+  - `POST {AI}/v1/chat/completions`; trả **nguyên response JSON** (`choices[]`, `usage`, …) để relay.
 - Nếu AI trả `503` (`not_configured`) hoặc không kết nối được → ném exception có phân loại để controller
-  map thành `503` với message tiếng Việt rõ ràng.
+  map thành `503` với message tiếng Việt rõ ràng; lỗi khác → `502`; parse lỗi → `502` (BadGateway).
 
 ### 4.2 `AssistantController` (`[Authorize]`)
 
-`userId` LUÔN lấy từ JWT (`ClaimTypes.NameIdentifier`) — App không tự khai. `sessionId` do App quản lý
-để hỗ trợ multi-turn; thiếu thì mặc định `= userId`. Response luôn trả kèm `sessionId` để App dùng lại.
+`userId` LUÔN lấy từ JWT (`ClaimTypes.NameIdentifier`) — App không tự khai, .NET ép vào trường `user`.
 
-- **`POST /api/assistant/chat`**
-  - Body: `AssistantChatRequest { string Message; string? SessionId }` *(shape đơn giản)*.
-  - `400` nếu `Message` rỗng.
-  - Gọi `AiServerClient.ChatAsync(userId, sessionId, message)`.
-  - Response `200`: `{ reply, pendingAction, sessionId }`.
-    - `pendingAction != null` → App hiện nút **Có/Không**, lấy `pendingAction.id` để gọi confirm.
-- **`POST /api/assistant/confirm`**
-  - Body: `AssistantConfirmRequest { string SessionId; string ActionId; bool Approved }`.
-  - Gọi `AiServerClient.ConfirmAsync(userId, sessionId, actionId, approved)`.
-  - Response `200`: `{ reply, pendingAction, sessionId }` (thường `pendingAction=null`).
+- **`POST /api/assistant/v1/chat/completions`** (đường dẫn mirror OpenAI để App có thể trỏ SDK vào
+  `{host}/api/assistant/v1`).
+  - Body: request OpenAI thô, bind `[FromBody] JsonNode` — `{ model?, messages: [...] }`.
+  - `400` nếu body không phải JSON object, hoặc `messages` thiếu/rỗng.
+  - Gọi `AiServerClient.ChatCompletionsAsync(userId, body)`.
+  - Response `200`: **nguyên** JSON từ AI server (`{ choices: [ { message: { content, tool_calls? } } ], usage, … }`).
+    - `tool_calls` xuất hiện → App hiện **Có/Không**, giữ lại assistant message để gửi ở lượt xác nhận.
 
-Ghi chú: `history?` trong ý tưởng ban đầu **không cần** — AI server tự nhớ hội thoại theo `sessionId`
-(stateful). App chỉ cần gửi `message` + giữ `sessionId`.
-
-**Ngoài phạm vi v1:** streaming (`/chat/stream`, SSE). Có thể thêm `POST /api/assistant/chat/stream`
-relay SSE ở lần sau.
+**Ngoài phạm vi v1:** streaming (relay SSE khi `stream:true`). Có thể thêm sau.
 
 ## 5. Phần C — Dev-login lấy bearer (`AuthController`)
 
@@ -122,8 +124,9 @@ Bổ sung nhỏ ở OpenAPI: khai báo **bearer security scheme** vào tài li�
 
 - Trong khu điều khiển thiết bị: thêm nút **Tưới (bật/tắt)**, **Đèn (bật/tắt + slider PWM)**, **Về Auto** →
   gọi `/api/control/{id}/water|light|auto` bằng token đang đăng nhập.
-- Thêm **ô chat trợ lý**: ô nhập + nút gửi → `POST /api/assistant/chat`; nếu response có `pendingAction`
-  thì hiện **Có/Không** → gọi `/api/assistant/confirm`. Giữ `sessionId` trong biến trang.
+- Thêm **ô chat trợ lý**: ô nhập + nút gửi → `POST /api/assistant/v1/chat/completions`, giữ `messages[]`
+  trong biến trang. Nếu `choices[].message` có `tool_calls` thì hiện **Có/Không** → append assistant message
+  đó + user `"có"`/`"không"` vào `messages[]` rồi gọi lại cùng endpoint. *(Cập nhật 2026-07-22.)*
 
 ## 8. Xử lý lỗi (tổng hợp)
 
@@ -139,13 +142,13 @@ Bổ sung nhỏ ở OpenAPI: khai báo **bearer security scheme** vào tài li�
 ## 9. Kiểm thử / xác minh
 
 - **Firmware/MCP không đổi** → không có test mới ở đó.
-- **.NET** (chưa có test project): mở rộng `smoke-test-auth.ps1` (hoặc script smoke mới) phủ:
-  dev-token → `/water` → `/light` (on & pwm) → `/auto` → `/assistant/chat` (khi AI server chạy)
-  → `/assistant/confirm`. Kiểm tra status code + body chính.
+- **.NET** (chưa có test project): mở rộng smoke script phủ:
+  dev-token → `/water` → `/light` (on & pwm) → `/auto` → `/assistant/v1/chat/completions` (khi AI server chạy).
+  Kiểm tra status code + body chính.
 - **End-to-end**: dùng demo-dashboard bấm Tưới/Đèn/Auto và chat để quan sát lệnh publish + phản hồi AI
   (dùng skill `verify`).
-- **AiServerClient**: xác minh gọi đúng path (`/chat`, `/chat/confirm`) + relay `pendingAction` nguyên vẹn;
-  test đường lỗi 503 khi AI server tắt.
+- **AiServerClient**: xác minh gọi đúng path (`/v1/chat/completions`), ép `user`/`stream`/`model` đúng,
+  relay response nguyên vẹn; test đường lỗi 503 khi AI server tắt.
 
 ## 10. Ngoài phạm vi
 

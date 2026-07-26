@@ -14,8 +14,9 @@ namespace PlantTreeIoTServer.Services;
 ///   - xmini/sensor_data : telemetry ~10s (21 trường phẳng)  -> lưu SensorData
 ///   - xmini/config      : ngưỡng auto thiết bị đang dùng      -> upsert DeviceConfig
 /// QoS 0, không retained. Ngoài việc lưu telemetry, BE còn TỰ ĐỘNG TƯỚI: xét soil_percent theo
-/// ngưỡng (DeviceConfig, fallback mặc định) rồi publish {"pump":...} xuống xmini/control khi
-/// thiết bị đang mode="auto" (logic ở AutoWateringDecider). Điều khiển tay vẫn qua ControlController.
+/// ngưỡng (DeviceConfig, fallback mặc định) rồi publish {"pump":..., "mode":"auto"} xuống xmini/control
+/// khi cờ mode do server giữ (DeviceModeStore) đang "auto" (logic ở AutoWateringDecider). Kèm mode:"auto"
+/// để firmware không rớt khỏi auto khi nhận pump. Điều khiển tay vẫn qua ControlController.
 /// </summary>
 public class MqttBackgroundService : BackgroundService
 {
@@ -24,8 +25,11 @@ public class MqttBackgroundService : BackgroundService
 
     private readonly MongoDbService _mongoDbService;
     private readonly MqttPublisherService _mqttPublisher;
+    private readonly DeviceModeStore _modeStore;
+    private readonly NotifyClient _notifyClient;
     private readonly ILogger<MqttBackgroundService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly int _offlineThresholdS;
     private IMqttClient? _mqttClient;
 
     // Topic dùng chung không mang device_id. Payload xmini/config CŨNG không có device_id
@@ -39,16 +43,33 @@ public class MqttBackgroundService : BackgroundService
     private readonly Dictionary<string, bool?> _lastPumpOn = new();
     private readonly Dictionary<string, DateTime> _cooldownUntil = new();
 
+    // Trạng thái phát hiện sự kiện Notify (đọc/ghi trong _stateLock).
+    // _lastHealth: ảnh chụp cờ sức khỏe telemetry trước (để so edge).
+    // _lastSeenUtc: mốc telemetry gần nhất mỗi thiết bị (để quét mất kết nối).
+    // _offlineNotified: đã báo device.offline chưa (chặn báo lặp; xoá khi telemetry trở lại).
+    private readonly Dictionary<string, DeviceHealthSnapshot> _lastHealth = new();
+    private readonly Dictionary<string, DateTime> _lastSeenUtc = new();
+    private readonly HashSet<string> _offlineNotified = new();
+
     public MqttBackgroundService(
         MongoDbService mongoDbService,
         MqttPublisherService mqttPublisher,
+        DeviceModeStore modeStore,
+        NotifyClient notifyClient,
         ILogger<MqttBackgroundService> logger,
         IConfiguration configuration)
     {
         _mongoDbService = mongoDbService;
         _mqttPublisher = mqttPublisher;
+        _modeStore = modeStore;
+        _notifyClient = notifyClient;
         _logger = logger;
         _configuration = configuration;
+
+        // Ngưỡng im lặng để coi là mất kết nối (giây). Telemetry ~10s -> mặc định 240s (4 phút).
+        _offlineThresholdS = int.TryParse(
+            Environment.GetEnvironmentVariable("NOTIFY_OFFLINE_SECONDS") ?? configuration["Notify:OfflineSeconds"],
+            out var s) && s > 0 ? s : 240;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -129,6 +150,14 @@ public class MqttBackgroundService : BackgroundService
                 _logger.LogError(ex, "MQTT connection failed, retrying in 5s");
             }
 
+            // Quét mất kết nối định kỳ. CHỈ khi đang nối broker — nếu server mất broker thì mọi
+            // thiết bị sẽ trông như offline (báo giả), nên bỏ qua trong lúc đó.
+            if (_mqttClient.IsConnected)
+            {
+                try { await ScanOfflineAsync(); }
+                catch (Exception ex) { _logger.LogError(ex, "Lỗi khi quét thiết bị mất kết nối"); }
+            }
+
             await Task.Delay(5000, stoppingToken);
         }
 
@@ -178,7 +207,67 @@ public class MqttBackgroundService : BackgroundService
             telemetry.DeviceId, telemetry.Mode, telemetry.SoilPercent, telemetry.LightLux,
             sensorData.BatteryPercent, telemetry.PumpOn, telemetry.LightOn);
 
+        await EvaluateNotifyEventsAsync(telemetry, sensorData);
         await EvaluateAutoWateringAsync(telemetry);
+    }
+
+    // Phát hiện sự kiện thông báo theo EDGE rồi đẩy sang Notify (best-effort). Cập nhật mốc lastSeen
+    // và xoá cờ offline (telemetry về nghĩa là online). Logic thuần ở NotifyEventDetector.
+    private async Task EvaluateNotifyEventsAsync(XminiTelemetry telemetry, SensorData sensorData)
+    {
+        var deviceId = telemetry.DeviceId!;
+        var snapshot = new DeviceHealthSnapshot(
+            WaterOk: telemetry.WaterOk,
+            BattCut: telemetry.BattCut,
+            LowBatt: telemetry.LowBatt,
+            SoilPercent: telemetry.SoilPercent,
+            BatteryPercent: sensorData.BatteryPercent, // đã quy -1 -> null
+            BatteryVoltageV: telemetry.BatteryVoltageV);
+
+        IReadOnlyList<NotifyEvent> events;
+        bool cameOnline;
+        lock (_stateLock)
+        {
+            DeviceHealthSnapshot? prev = _lastHealth.TryGetValue(deviceId, out var p) ? p : null;
+            events = NotifyEventDetector.Detect(prev, snapshot, deviceId);
+            _lastHealth[deviceId] = snapshot;
+
+            _lastSeenUtc[deviceId] = DateTime.UtcNow;
+            cameOnline = _offlineNotified.Remove(deviceId);
+        }
+
+        if (cameOnline)
+            _logger.LogInformation("Thiết bị {DeviceId} có telemetry trở lại (online)", deviceId);
+
+        foreach (var evt in events)
+            await _notifyClient.SendAsync(evt);
+    }
+
+    // Quét các thiết bị đã im lặng quá ngưỡng -> bắn device.offline (1 lần/đợt). Logic thuần ở OfflineMonitor.
+    private async Task ScanOfflineAsync()
+    {
+        var now = DateTime.UtcNow;
+        var toNotify = new List<(string DeviceId, int SilenceS)>();
+
+        lock (_stateLock)
+        {
+            foreach (var (deviceId, lastSeen) in _lastSeenUtc)
+            {
+                var already = _offlineNotified.Contains(deviceId);
+                if (OfflineMonitor.ShouldFireOffline(lastSeen, now, already, _offlineThresholdS))
+                {
+                    _offlineNotified.Add(deviceId);
+                    toNotify.Add((deviceId, (int)(now - lastSeen).TotalSeconds));
+                }
+            }
+        }
+
+        foreach (var (deviceId, silenceS) in toNotify)
+        {
+            var evt = new NotifyEvent(deviceId, "device.offline", NotifySeverity.Warning,
+                new Dictionary<string, object?> { ["lastSeenSecondsAgo"] = silenceS });
+            await _notifyClient.SendAsync(evt);
+        }
     }
 
     // Tự động tưới: dựa trên telemetry vừa nhận, quyết định bật/tắt bơm rồi publish xuống xmini/control.
@@ -203,13 +292,18 @@ public class MqttBackgroundService : BackgroundService
             cooldownActive = _cooldownUntil.TryGetValue(deviceId, out var until) && DateTime.UtcNow < until;
         }
 
+        // Gate theo mode do SERVER làm chủ (không phải telemetry.Mode — firmware ép manual mỗi khi
+        // nhận pump/light nên telemetry không đáng tin làm nguồn sự thật cho auto).
+        var serverMode = await _modeStore.GetAsync(deviceId);
         var action = AutoWateringDecider.Decide(
-            telemetry.Mode, telemetry.SoilPercent, telemetry.PumpOn, onPct, offPct, cooldownActive);
+            serverMode, telemetry.SoilPercent, telemetry.PumpOn, onPct, offPct, cooldownActive);
         if (action == PumpAction.None)
             return;
 
+        // GỘP mode:"auto" vào lệnh: firmware xử lý pump trước (ép manual) rồi mode sau (kéo lại auto),
+        // nên auto-tưới không còn tự làm thiết bị rớt khỏi auto.
         var pump = action == PumpAction.TurnOn;
-        var flat = new Dictionary<string, object?> { ["pump"] = pump };
+        var flat = new Dictionary<string, object?> { ["pump"] = pump, ["mode"] = "auto" };
 
         if (!await _mqttPublisher.PublishControlAsync(deviceId, flat))
         {

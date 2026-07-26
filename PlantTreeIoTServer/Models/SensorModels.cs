@@ -134,6 +134,14 @@ public class Device
     [BsonElement("isActive")]
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// Chế độ auto/manual do SERVER làm chủ (nguồn sự thật cho auto-tưới + để gộp vào lệnh actuator).
+    /// Tách khỏi 'mode' trong telemetry (firmware ép manual khi nhận pump/light). null = chưa đặt -> coi là "auto".
+    /// Lưu ở đây để BỀN qua restart/redeploy. Xem DeviceModeStore / ControlModeResolver.
+    /// </summary>
+    [BsonElement("controlMode")]
+    public string? ControlMode { get; set; }
+
     [BsonElement("lastSeen")]
     [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
     public DateTime? LastSeen { get; set; }

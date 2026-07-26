@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PlantTreeIoTServer.Services;
@@ -6,9 +7,13 @@ using PlantTreeIoTServer.Services;
 namespace PlantTreeIoTServer.Controllers;
 
 /// <summary>
-/// Proxy trợ lý AI: App -> .NET (JWT) -> AI server (tree-grow-helper) -> MCP -> gọi ngược .NET.
-/// userId LUÔN lấy từ JWT (App không tự khai). sessionId do App giữ để hỗ trợ multi-turn;
-/// thiếu thì mặc định = userId. Response luôn kèm sessionId để App dùng lại.
+/// Proxy trợ lý AI (OpenAI-compatible): App -> .NET (JWT) -> AI server (tree-grow-helper) -> MCP -> gọi ngược .NET.
+///
+/// Endpoint AI server là STATELESS: App giữ toàn bộ messages[] và gửi lại mỗi lượt. .NET chỉ proxy
+/// MỎNG — không lưu hội thoại, không còn bước /confirm riêng. Xác nhận điều khiển: App giữ lại
+/// assistant message (kèm tool_calls) trong messages[] rồi thêm câu trả lời "có"/"không".
+///
+/// userId LUÔN lấy từ JWT (App không tự khai) và được .NET ép vào trường 'user' của request.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -27,38 +32,24 @@ public class AssistantController : ControllerBase
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
     /// <summary>
-    /// Gửi một câu chat cho trợ lý. Nếu là lệnh ĐIỀU KHIỂN, response trả 'pendingAction' (CHƯA thực thi)
-    /// — App hiện Có/Không rồi gọi /confirm với pendingAction.id. Câu hỏi/đọc dữ liệu trả lời trực tiếp.
+    /// Chat completions tương thích OpenAI (chạy toàn bộ agent: RAG + điều khiển IoT + xác nhận).
+    /// Body: request OpenAI thô { model?, messages[], ... }. Response: giữ nguyên từ AI server
+    /// ({ choices[], usage, ... }); khi cần xác nhận, choices[].message có tool_calls và content là câu hỏi Có/Không.
+    /// .NET ép user = userId (JWT), stream = false; model mặc định "plant-assistant".
     /// </summary>
-    [HttpPost("chat")]
-    public async Task<IActionResult> Chat([FromBody] AssistantChatRequest request)
+    [HttpPost("v1/chat/completions")]
+    public async Task<IActionResult> ChatCompletions([FromBody] JsonNode? body)
     {
-        if (string.IsNullOrWhiteSpace(request.Message))
-            return BadRequest("'message' là bắt buộc.");
+        if (body is not JsonObject obj)
+            return BadRequest("Body phải là JSON object OpenAI-compatible ({ messages: [...] }).");
 
-        var sessionId = string.IsNullOrWhiteSpace(request.SessionId) ? UserId : request.SessionId!;
-        try
-        {
-            var result = await _ai.ChatAsync(UserId, sessionId, request.Message, HttpContext.RequestAborted);
-            return Ok(new { reply = result.Reply, pendingAction = result.PendingAction, sessionId });
-        }
-        catch (Exception ex)
-        {
-            return HandleAiError(ex);
-        }
-    }
-
-    /// <summary>Xác nhận (approved=true) hoặc huỷ (false) một hành động điều khiển đang chờ.</summary>
-    [HttpPost("confirm")]
-    public async Task<IActionResult> Confirm([FromBody] AssistantConfirmRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.SessionId) || string.IsNullOrWhiteSpace(request.ActionId))
-            return BadRequest("'sessionId' và 'actionId' là bắt buộc.");
+        if (obj["messages"] is not JsonArray messages || messages.Count == 0)
+            return BadRequest("'messages' là bắt buộc và không được rỗng.");
 
         try
         {
-            var result = await _ai.ConfirmAsync(UserId, request.SessionId!, request.ActionId!, request.Approved, HttpContext.RequestAborted);
-            return Ok(new { reply = result.Reply, pendingAction = result.PendingAction, sessionId = request.SessionId });
+            var result = await _ai.ChatCompletionsAsync(UserId, obj, HttpContext.RequestAborted);
+            return Ok(result);
         }
         catch (Exception ex)
         {
@@ -79,17 +70,4 @@ public class AssistantController : ControllerBase
                 return StatusCode(500, "Internal server error");
         }
     }
-}
-
-public class AssistantChatRequest
-{
-    public string Message { get; set; } = string.Empty;
-    public string? SessionId { get; set; }
-}
-
-public class AssistantConfirmRequest
-{
-    public string? SessionId { get; set; }
-    public string? ActionId { get; set; }
-    public bool Approved { get; set; }
 }

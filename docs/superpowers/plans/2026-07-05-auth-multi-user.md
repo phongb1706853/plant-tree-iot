@@ -1,4 +1,6 @@
 > ℹ️ **Lưu ý lịch sử (2026-07-15):** Cơ chế auth (JWT Bearer) trong tài liệu này vẫn còn hiệu lực, nhưng các endpoint ĐIỀU KHIỂN được nhắc tới ở đây (`/api/control/auto-water`, `/api/control/auto-light`, `/api/rules/**`, lệnh `WATER_ON`, poll `control/commands`) đã bị GỠ. Hợp đồng thiết bị hiện hành là `mqtt-api.md` (device-native: lệnh khoá phẳng trên `xmini/control`, không có rule-engine phía server).
+>
+> ⚠️ **Superseded (2026-07-22):** Toàn bộ cơ chế **DeviceKey / device secret** (`X-Device-Id` + `X-Device-Secret`, `DeviceSecretHash`, `rotate-secret`, `DeviceKeyAuthenticationHandler`) mô tả bên dưới **ĐÃ BỊ GỠ**. Lý do: ESP32 chỉ dùng **MQTT** (HiveMQ), không gọi HTTP API .NET → không cần token thiết bị. HTTP API giờ chỉ còn **JWT Bearer**. Ngoài ra mô hình sở hữu đổi từ "1 owner độc quyền" sang **owner + members (chia sẻ device)**: `Device.Members[]`, endpoint `POST/GET/DELETE /api/devices/{id}/share|members`, và mọi truy cập device kiểm `owner HOẶC member` (xem `GetAccessibleDeviceAsync`). Tài liệu hiện hành: [AUTH-INTEGRATION-GUIDE.md](../../../AUTH-INTEGRATION-GUIDE.md), [API-GUIDE.md](../../../API-GUIDE.md).
 
 # Authentication đa người dùng — Plant Tree IoT Implementation Plan
 

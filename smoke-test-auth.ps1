@@ -67,11 +67,11 @@ try {
   $get = Invoke-Api GET "/api/devices/$dev" @{ Authorization="Bearer $tokenA" }
   Check '5. Owner GET device -> 200, no secret hash' ($get.Status -eq 200 -and ($get.Body -notmatch 'deviceSecretHash')) "status=$($get.Status)"
 
-  Check '6. Owner upload sensor (JWT) -> 200' ((Invoke-Api POST '/api/sensordata/upload' @{ Authorization="Bearer $tokenA" } (@{ deviceId=$dev; soilMoisture=20 } | ConvertTo-Json -Compress)).Status -eq 200) 'owner control'
+  Check '6. Owner upload sensor (JWT) -> 200' ((Invoke-Api POST '/api/sensordata/upload' @{ Authorization="Bearer $tokenA" } (@{ device_id=$dev; soil_percent=20 } | ConvertTo-Json -Compress)).Status -eq 200) 'owner control'
 
   # Trước khi chia sẻ: B không truy cập được device của A
   Check '7. B GET A device (chua share) -> 404' ((Invoke-Api GET "/api/devices/$dev" @{ Authorization="Bearer $tokenB" }).Status -eq 404) '404'
-  Check '8. B upload to A device (chua share) -> 404' ((Invoke-Api POST '/api/sensordata/upload' @{ Authorization="Bearer $tokenB" } (@{ deviceId=$dev; soilMoisture=30 } | ConvertTo-Json -Compress)).Status -eq 404) '404'
+  Check '8. B upload to A device (chua share) -> 404' ((Invoke-Api POST '/api/sensordata/upload' @{ Authorization="Bearer $tokenB" } (@{ device_id=$dev; soil_percent=30 } | ConvertTo-Json -Compress)).Status -eq 404) '404'
 
   # A chia sẻ device cho B
   $share = Invoke-Api POST "/api/devices/$dev/share" @{ Authorization="Bearer $tokenA" } (@{ email=$emailB } | ConvertTo-Json -Compress)
@@ -79,8 +79,10 @@ try {
 
   # Sau khi chia sẻ: B xem + điều khiển được
   Check '10. B GET shared device -> 200 (member)' ((Invoke-Api GET "/api/devices/$dev" @{ Authorization="Bearer $tokenB" }).Status -eq 200) 'member view'
-  Check '11. B upload shared device -> 200 (member)' ((Invoke-Api POST '/api/sensordata/upload' @{ Authorization="Bearer $tokenB" } (@{ deviceId=$dev; soilMoisture=40 } | ConvertTo-Json -Compress)).Status -eq 200) 'member control'
-  Check '12. B send command shared device -> 200 (member)' ((Invoke-Api POST '/api/control/commands' @{ Authorization="Bearer $tokenB" } (@{ deviceId=$dev; command='WATER_ON' } | ConvertTo-Json -Compress)).Status -eq 200) 'member control'
+  Check '11. B upload shared device -> 200 (member)' ((Invoke-Api POST '/api/sensordata/upload' @{ Authorization="Bearer $tokenB" } (@{ device_id=$dev; soil_percent=40 } | ConvertTo-Json -Compress)).Status -eq 200) 'member control'
+  # Control: member qua được access gate (200 nếu MQTT connect; 503 nếu broker chưa nối ở env test local — cả hai KHÁC 404 = KHÔNG bị chặn quyền)
+  $c12 = (Invoke-Api POST "/api/control/$dev" @{ Authorization="Bearer $tokenB" } (@{ pump=$true } | ConvertTo-Json -Compress)).Status
+  Check '12. B send command shared device -> qua access gate (200/503)' ($c12 -eq 200 -or $c12 -eq 503) "status=$c12 (404=fail share)"
   Check '13. B thay B trong shared device -> KHONG xoa duoc (owner-only)' ((Invoke-Api DELETE "/api/devices/$dev" @{ Authorization="Bearer $tokenB" }).Status -eq 404) 'owner-only delete'
 
   # members list -> lấy id của B để thu hồi
