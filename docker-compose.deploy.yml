@@ -34,6 +34,13 @@ services:
       # AI server (tree-grow-helper) cho /api/assistant/*. Chạy NGOÀI stack này (trên host).
       # Mac/Windows Docker Desktop: host.docker.internal trỏ về host (extra_hosts bên dưới cho Linux).
       AI_SERVER_URL: ${AI_SERVER_URL:-http://host.docker.internal:8787}
+      # Notify service (team thông báo) — container 'notification' ở stack RIÊNG trên cùng máy Mac.
+      # Container Notify nghe 3001 NHƯNG publish ra host là 3002 (3002:3001). Stack này khác mạng
+      # Docker nên đi qua host: host.docker.internal:3002 -> forward vào notification:3001.
+      # KHÔNG kèm /internal/notify (code tự thêm). NOTIFY_API_KEY để trong .env; thiếu key -> tắt.
+      NOTIFY_URL: ${NOTIFY_URL:-http://host.docker.internal:3002}
+      NOTIFY_API_KEY: ${NOTIFY_API_KEY:-}
+      NOTIFY_OFFLINE_SECONDS: ${NOTIFY_OFFLINE_SECONDS:-240}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
