@@ -37,6 +37,9 @@ public class NotifyClient
         if (!Enabled)
             _logger.LogInformation(
                 "NotifyClient chưa cấu hình (NOTIFY_URL/NOTIFY_API_KEY) -> BỎ QUA gửi thông báo cho team Notify.");
+        else
+            // Chỉ log base URL + path, KHÔNG log API key.
+            _logger.LogInformation("NotifyClient đã cấu hình -> gửi sự kiện tới {Url}{Path}", url, NotifyPath);
     }
 
     /// <summary>Gửi 1 sự kiện. Trả true nếu Notify nhận (2xx). Không ném lỗi — best-effort.</summary>
