@@ -2843,5 +2843,188 @@ Liên hệ vấn đề kỹ thuật:
     });
   })();
 </script>
+
+<script id="sim-core">
+  // ===== Lõi thiết bị ảo (HÀM THUẦN — không DOM, không MQTT) =====
+  // Mô phỏng ESP32 Xmini cho tab "📟 Thiết bị ảo". Test: node --test tests-js/sim-core.test.mjs
+  // Spec: docs/superpowers/specs/2026-10-04-device-simulator-design.md (mục 3).
+  // KHÁC firmware thật: thiết bị ảo KHÔNG tự đổi mode khi nhận pump/light — chỉ khoá mode/auto mới đổi
+  // (server làm chủ mode); và gửi telemetry ngay sau lệnh (bộ điều khiển tab lo việc đó).
+  (function () {
+    const DEFAULT_CONFIG = {
+      soil_on_pct: 30, soil_off_pct: 60, pump_max_run_s: 20, pump_cooldown_s: 300,
+      lux_on: 120, lux_off: 300, light_auto_pwm: 180,
+      batt_warn_pct: 20, batt_recover_pct: 25,
+      soil_dry: 2800, soil_wet: 1200,
+      batt_full_on_v: 8.3, batt_full_off_v: 8.1, batt_crit_v: 6.4, batt_crit_recover_v: 6.8,
+    };
+    // Dải clamp cho khoá config nhận qua lệnh {"config":{...}}.
+    const CONFIG_RANGES = {
+      soil_on_pct: [0, 100], soil_off_pct: [0, 100], batt_warn_pct: [0, 100], batt_recover_pct: [0, 100],
+      pump_max_run_s: [0, 3600], pump_cooldown_s: [0, 3600],
+      lux_on: [0, 65535], lux_off: [0, 65535],
+      light_auto_pwm: [0, 255],
+      soil_dry: [0, 4095], soil_wet: [0, 4095],
+      batt_full_on_v: [5, 9], batt_full_off_v: [5, 9], batt_crit_v: [5, 9], batt_crit_recover_v: [5, 9],
+    };
+    const INITIAL = { soil: 45, tempC: 27, humidity: 60, pressure: 1008, lux: 600, battPct: 80 };
+    const SCENARIOS = ['dry-soil', 'water-empty', 'water-refill', 'low-battery', 'battery-cut',
+                       'battery-full', 'night', 'day', 'reset'];
+
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const round = (v, d) => { const f = 10 ** d; return Math.round(v * f) / f; };
+
+    function createState(deviceId, mode) {
+      return {
+        deviceId,
+        mode: mode === 'manual' ? 'manual' : 'auto',
+        soil: INITIAL.soil, tempC: INITIAL.tempC, humidity: INITIAL.humidity,
+        pressure: INITIAL.pressure, lux: INITIAL.lux, prevLux: INITIAL.lux,
+        battPct: INITIAL.battPct, waterOk: true,
+        pumpOn: false, pumpOnSince: null,
+        lightOn: false, lightPwm: DEFAULT_CONFIG.light_auto_pwm,
+        lowBatt: false, battFull: false, battCut: false,
+        message: '', messageUntil: null,
+        config: { ...DEFAULT_CONFIG },
+      };
+    }
+
+    // Pin 2S: 0% = 6.4V, 100% = 8.4V.
+    const voltage = s => round(6.4 + 2.0 * s.battPct / 100, 2);
+
+    // Cờ pin có trễ (hysteresis). batt_cut cắt bơm + đèn ở MỌI mode.
+    function updateBatteryFlags(s) {
+      const c = s.config, v = voltage(s);
+      if (s.battPct < c.batt_warn_pct) s.lowBatt = true;
+      else if (s.battPct >= c.batt_recover_pct) s.lowBatt = false;
+      if (v >= c.batt_full_on_v) s.battFull = true;
+      else if (v <= c.batt_full_off_v) s.battFull = false;
+      if (v <= c.batt_crit_v) s.battCut = true;
+      else if (s.battCut && v >= c.batt_crit_recover_v) s.battCut = false;
+      if (s.battCut) { s.pumpOn = false; s.pumpOnSince = null; s.lightOn = false; }
+    }
+
+    // Đèn auto: CHỈ ở mode auto, và chỉ phản ứng lúc lux VƯỢT ngưỡng (edge) — lệnh tay được giữ
+    // tới lần vượt ngưỡng kế tiếp.
+    function autoLight(s) {
+      const c = s.config;
+      if (s.mode === 'auto' && !s.battCut) {
+        if (s.prevLux >= c.lux_on && s.lux < c.lux_on) { s.lightOn = true; s.lightPwm = c.light_auto_pwm; }
+        else if (s.prevLux <= c.lux_off && s.lux > c.lux_off) { s.lightOn = false; }
+      }
+      s.prevLux = s.lux;
+    }
+
+    // Áp lệnh từ xmini-sim/{id}/control. Thứ tự như firmware: pump, light_pwm, light, mode/auto, config, message.
+    function applyControl(s, cmd, now) {
+      const r = { changed: false, publishConfig: false };
+      if (!cmd || typeof cmd !== 'object' || Array.isArray(cmd)) return r;
+
+      if (typeof cmd.pump === 'boolean') {
+        r.changed = true;
+        if (!(cmd.pump && s.battCut)) { s.pumpOn = cmd.pump; s.pumpOnSince = cmd.pump ? now : null; }
+      }
+      if (typeof cmd.light_pwm === 'number' && Number.isFinite(cmd.light_pwm)) {
+        r.changed = true;
+        s.lightPwm = clamp(Math.round(cmd.light_pwm), 0, 255);
+      }
+      if (typeof cmd.light === 'boolean') {
+        r.changed = true;
+        if (!(cmd.light && s.battCut)) s.lightOn = cmd.light;
+      }
+      if (cmd.mode === 'auto' || cmd.mode === 'manual') { r.changed = true; s.mode = cmd.mode; }
+      else if (typeof cmd.auto === 'boolean') { r.changed = true; s.mode = cmd.auto ? 'auto' : 'manual'; }
+
+      if (cmd.config && typeof cmd.config === 'object' && !Array.isArray(cmd.config)) {
+        r.publishConfig = true; // {} = yêu cầu gửi lại; {...} = gộp + clamp rồi echo
+        for (const [k, v] of Object.entries(cmd.config)) {
+          const range = CONFIG_RANGES[k];
+          if (!range || typeof v !== 'number' || !Number.isFinite(v)) continue;
+          const val = k.endsWith('_v') ? round(v, 2) : Math.round(v);
+          s.config[k] = clamp(val, range[0], range[1]);
+        }
+      }
+      if (typeof cmd.message === 'string') {
+        r.changed = true;
+        s.message = cmd.message;
+        const secs = typeof cmd.message_secs === 'number' ? Math.max(0, cmd.message_secs) : 0;
+        s.messageUntil = cmd.message && secs > 0 ? now + secs * 1000 : null;
+      }
+      return r;
+    }
+
+    // Một bước mô phỏng dtSec giây. Tốc độ tính theo mỗi 10s: đất +8 khi tưới (còn nước), -1 khi không.
+    function step(s, dtSec, now, rand) {
+      rand = rand || Math.random;
+      const k = dtSec / 10;
+      const watering = s.pumpOn && s.waterOk;
+      s.soil = clamp(s.soil + (watering ? 8 : -1) * k, 0, 100);
+      s.battPct = clamp(s.battPct - (0.1 + (s.pumpOn ? 0.5 : 0)) * k, 0, 100);
+      s.tempC = clamp(s.tempC + (rand() - 0.5) * 0.4, 24, 31);
+      s.humidity = clamp(s.humidity + (rand() - 0.5) * 1.0 + (watering ? 0.5 : 0), 40, 90);
+      s.pressure = clamp(s.pressure + (rand() - 0.5) * 0.4, 1000, 1016);
+      if (s.pumpOn && s.pumpOnSince != null && now - s.pumpOnSince >= s.config.pump_max_run_s * 1000) {
+        s.pumpOn = false; s.pumpOnSince = null; // tự tắt an toàn (giống firmware)
+      }
+      if (s.messageUntil != null && now >= s.messageUntil) { s.message = ''; s.messageUntil = null; }
+      autoLight(s);
+      updateBatteryFlags(s);
+    }
+
+    // Kịch bản ép giá trị. 'reset' về trạng thái ban đầu nhưng GIỮ mode (mode là của server).
+    function applyScenario(s, name) {
+      switch (name) {
+        case 'dry-soil': s.soil = 15; break;
+        case 'water-empty': s.waterOk = false; break;
+        case 'water-refill': s.waterOk = true; break;
+        case 'low-battery': s.battPct = 15; break;
+        case 'battery-cut': s.battPct = 0; break;
+        case 'battery-full': s.battPct = 100; break;
+        case 'night': s.lux = 5; break;
+        case 'day': s.lux = 600; break;
+        case 'reset': Object.assign(s, createState(s.deviceId, s.mode)); break;
+        default: return false;
+      }
+      autoLight(s);
+      updateBatteryFlags(s);
+      return true;
+    }
+
+    // Telemetry 21 trường snake_case — y hệt xmini/sensor_data.
+    function toTelemetry(s) {
+      const v = voltage(s);
+      const currentMa = 120 + (s.pumpOn ? 800 : 0) + (s.lightOn ? s.lightPwm * 1.2 : 0);
+      return {
+        device_id: s.deviceId,
+        temperature_c: round(s.tempC, 1),
+        humidity_percent: round(s.humidity, 1),
+        pressure_hpa: round(s.pressure, 1),
+        altitude_m: round(44330 * (1 - Math.pow(s.pressure / 1013.25, 0.1903)), 1),
+        temperature_bmp_c: round(s.tempC + 0.3, 1),
+        light_lux: round(s.lux, 1),
+        soil_percent: Math.round(s.soil),
+        soil_dry_flag: Math.round(s.soil) < s.config.soil_on_pct,
+        battery_voltage_v: v,
+        battery_current_ma: round(currentMa, 1),
+        battery_power_mw: round(v * currentMa, 1),
+        battery_percent: Math.round(s.battPct),
+        light_on: s.lightOn,
+        light_pwm: s.lightPwm,
+        pump_on: s.pumpOn,
+        mode: s.mode,
+        low_batt: s.lowBatt,
+        batt_full: s.battFull,
+        batt_cut: s.battCut,
+        water_ok: s.waterOk,
+      };
+    }
+
+    const configPayload = s => ({ config: { ...s.config } });
+
+    window.SimCore = {
+      DEFAULT_CONFIG, SCENARIOS, createState, applyControl, step, applyScenario, toTelemetry, configPayload, voltage,
+    };
+  })();
+</script>
 </body>
 </html>

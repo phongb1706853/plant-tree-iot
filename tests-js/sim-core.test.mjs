@@ -1,0 +1,189 @@
+// Test lõi thiết bị ảo (hàm thuần) — chạy: node --test tests-js/sim-core.test.mjs
+// Lõi nằm TRONG demo-dashboard.html (block <script id="sim-core">) để dashboard vẫn là 1 file mang đi được;
+// test nạp block đó trong CÙNG realm (new Function) để deepStrictEqual so prototype đúng.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const html = readFileSync(new URL('../demo-dashboard.html', import.meta.url), 'utf8');
+const block = html.match(/<script id="sim-core">([\s\S]*?)<\/script>/);
+if (!block) throw new Error('Không tìm thấy <script id="sim-core"> trong demo-dashboard.html');
+const win = {};
+new Function('window', block[1])(win);
+const Sim = win.SimCore;
+
+const T0 = 1_000_000;
+const fresh = (mode = 'auto') => Sim.createState('SIM_Test', mode);
+const noRand = () => 0.5; // dao động = 0 -> kết quả xác định
+
+const TELEMETRY_FIELDS = [
+  'device_id', 'temperature_c', 'humidity_percent', 'pressure_hpa', 'altitude_m', 'temperature_bmp_c',
+  'light_lux', 'soil_percent', 'soil_dry_flag', 'battery_voltage_v', 'battery_current_ma', 'battery_power_mw',
+  'battery_percent', 'light_on', 'light_pwm', 'pump_on', 'mode', 'low_batt', 'batt_full', 'batt_cut', 'water_ok',
+];
+
+test('telemetry has exactly the 21 contract fields', () => {
+  const t = Sim.toTelemetry(fresh());
+  assert.deepEqual(Object.keys(t).sort(), [...TELEMETRY_FIELDS].sort());
+  assert.equal(t.device_id, 'SIM_Test');
+  assert.equal(t.soil_percent, 45);
+  assert.equal(t.mode, 'auto');
+  assert.equal(t.battery_voltage_v, 8);
+});
+
+test('pump / light / light_pwm commands never change mode', () => {
+  for (const mode of ['auto', 'manual']) {
+    const s = fresh(mode);
+    Sim.applyControl(s, { pump: true }, T0);
+    Sim.applyControl(s, { light: true }, T0);
+    Sim.applyControl(s, { light_pwm: 90 }, T0);
+    assert.equal(s.mode, mode);
+    assert.equal(s.pumpOn, true);
+    assert.equal(s.lightOn, true);
+    assert.equal(s.lightPwm, 90);
+  }
+});
+
+test('manual off overrides a running pump while staying in auto', () => {
+  const s = fresh('auto');
+  Sim.applyControl(s, { pump: true, mode: 'auto' }, T0);
+  const r = Sim.applyControl(s, { pump: false, mode: 'auto' }, T0 + 3000);
+  assert.equal(r.changed, true);
+  assert.equal(s.pumpOn, false);
+  assert.equal(s.mode, 'auto');
+});
+
+test('only mode / auto keys change mode', () => {
+  const s = fresh('auto');
+  Sim.applyControl(s, { mode: 'manual' }, T0); assert.equal(s.mode, 'manual');
+  Sim.applyControl(s, { auto: true }, T0); assert.equal(s.mode, 'auto');
+  Sim.applyControl(s, { auto: false }, T0); assert.equal(s.mode, 'manual');
+  Sim.applyControl(s, { mode: 'turbo' }, T0); assert.equal(s.mode, 'manual'); // giá trị lạ -> bỏ qua
+});
+
+test('pump switches itself off after pump_max_run_s (20s)', () => {
+  const s = fresh();
+  Sim.applyControl(s, { pump: true }, T0);
+  Sim.step(s, 10, T0 + 10_000, noRand);
+  assert.equal(s.pumpOn, true);
+  Sim.step(s, 10, T0 + 20_000, noRand);
+  assert.equal(s.pumpOn, false);
+  assert.equal(Math.round(s.soil), 61); // 45 + 8 + 8
+});
+
+test('soil dries 1% per 10s and does not rise when the tank is empty', () => {
+  const s = fresh();
+  Sim.step(s, 10, T0, noRand);
+  assert.equal(Math.round(s.soil), 44);
+  Sim.applyScenario(s, 'water-empty');
+  Sim.applyControl(s, { pump: true }, T0);
+  Sim.step(s, 10, T0 + 10_000, noRand);
+  assert.equal(Math.round(s.soil), 43);
+  assert.equal(s.pumpOn, true); // bơm chạy không
+});
+
+test('dry-soil scenario sets soil 15 and soil_dry_flag', () => {
+  const s = fresh();
+  assert.equal(Sim.applyScenario(s, 'dry-soil'), true);
+  const t = Sim.toTelemetry(s);
+  assert.equal(t.soil_percent, 15);
+  assert.equal(t.soil_dry_flag, true);
+});
+
+test('low battery raises low_batt; voltage follows percent (2S)', () => {
+  const s = fresh();
+  Sim.applyScenario(s, 'low-battery');
+  const t = Sim.toTelemetry(s);
+  assert.equal(t.low_batt, true);
+  assert.equal(t.battery_percent, 15);
+  assert.equal(t.battery_voltage_v, 6.7);
+  assert.equal(t.batt_cut, false);
+});
+
+test('battery cut switches loads off in any mode and ignores turn-on; full charge recovers', () => {
+  for (const mode of ['auto', 'manual']) {
+    const s = fresh(mode);
+    Sim.applyControl(s, { pump: true, light: true }, T0);
+    Sim.applyScenario(s, 'battery-cut');
+    assert.equal(s.battCut, true);
+    assert.equal(s.pumpOn, false);
+    assert.equal(s.lightOn, false);
+    Sim.applyControl(s, { pump: true, light: true }, T0);
+    assert.equal(s.pumpOn, false);
+    assert.equal(s.lightOn, false);
+    Sim.applyScenario(s, 'battery-full');
+    assert.equal(s.battCut, false);
+    assert.equal(s.battFull, true);
+  }
+});
+
+test('auto light reacts only when lux crosses a threshold; manual override sticks', () => {
+  const s = fresh('auto');
+  Sim.applyScenario(s, 'night');
+  assert.equal(s.lightOn, true);
+  assert.equal(s.lightPwm, 180);
+  Sim.applyControl(s, { light: false, mode: 'auto' }, T0);
+  Sim.step(s, 10, T0 + 10_000, noRand);
+  Sim.step(s, 10, T0 + 20_000, noRand);
+  assert.equal(s.lightOn, false); // vẫn tôn trọng lệnh tay
+  Sim.applyScenario(s, 'day');
+  assert.equal(s.lightOn, false);
+  Sim.applyScenario(s, 'night');
+  assert.equal(s.lightOn, true); // lần vượt ngưỡng kế tiếp
+});
+
+test('auto light does nothing in manual mode', () => {
+  const s = fresh('manual');
+  Sim.applyScenario(s, 'night');
+  assert.equal(s.lightOn, false);
+});
+
+test('config {} asks for an echo; partial config is clamped, merged, unknown keys ignored', () => {
+  const s = fresh();
+  const r1 = Sim.applyControl(s, { config: {} }, T0);
+  assert.equal(r1.publishConfig, true);
+  assert.deepEqual(Sim.configPayload(s).config, Sim.DEFAULT_CONFIG);
+  Sim.applyControl(s, { config: { soil_on_pct: 150, light_auto_pwm: -4, batt_crit_v: 12, foo: 1, lux_on: 'x' } }, T0);
+  assert.equal(s.config.soil_on_pct, 100);
+  assert.equal(s.config.light_auto_pwm, 0);
+  assert.equal(s.config.batt_crit_v, 9);
+  assert.equal(s.config.lux_on, 120);
+  assert.equal('foo' in s.config, false);
+  assert.equal(Sim.DEFAULT_CONFIG.soil_on_pct, 30); // mặc định không bị sửa lây
+});
+
+test('message shows on TFT and clears after message_secs', () => {
+  const s = fresh();
+  Sim.applyControl(s, { message: 'Hello', message_secs: 15 }, T0);
+  assert.equal(s.message, 'Hello');
+  Sim.step(s, 10, T0 + 10_000, noRand);
+  assert.equal(s.message, 'Hello');
+  Sim.step(s, 10, T0 + 20_000, noRand);
+  assert.equal(s.message, '');
+});
+
+test('garbage commands are ignored without changing state', () => {
+  const s = fresh();
+  for (const cmd of [null, 42, 'pump', [1], { pump: 'yes', light: 1, light_pwm: 'x' }]) {
+    const r = Sim.applyControl(s, cmd, T0);
+    assert.equal(r.changed, false);
+    assert.equal(r.publishConfig, false);
+  }
+  assert.equal(s.pumpOn, false);
+  assert.equal(s.lightOn, false);
+  assert.equal(s.lightPwm, 180);
+});
+
+test('reset restores the initial state but keeps the server-owned mode', () => {
+  const s = fresh('manual');
+  Sim.applyScenario(s, 'dry-soil');
+  Sim.applyControl(s, { pump: true }, T0);
+  assert.equal(Sim.applyScenario(s, 'reset'), true);
+  assert.equal(s.mode, 'manual');
+  assert.equal(Math.round(s.soil), 45);
+  assert.equal(s.pumpOn, false);
+});
+
+test('unknown scenario returns false', () => {
+  assert.equal(Sim.applyScenario(fresh(), 'meteor'), false);
+});
