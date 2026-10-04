@@ -10,13 +10,13 @@ namespace PlantTreeIoTServer.Services;
 public class MqttPublisherService
 {
     private IMqttClient? _mqttClient;
+    private MqttClientOptions? _options; // giữ lại để tự nối lại khi broker ngắt (mạng rớt / HiveMQ đá vì thiếu quyền topic)
+    private readonly SemaphoreSlim _connectLock = new(1, 1);
     private readonly ILogger<MqttPublisherService> _logger;
-    private bool _isConnected;
 
     public MqttPublisherService(ILogger<MqttPublisherService> logger)
     {
         _logger = logger;
-        _isConnected = false;
     }
 
     public async Task InitializeAsync(IConfiguration configuration)
@@ -72,16 +72,37 @@ public class MqttPublisherService
                     });
                 });
 
-            var options = optionsBuilder.Build();
-            await _mqttClient.ConnectAsync(options);
-            _isConnected = true;
+            _options = optionsBuilder.Build();
+            await _mqttClient.ConnectAsync(_options);
 
             _logger.LogInformation("MQTT Publisher connected to {Broker}:{Port}", broker, port);
         }
         catch (Exception ex)
         {
+            // Giữ client + options: lần publish sau sẽ thử nối lại (TryReconnectAsync) thay vì tắt hẳn.
             _logger.LogError(ex, "Failed to initialize MQTT Publisher");
-            _isConnected = false;
+        }
+    }
+
+    /// <summary>Nối lại broker nếu đang rớt (một luồng nối tại một thời điểm). true nếu đã/đang kết nối.</summary>
+    private async Task<bool> TryReconnectAsync()
+    {
+        await _connectLock.WaitAsync();
+        try
+        {
+            if (_mqttClient!.IsConnected) return true;
+            await _mqttClient.ConnectAsync(_options!);
+            _logger.LogInformation("MQTT Publisher reconnected");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "MQTT Publisher reconnect failed");
+            return false;
+        }
+        finally
+        {
+            _connectLock.Release();
         }
     }
 
@@ -96,7 +117,14 @@ public class MqttPublisherService
     /// <returns>true nếu đã gửi được lên broker.</returns>
     public async Task<bool> PublishControlAsync(string deviceId, IDictionary<string, object?> flatKeys)
     {
-        if (!_isConnected || _mqttClient == null)
+        if (_mqttClient == null || _options == null)
+        {
+            _logger.LogWarning("MQTT Publisher not configured, cannot publish control for {DeviceId}", deviceId);
+            return false;
+        }
+
+        // Broker có thể đã ngắt (mạng, hoặc HiveMQ đá client publish lên topic không được phép) -> nối lại trước.
+        if (!_mqttClient.IsConnected && !await TryReconnectAsync())
         {
             _logger.LogWarning("MQTT Publisher not connected, cannot publish control for {DeviceId}", deviceId);
             return false;
@@ -125,5 +153,5 @@ public class MqttPublisherService
         }
     }
 
-    public bool IsConnected => _isConnected;
+    public bool IsConnected => _mqttClient?.IsConnected == true;
 }

@@ -381,6 +381,8 @@ curl "$API/api/control/commands/$DEVICE?limit=20"
 
 Dùng khi không có phần cứng hoặc Mac tắt. Thiết bị ảo chạy trong trình duyệt và đi qua HiveMQ thật (xem bằng MQTTx được).
 
+> **Điều kiện trước (1 lần, HiveMQ Cloud → Access Management):** credential **của server** (`MQTT_USERNAME`) phải có quyền publish + subscribe trên `xmini-sim/#`. Thiếu quyền thì HiveMQ ngắt publisher của server ngay khi gửi lệnh cho thiết bị ảo — server tự nối lại ở lệnh kế tiếp, nhưng lệnh vừa gửi bị mất và thiết bị ảo không nhận được telemetry nào. Credential `planttree-sim` cho trang chỉ cần quyền trên `xmini-sim/#`.
+
 1. Chạy server: Mac (`https://api.windy-dev.site`, cần image có tính năng này) **hoặc** local `dotnet run --project PlantTreeIoTServer --launch-profile http` (+ MongoDB local).
 2. Mở `demo-dashboard.html` → tab **Kết nối**: host/port của server, đăng nhập.
 3. Tab **📟 Thiết bị ảo** → ⚙️ MQTT: nhập credential `planttree-sim` (1 lần) → **Start** (`SIM_Zone1`).
