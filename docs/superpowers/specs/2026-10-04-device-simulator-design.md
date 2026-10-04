@@ -134,7 +134,7 @@ ngưỡng còn lại (`batt_recover_pct`, `soil_dry`, `soil_wet`, `batt_full_on_
 |---|---|
 | Đất | Bơm chạy và `water_ok`: **+8%/tick**. Bình thường: **−1%/tick**. Kẹp 0–100. Hết nước thì bơm chạy không, đất không lên. `soil_dry_flag = soil < soil_on_pct`. |
 | Bơm | Tự tắt sau `pump_max_run_s`, tính từ lúc bật (an toàn, giống firmware). |
-| Đèn auto | Chỉ khi `mode="auto"`, và **chỉ phản ứng khi lux vượt ngưỡng**: lux đi xuống dưới `lux_on` thì bật với PWM = `light_auto_pwm`; lux đi lên trên `lux_off` thì tắt. Không ép liên tục, nên lệnh tay vẫn giữ tới lần vượt ngưỡng kế tiếp. |
+| Đèn auto | Chỉ khi `mode="auto"`, và **chỉ phản ứng khi lux vượt ngưỡng**: lux đi xuống dưới `lux_on` thì bật với PWM = `light_auto_pwm`; lux đi lên trên `lux_off` thì tắt. Không ép liên tục, nên lệnh tay vẫn giữ tới lần vượt ngưỡng kế tiếp. **Ngoại lệ (xét theo MỨC lux hiện tại):** lúc chuyển manual → auto, lúc hết `batt_cut` khi đang auto, và lúc đổi `lux_on`/`lux_off` khi đang auto — vd bật auto giữa đêm thì đèn bật ngay. |
 | Pin | State giữ **%**; volt luôn suy ra từ %: volt = 6.4 + 2.0 × % / 100 (2S: 0% = 6.4V, 100% = 8.4V). Tụt 0.1%/tick, tụt thêm 0.5%/tick khi bơm chạy, kẹp 0–100. Dòng và công suất suy từ tải. `low_batt` bật khi % < `batt_warn_pct`, tắt khi % ≥ `batt_recover_pct`. `batt_full` khi volt ≥ `batt_full_on_v`. `batt_cut` khi volt ≤ `batt_crit_v` (mặc định 6.4V, tức 0%), hết khi volt ≥ `batt_crit_recover_v` (6.8V, tức 20%). Khi `batt_cut`, **cắt bơm và đèn ở mọi mode**, và lệnh bật bị bỏ qua. |
 | Môi trường | Nhiệt độ, ẩm, áp suất dao động nhẹ ngẫu nhiên quanh giá trị nền. Ẩm nhích lên khi đang tưới. `altitude_m` suy từ áp suất. `temperature_bmp_c` ≈ nhiệt độ ± 0.3. |
 

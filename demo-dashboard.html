@@ -3129,7 +3129,7 @@ Liên hệ vấn đề kỹ thuật:
 
     // Cờ pin có trễ (hysteresis). batt_cut cắt bơm + đèn ở MỌI mode.
     function updateBatteryFlags(s) {
-      const c = s.config, v = voltage(s);
+      const c = s.config, v = voltage(s), wasCut = s.battCut;
       if (s.battPct < c.batt_warn_pct) s.lowBatt = true;
       else if (s.battPct >= c.batt_recover_pct) s.lowBatt = false;
       if (v >= c.batt_full_on_v) s.battFull = true;
@@ -3137,6 +3137,17 @@ Liên hệ vấn đề kỹ thuật:
       if (v <= c.batt_crit_v) s.battCut = true;
       else if (s.battCut && v >= c.batt_crit_recover_v) s.battCut = false;
       if (s.battCut) { s.pumpOn = false; s.pumpOnSince = null; s.lightOn = false; }
+      else if (wasCut) autoLightLevel(s); // vừa hết pin cạn: xét lại đèn auto theo mức sáng hiện tại
+    }
+
+    // Đèn auto theo MỨC lux hiện tại — chỉ gọi lúc "vào lại auto": chuyển manual -> auto, hết batt_cut khi đang
+    // auto, đổi lux_on/lux_off. (Tick thường vẫn chỉ xét lúc VƯỢT ngưỡng để lệnh tắt tay ban đêm được giữ.)
+    // Nằm giữa 2 ngưỡng (lux_on..lux_off) thì giữ nguyên.
+    function autoLightLevel(s) {
+      const c = s.config;
+      if (s.mode !== 'auto' || s.battCut) return;
+      if (s.lux < c.lux_on) { s.lightOn = true; s.lightPwm = c.light_auto_pwm; }
+      else if (s.lux > c.lux_off) s.lightOn = false;
     }
 
     // Đèn auto: CHỈ ở mode auto, và chỉ phản ứng lúc lux VƯỢT ngưỡng (edge) — lệnh tay được giữ
@@ -3177,9 +3188,11 @@ Liên hệ vấn đề kỹ thuật:
         if (cmd.light && s.battCut) r.ignored.push('light');
         else s.lightOn = cmd.light;
       }
+      const modeBefore = s.mode;
       if (cmd.mode === 'auto' || cmd.mode === 'manual') s.mode = cmd.mode;
       else if (typeof cmd.auto === 'boolean') s.mode = cmd.auto ? 'auto' : 'manual';
 
+      const luxBefore = `${s.config.lux_on}/${s.config.lux_off}`;
       if (cmd.config && typeof cmd.config === 'object' && !Array.isArray(cmd.config)) {
         r.publishConfig = true; // {} = yêu cầu gửi lại; {...} = gộp + clamp rồi echo
         for (const [k, v] of Object.entries(cmd.config)) {
@@ -3189,6 +3202,11 @@ Liên hệ vấn đề kỹ thuật:
           s.config[k] = clamp(val, range[0], range[1]);
         }
       }
+      // Vào lại auto (manual -> auto) hoặc đổi ngưỡng lux: xét đèn theo mức sáng hiện tại. Lệnh light tường minh
+      // trong CÙNG lệnh thì thắng (không ghi đè).
+      const enteredAuto = modeBefore !== 'auto' && s.mode === 'auto';
+      const luxChanged = `${s.config.lux_on}/${s.config.lux_off}` !== luxBefore;
+      if ((enteredAuto || luxChanged) && typeof cmd.light !== 'boolean') autoLightLevel(s);
       if (typeof cmd.message === 'string') { // chỉ hiện trên TFT, không nằm trong telemetry
         s.message = cmd.message;
         const secs = typeof cmd.message_secs === 'number' ? Math.max(0, cmd.message_secs) : 0;

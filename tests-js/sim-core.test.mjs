@@ -132,6 +132,44 @@ test('auto light reacts only when lux crosses a threshold; manual override stick
   assert.equal(s.lightOn, true); // lần vượt ngưỡng kế tiếp
 });
 
+// Bug báo từ người dùng: ban đêm + Bật auto (đang manual) mà đèn không bật — vì đèn auto chỉ xét lúc lux VƯỢT ngưỡng.
+// Sửa: xét lại theo MỨC lux hiện tại khi chuyển sang auto, khi hết batt_cut (đang auto), khi đổi lux_on/lux_off.
+test('switching manual -> auto at night turns the light on', () => {
+  const s = fresh('manual');
+  Sim.applyScenario(s, 'night');
+  assert.equal(s.lightOn, false);
+  const r = Sim.applyControl(s, { mode: 'auto' }, T0);
+  assert.equal(s.lightOn, true);
+  assert.equal(s.lightPwm, 180);
+  assert.equal(r.changed, true);
+});
+
+test('staying in auto does not re-override a manual light-off at night', () => {
+  const s = fresh('auto');
+  Sim.applyScenario(s, 'night');
+  Sim.applyControl(s, { light: false, mode: 'auto' }, T0);
+  Sim.applyControl(s, { pump: true, mode: 'auto' }, T0); // server gửi kèm mode auto — không phải chuyển mode
+  Sim.step(s, 10, T0 + 10_000, noRand);
+  assert.equal(s.lightOn, false);
+});
+
+test('battery recovering from batt_cut at night (auto) turns the light on', () => {
+  const s = fresh('auto');
+  Sim.applyScenario(s, 'battery-cut');
+  Sim.applyScenario(s, 'night');
+  assert.equal(s.lightOn, false);
+  Sim.applyScenario(s, 'battery-full');
+  assert.equal(s.lightOn, true);
+});
+
+test('changing lux thresholds in auto re-checks the current light level', () => {
+  const s = fresh('auto'); // 600 lux, đèn tắt
+  Sim.applyControl(s, { config: { lux_on: 700, lux_off: 900 } }, T0);
+  assert.equal(s.lightOn, true);
+  Sim.applyControl(s, { config: { lux_on: 120, lux_off: 300 } }, T0);
+  assert.equal(s.lightOn, false);
+});
+
 test('auto light does nothing in manual mode', () => {
   const s = fresh('manual');
   Sim.applyScenario(s, 'night');
