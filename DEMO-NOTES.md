@@ -374,3 +374,18 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" \
 # 5. Xem nhật ký lệnh đã gửi
 curl "$API/api/control/commands/$DEVICE?limit=20"
 ```
+
+---
+
+## 10. Demo bằng thiết bị ảo (không cần ESP32)
+
+Dùng khi không có phần cứng hoặc Mac tắt. Thiết bị ảo chạy trong trình duyệt và đi qua HiveMQ thật (xem bằng MQTTx được).
+
+1. Chạy server: Mac (`https://api.windy-dev.site`, cần image có tính năng này) **hoặc** local `dotnet run --project PlantTreeIoTServer --launch-profile http` (+ MongoDB local).
+2. Mở `demo-dashboard.html` → tab **Kết nối**: host/port của server, đăng nhập.
+3. Tab **📟 Thiết bị ảo** → ⚙️ MQTT: nhập credential `planttree-sim` (1 lần) → **Start** (`SIM_Zone1`).
+4. (Tuỳ chọn) MQTTx subscribe `xmini-sim/#` để người xem thấy message thật.
+5. Kịch bản gợi ý: 🏜 Đất khô → server tự tưới (↓ `{"pump":true,"mode":"auto"}`) → giọt nước, đất tăng, bơm tự tắt sau 20s · 🌙 Ban đêm → đèn auto · 🚱 Hết nước / 🪫 Pin yếu → Notify · hàng nút "Điều khiển như App".
+6. AI chat / MCP: chia sẻ thiết bị cho service-account MCP — `POST /api/devices/SIM_Zone1/share` body `{"email":"mcp@plant-tree.local"}`.
+
+> Giữ tab hiển thị khi demo (tab ẩn bị trình duyệt giãn nhịp gửi). Thiết bị ảo không bao giờ gửi lên `xmini/control` nên ESP32 thật an toàn.

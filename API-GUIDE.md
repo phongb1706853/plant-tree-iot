@@ -73,6 +73,20 @@ Chỉ **3 topic**, đều dùng chung tiền tố `xmini/`. **QoS 0**, **không 
 
 > Không còn topic `planttree/{deviceId}/sensors` hay `planttree/{deviceId}/commands`.
 
+### Thiết bị ảo (namespace `xmini-sim/`)
+
+Thiết bị ảo (tab **📟 Thiết bị ảo** trên `demo-dashboard.html`) dùng topic **riêng theo từng thiết bị**, payload y hệt 3 topic trên. Id bắt buộc tiền tố `SIM_` (vd `SIM_Zone1`).
+
+| Topic | Direction | Payload |
+|-------|-----------|---------|
+| `xmini-sim/{deviceId}/sensor_data` | Thiết bị ảo → Server | Như `xmini/sensor_data` |
+| `xmini-sim/{deviceId}/config` | Thiết bị ảo → Server | Như `xmini/config` |
+| `xmini-sim/{deviceId}/control` | Server → Thiết bị ảo | Như `xmini/control` |
+
+- Lệnh cho id `SIM_*` đi `xmini-sim/{id}/control` (`SimTopics.ControlTopicFor`), **không bao giờ** lên `xmini/control` — ESP32 thật không nhận.
+- Server chỉ nhận telemetry/config ảo khi `device_id` khớp topic và thiết bị **đã đăng ký trên chính server đó**; telemetry ảo đi cùng pipeline với thiết bị thật (lưu, Notify, tự tưới).
+- Trang giả lập dùng credential HiveMQ riêng (vd `planttree-sim`), nhập trên trang và chỉ lưu localStorage.
+
 ---
 
 ## Payload Formats
