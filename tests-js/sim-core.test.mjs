@@ -217,6 +217,15 @@ test('MQTT errors get a readable reason for the badge', () => {
   assert.equal(Sim.mqttErrorReason({ message: 'boom' }), 'boom');
 });
 
+// Review #9: hành vi kết nối phụ thuộc phiên bản mqtt.js, và trang giữ credential/JWT — phải ghim bản + SRI.
+test('mqtt.js is pinned to an exact version with SRI', () => {
+  const tag = html.match(/<script[^>]*mqtt[^>]*\.js[^>]*>/);
+  assert.ok(tag, 'không thấy thẻ <script> của mqtt.js');
+  assert.match(tag[0], /mqtt@\d+\.\d+\.\d+\//);
+  assert.match(tag[0], /integrity="sha384-[A-Za-z0-9+/=]{64}"/);
+  assert.match(tag[0], /crossorigin="anonymous"/);
+});
+
 test('unknown scenario returns false', () => {
   assert.equal(Sim.applyScenario(fresh(), 'meteor'), false);
 });
