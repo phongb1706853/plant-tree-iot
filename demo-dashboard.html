@@ -364,6 +364,9 @@
   .status-line .ms { color: #94a3b8; font-family: monospace; }
 
   /* ===== Thiết bị ảo ===== */
+  .sim-guide { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 16px; margin: 12px 0; }
+  .sim-guide summary { cursor: pointer; font-weight: 600; color: #5eead4; }
+  .sim-guide[open] summary { margin-bottom: 6px; }
   .sim-mqtt-cfg { margin: 8px 0 4px; color: #94a3b8; font-size: 13px; }
   .sim-mqtt-cfg summary { cursor: pointer; }
   main:has(#sim-device.active) { max-width: none; } /* tab thiết bị ảo dùng hết bề ngang (3 cột: cảnh · log · thông báo) */
@@ -2370,6 +2373,72 @@ Liên hệ vấn đề kỹ thuật:
   <div class="alert info">
     Cần: đăng nhập ở tab <b>Kết nối</b> (host + token của server), credential HiveMQ <b>riêng cho giả lập</b> (vd <code>planttree-sim</code>) và internet. Khi demo hãy <b>giữ tab này hiển thị</b> — tab ẩn lâu bị trình duyệt giãn nhịp gửi.
   </div>
+
+  <details class="sim-guide">
+    <summary>📋 Hướng dẫn: chạy server &amp; test demo thiết bị ảo (bấm để mở)</summary>
+
+    <h4>1. Chạy server (.NET) trên máy demo</h4>
+    <div class="code-block">
+      <button class="copy-btn">Copy</button>
+      <pre>cd plant-tree-iot
+dotnet run --project PlantTreeIoTServer --launch-profile http</pre>
+    </div>
+    <ul>
+      <li>Chờ log <code>Now listening on: http://[::]:8000</code> và <code>Subscribed to xmini/sensor_data, xmini/config, xmini-sim/+/sensor_data, xmini-sim/+/config</code>.</li>
+      <li>Kiểm tra nhanh: <code>curl -i http://localhost:8000/api/devices</code> → <b>401</b> là server đã chạy.</li>
+      <li>Cần MongoDB ở <code>localhost:27017</code>. Chưa có thì chạy: <code>docker run -d --name planttree-mongo -p 27017:27017 mongo:7.0</code></li>
+      <li>Sau khi pull / sửa code server: <b>Ctrl+C</b> rồi chạy lại lệnh trên. Chỉ sửa trang này thì <b>Ctrl+F5</b> là đủ.</li>
+      <li>(Tuỳ chọn) gửi Notify thật: đặt biến môi trường trước khi chạy — PowerShell <code>$env:NOTIFY_URL="http://…"; $env:NOTIFY_API_KEY="…"</code>, Mac <code>export NOTIFY_URL=… NOTIFY_API_KEY=…</code></li>
+      <li>Dùng server trên Mac thay vì local: cần image mới (merge vào <code>main</code> → CI build), rồi trên Mac <code>docker compose -f docker-compose.deploy.yml pull</code> và <code>up -d</code>; Host ở tab Kết nối là URL của Mac.</li>
+    </ul>
+    <div class="alert">⚠ Server local nối HiveMQ thật và nghe cả <code>xmini/…</code>: nếu ESP32 thật đang cắm điện, server local có thể tự tưới cho nó. Rút điện ESP32 nếu không muốn.</div>
+
+    <h4>2. Chuẩn bị trên trang (mỗi lần mở)</h4>
+    <ol>
+      <li>Tab <b>Kết nối</b>: Host <code>localhost</code>, Port <code>8000</code> → <b>Đăng ký</b> (lần đầu trên DB này) → <b>Đăng nhập</b> (thấy “✓ đã đăng nhập”).</li>
+      <li>Quay lại tab này → <b>⚙️ MQTT</b>: User <code>planttree-sim</code> (phân biệt hoa thường) + Password — nhập 1 lần, trình duyệt nhớ.</li>
+      <li>Bấm <b>▶ Start</b> → badge <b>● online (MQTT)</b>, log có <code>↑ config</code> rồi <code>⏱ sensor_data</code> mỗi 10s.</li>
+      <li>Khung <b>🔔 Thông báo</b> → <b>Bật</b> (thấy “● đang nghe SIM_Zone1”).</li>
+      <li>(Tuỳ chọn) MQTTx subscribe <code>xmini-sim/#</code> và <code>xmini/#</code> để người xem thấy message thật.</li>
+    </ol>
+    <p>Làm 1 lần trên HiveMQ Cloud (Access Management): credential <code>planttree-sim</code> có quyền <code>xmini-sim/#</code>; credential của server có quyền cả <code>xmini/#</code> và <code>xmini-sim/#</code>.</p>
+
+    <h4>3. Checklist test</h4>
+    <table>
+      <tr><th>#</th><th>Thao tác</th><th>Kết quả mong đợi</th></tr>
+      <tr><td>1</td><td>Mode AUTO → 🏜 Đất khô</td><td>↓ <code>{"pump":true,"mode":"auto"}</code>; giọt nước, đất +8%/10s; bơm tự tắt sau 20s; nghỉ 300s mới tự tưới lại.</td></tr>
+      <tr><td>2</td><td>Điều khiển như App: 🚿 Tưới · ⏹ Tắt bơm · 💡 Bật đèn · 🌑 Tắt đèn</td><td><code>✓ 200</code>, log ↓ lệnh rồi ↑ telemetry; mode giữ nguyên.</td></tr>
+      <tr><td>3</td><td>✋ Tắt auto → 🤖 Bật auto</td><td>Mode MANUAL ↔ AUTO. Bật auto lúc trời tối → đèn bật ngay.</td></tr>
+      <tr><td>4</td><td>🌙 Ban đêm / ☀️ Ban ngày (AUTO)</td><td>Đèn tự bật PWM 180 / tự tắt. Tắt đèn tay ban đêm → giữ tắt tới lần vượt ngưỡng sau.</td></tr>
+      <tr><td>5</td><td>Ngưỡng “bật khi đất &lt;” = 40 → 💾 Lưu ngưỡng</td><td>↓ <code>{"config":{"soil_on_pct":40}}</code> → ↑ config echo; server tự tưới theo ngưỡng mới. Giá trị quá giới hạn bị kẹp (PWM 999 → 255).</td></tr>
+      <tr><td>6</td><td>🪫 Pin yếu</td><td>Pin màu cam 15%; 🔔 “Pin yếu · Pin 15%”; bơm/đèn vẫn chạy.</td></tr>
+      <tr><td>7</td><td>🔌 Pin cạn → 💡 Bật đèn → 🔋 Sạc đầy</td><td>Băng đỏ PIN CẠN, tải bị cắt, log ⚠ “bỏ qua light:true”; 🔔 “Pin cạn — đã ngắt tải”. Sạc đầy → dùng lại bình thường.</td></tr>
+      <tr><td>8</td><td>🚱 Hết nước → 💧 Đổ nước</td><td>Bồn “HẾT NƯỚC”, bơm chạy không làm đất tăng; 🔔 “Bồn hết nước”.</td></tr>
+      <tr><td>9</td><td>📴 Mất kết nối (hoặc ■ Stop) → chờ ~4 phút → 📶 Kết nối lại</td><td>Ngừng gửi; sau ~240s 🔔 “Thiết bị mất kết nối”; kết nối lại → gửi lại config + telemetry.</td></tr>
+      <tr><td>10</td><td>(Tuỳ chọn) tick 📤 Gửi cả sang Notify thật</td><td>“✓ đang gửi cả sang Notify thật”, hoặc ⚠ nếu server chưa có <code>NOTIFY_URL</code>/<code>NOTIFY_API_KEY</code>.</td></tr>
+      <tr><td>11</td><td>Suốt quá trình (xem trên MQTTx)</td><td>Không có message nào trên <code>xmini/control</code> do thiết bị ảo gây ra.</td></tr>
+    </table>
+
+    <h4>4. Sự cố thường gặp</h4>
+    <table>
+      <tr><th>Triệu chứng</th><th>Cách xử lý</th></tr>
+      <tr><td>Start treo rồi “Failed to fetch”</td><td>Server chưa chạy hoặc sai Host/Port ở tab Kết nối (local: <code>localhost</code> / <code>8000</code>).</td></tr>
+      <tr><td>“Token hết hạn…” / “ID đã thuộc user khác”</td><td>Đăng nhập lại / đổi Device ID (vd <code>SIM_Zone2</code>).</td></tr>
+      <tr><td>Badge “MQTT từ chối đăng nhập”</td><td>Sai user/password (phân biệt hoa thường) — sửa ở ⚙️, trang tự thử lại mỗi 5s.</td></tr>
+      <tr><td>Đèn/bơm không bật, log ⚠ “bỏ qua”</td><td>Đang pin cạn → bấm 🔋 Sạc đầy.</td></tr>
+      <tr><td>Đất khô mà không tự tưới</td><td>Đang MANUAL, hoặc trong 300s nghỉ sau lần tưới trước, hoặc đất chưa xuống dưới ngưỡng “bật khi đất &lt;”.</td></tr>
+      <tr><td>Khung Thông báo trống</td><td>Chưa bấm Bật; server chưa restart sau khi cập nhật code; “mất kết nối” cần ~240s.</td></tr>
+      <tr><td><code>dotnet test</code> báo MSB3027 (file bị khoá)</td><td>Server đang chạy giữ file exe → dừng server, hoặc thêm <code>--artifacts-path &lt;thư mục tạm&gt;</code>.</td></tr>
+      <tr><td>Tải lại trang thì thiết bị ảo dừng</td><td>Trạng thái chỉ nằm trong trang → bấm Start lại (dữ liệu trên server vẫn còn).</td></tr>
+    </table>
+
+    <h4>5. Test tự động</h4>
+    <div class="code-block">
+      <button class="copy-btn">Copy</button>
+      <pre>dotnet test PlantTreeIoTServer.Tests/PlantTreeIoTServer.Tests.csproj
+node --test tests-js/sim-core.test.mjs</pre>
+    </div>
+  </details>
 
   <div class="conn-bar">
     <div class="field"><label for="sim-id">Device ID</label><input id="sim-id" style="width:170px" value="SIM_Zone1"></div>
