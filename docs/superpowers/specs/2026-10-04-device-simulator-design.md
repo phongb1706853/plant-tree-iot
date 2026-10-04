@@ -79,7 +79,12 @@ QoS 0, không retained (giống hợp đồng thật).
 4. Không thêm endpoint mới. Thiết bị ảo đăng ký bằng `POST /api/devices/register` sẵn có.
 
 Sự kiện Notify (`water.empty`, `battery.low`, `battery.cut`, `device.offline`) của thiết bị `SIM_*`
-vẫn được gửi bình thường. Đây là chủ ý, để demo được luồng thông báo.
+(cập nhật 2026-10-04, `NotifyDispatcher`):
+- **Mặc định KHÔNG gửi webhook Notify thật.** Server publish đúng payload Notify (`deviceId, event, severity,
+  occurredAt, id, data`) lên `xmini-sim/{id}/notify` cho khung "🔔 Thông báo" trên dashboard.
+- Tuỳ chọn **gửi cả sang Notify thật**: cờ `Device.SimNotifyForward`, bật/tắt bằng
+  `PUT /api/devices/{id}/sim-notify {"forwardToNotify": true|false}` (chỉ id `SIM_*`; trả kèm `notifyConfigured`).
+- Thiết bị thật: không đổi (webhook Notify), và sự kiện của thiết bị thật không bao giờ lên MQTT.
 
 ## 3. Thiết bị ảo (JS trong demo-dashboard.html)
 
@@ -179,6 +184,10 @@ Thêm nhóm "Giả lập" ở menu trái của `demo-dashboard.html`, với 1 ta
   môi trường (tím) · ↑ telemetry ngay sau lệnh (xanh) · ↓ lệnh (xanh dương) · ↑ config (vàng) · ⚠ lệnh bật / đèn
   auto bị `batt_cut` chặn (cam) · ✗ lỗi (đỏ). Khi `batt_cut`: băng đỏ "PIN CẠN" trên cảnh.
 - **Hàng nút kịch bản** (mục 3.6). Reset gửi lại config để server không giữ ngưỡng cũ.
+- **Khung "🔔 Thông báo"** (cột thứ ba; màn hình < 1500px thì xuống dưới): mặc định TẮT, trang nhớ lựa chọn. Bật thì
+  mở kết nối MQTT RIÊNG (như một chiếc điện thoại) subscribe `xmini-sim/{id}/notify` — vẫn nhận `device.offline` khi
+  thiết bị ảo offline/đã Stop. Thẻ: icon + tiêu đề tiếng Việt + màu theo severity + giờ + chi tiết; bấm xem payload gốc.
+  Ô "📤 Gửi cả sang Notify thật" gọi `PUT /api/devices/{id}/sim-notify`; cảnh báo nếu server chưa cấu hình Notify.
 - **Khung "🤖 Chế độ auto & ngưỡng":** nút Bật/Tắt auto + 9 ngưỡng (tưới: `soil_on_pct`, `soil_off_pct`,
   `pump_max_run_s`, `pump_cooldown_s`; đèn: `lux_on`, `lux_off`, `light_auto_pwm`; pin: `batt_warn_pct`,
   `batt_recover_pct`). Ô lấy giá trị thiết bị ảo đang dùng; "💾 Lưu ngưỡng" chỉ gửi ô đã sửa qua

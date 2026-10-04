@@ -366,8 +366,34 @@
   /* ===== Thiết bị ảo ===== */
   .sim-mqtt-cfg { margin: 8px 0 4px; color: #94a3b8; font-size: 13px; }
   .sim-mqtt-cfg summary { cursor: pointer; }
-  .sim-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; margin-top: 14px; }
+  main:has(#sim-device.active) { max-width: none; } /* tab thiết bị ảo dùng hết bề ngang (3 cột: cảnh · log · thông báo) */
+  .sim-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(260px, 0.8fr); gap: 14px; margin-top: 14px; }
+  @media (max-width: 1500px) {
+    .sim-layout { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+    .sim-notify-panel { grid-column: 1 / -1; }
+  }
   @media (max-width: 900px) { .sim-layout { grid-template-columns: 1fr; } }
+  .sim-notify-panel { display: flex; flex-direction: column; gap: 8px; }
+  .sim-notify-head { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #e2e8f0; }
+  .sim-notify-head .sim-btn { margin-left: auto; }
+  .sim-notify-state { font-size: 12px; color: #94a3b8; }
+  .sim-notify-fwd { font-size: 12px; color: #cbd5e1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .sim-notify-fwd small { color: #94a3b8; }
+  .sim-notify-list { display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; }
+  .sim-notify-empty { font-size: 12px; color: #64748b; }
+  .sim-notify-card { background: #0f172a; border: 1px solid #334155; border-left: 4px solid #3b82f6; border-radius: 6px; padding: 6px 8px; font-size: 13px; color: #e2e8f0; }
+  .sim-notify-card.warning { border-left-color: #f59e0b; }
+  .sim-notify-card.critical { border-left-color: #ef4444; }
+  .sim-notify-card summary { cursor: pointer; list-style: none; }
+  .sim-notify-card .row { display: flex; gap: 6px; align-items: baseline; }
+  .sim-notify-card summary::-webkit-details-marker { display: none; }
+  .sim-notify-card .t { font-weight: 600; }
+  .sim-notify-card .when { margin-left: auto; font-size: 11px; color: #94a3b8; white-space: nowrap; }
+  .sim-notify-card .detail { font-size: 12px; color: #cbd5e1; margin-left: 22px; }
+  .sim-notify-card pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; color: #94a3b8; margin: 4px 0 0; }
+  .sim-notify-card.fresh { animation: simFresh 1.2s ease-out; }
+  @keyframes simFresh { from { background: #1e3a5f; } to { background: #0f172a; } }
+  @media (prefers-reduced-motion: reduce) { .sim-notify-card.fresh { animation: none; } }
   .sim-panel { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px; min-width: 0; }
   .sim-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .sim-chip { background: #0f172a; border: 1px solid #334155; border-radius: 999px; padding: 2px 10px; font-size: 12px; color: #cbd5e1; white-space: nowrap; }
@@ -2417,6 +2443,16 @@ Liên hệ vấn đề kỹ thuật:
       </div>
       <div id="sim-log" class="sim-log"></div>
     </div>
+    <div class="sim-panel sim-notify-panel">
+      <div class="sim-notify-head">
+        <b>🔔 Thông báo</b>
+        <span id="sim-notify-state" class="sim-notify-state">tắt</span>
+        <button class="sim-btn" id="sim-notify-toggle">Bật</button>
+      </div>
+      <label class="sim-notify-fwd"><input type="checkbox" id="sim-notify-forward"> 📤 Gửi cả sang Notify thật <small>(người dùng thật sẽ nhận)</small></label>
+      <div id="sim-notify-fwd-status" class="sim-app-status"></div>
+      <div id="sim-notify-list" class="sim-notify-list"></div>
+    </div>
   </div>
 
   <h3>Kịch bản <span style="font-size:12px;color:#94a3b8">(ép giá trị rồi gửi telemetry ngay)</span></h3>
@@ -3261,9 +3297,32 @@ Liên hệ vấn đề kỹ thuật:
       return (err && err.message) || 'lỗi MQTT không rõ';
     }
 
+    // Thẻ thông báo từ ĐÚNG payload server gửi Notify (NotifyPayload: deviceId, event, severity, occurredAt, id, data).
+    const NOTIFY_TEXT = {
+      'water.empty':    { icon: '🚱', title: 'Bồn hết nước', detail: d => d.soilPercent != null ? `Đất ${d.soilPercent}%` : '' },
+      'battery.low':    { icon: '🪫', title: 'Pin yếu', detail: d => d.batteryPercent != null ? `Pin ${d.batteryPercent}%` : '' },
+      'battery.cut':    { icon: '🔌', title: 'Pin cạn — đã ngắt tải',
+                          detail: d => [d.batteryPercent != null ? `Pin ${d.batteryPercent}%` : '',
+                                        d.batteryVoltageV != null ? `${d.batteryVoltageV}V` : ''].filter(Boolean).join(' · ') },
+      'device.offline': { icon: '📴', title: 'Thiết bị mất kết nối',
+                          detail: d => d.lastSeenSecondsAgo != null ? `im lặng ${d.lastSeenSecondsAgo} s` : '' },
+    };
+    function notifyView(p) {
+      if (!p || typeof p !== 'object') return { icon: '❓', title: 'Thông báo không đọc được', detail: '', level: 'info', at: null };
+      const t = NOTIFY_TEXT[p.event];
+      const data = p.data && typeof p.data === 'object' ? p.data : {};
+      return {
+        icon: t ? t.icon : '🔔',
+        title: t ? t.title : String(p.event || 'thông báo'),
+        detail: t ? t.detail(data) : '',
+        level: ['critical', 'warning', 'info'].includes(p.severity) ? p.severity : 'info',
+        at: p.occurredAt || null,
+      };
+    }
+
     window.SimCore = {
       DEFAULT_CONFIG, SCENARIOS, createState, applyControl, step, applyScenario, toTelemetry, configPayload, voltage,
-      mqttOptions, mqttErrorReason, configDiff,
+      mqttOptions, mqttErrorReason, configDiff, notifyView,
     };
   })();
 </script>
@@ -3610,6 +3669,130 @@ Liên hệ vấn đề kỹ thuật:
       }
     });
 
+    // --- Khung "🔔 Thông báo": như một chiếc ĐIỆN THOẠI — kết nối MQTT RIÊNG, chỉ subscribe xmini-sim/{id}/notify
+    // khi bật. Kết nối riêng nên vẫn nhận "📴 mất kết nối" khi thiết bị ảo đang offline hoặc đã Stop.
+    const LS_NOTIFY = 'planttree-sim-notify';
+    const NOTIFY_MAX = 30;
+    let notifyOn = (() => { try { return localStorage.getItem(LS_NOTIFY) === 'on'; } catch { return false; } })();
+    let notifyClient = null, notifyDeviceId = null;
+    const notifyItems = [];
+
+    function notifyTargetId() {
+      const id = st ? st.deviceId : $('sim-id').value.trim();
+      return ID_RE.test(id) ? id : null;
+    }
+    function setNotifyState(text, color) { $('sim-notify-state').textContent = text; $('sim-notify-state').style.color = color; }
+    function renderNotify() {
+      const list = $('sim-notify-list');
+      if (!notifyItems.length) {
+        const e = document.createElement('div');
+        e.className = 'sim-notify-empty';
+        e.textContent = notifyOn
+          ? 'Chưa có thông báo. Thử 🪫 Pin yếu, 🚱 Hết nước, 🔌 Pin cạn, hoặc 📴 Mất kết nối / Stop (server báo sau ~240s).'
+          : 'Đang tắt. Bấm "Bật" để nhận thông báo server gửi cho thiết bị ảo (xmini-sim/{id}/notify).';
+        list.replaceChildren(e);
+        return;
+      }
+      list.replaceChildren(...notifyItems.map(n => {
+        const v = Sim.notifyView(n.payload);
+        const d = document.createElement('details');
+        d.className = `sim-notify-card ${v.level}${n.fresh ? ' fresh' : ''}`;
+        n.fresh = false;
+        d.open = n.open;
+        d.addEventListener('toggle', () => { n.open = d.open; });
+        const s = document.createElement('summary'); // dòng tiêu đề + dòng chi tiết luôn hiện; bấm để xem payload gốc
+        const row = document.createElement('div');
+        row.className = 'row';
+        const icon = document.createElement('span');
+        icon.textContent = v.icon;
+        const title = document.createElement('span');
+        title.className = 't';
+        title.textContent = v.title;
+        const when = document.createElement('span');
+        when.className = 'when';
+        when.textContent = `${(v.at ? new Date(v.at) : n.receivedAt).toLocaleTimeString()} · ${v.level.toUpperCase()}`;
+        row.append(icon, title, when);
+        const detail = document.createElement('div');
+        detail.className = 'detail';
+        detail.textContent = v.detail;
+        s.append(row, detail);
+        const pre = document.createElement('pre');
+        pre.textContent = n.raw; // payload gốc server gửi (giống hệt payload gửi team Notify)
+        d.append(s, pre);
+        return d;
+      }));
+    }
+    function stopNotify() { const c = notifyClient; notifyClient = null; notifyDeviceId = null; if (c) c.end(true); }
+    function startNotify() {
+      if (!notifyOn) { stopNotify(); setNotifyState('tắt', '#94a3b8'); return; }
+      const id = notifyTargetId();
+      if (!id) { stopNotify(); setNotifyState('chờ Device ID hợp lệ', '#fbbf24'); return; }
+      if (notifyClient && notifyDeviceId === id) return; // đang nghe đúng thiết bị
+      stopNotify();
+      const host = $('sim-mqtt-host').value.trim(), user = $('sim-mqtt-user').value.trim(), pass = $('sim-mqtt-pass').value;
+      if (!window.mqtt) { setNotifyState('thiếu mqtt.js (cần internet)', '#fca5a5'); return; }
+      if (!host || !user || !pass) { setNotifyState('nhập MQTT ở ⚙️', '#fbbf24'); return; }
+      const topic = `xmini-sim/${id}/notify`;
+      const c = mqtt.connect(`wss://${host}:8884/mqtt`, Sim.mqttOptions(`${id}-phone`, user, pass));
+      notifyClient = c;
+      notifyDeviceId = id;
+      setNotifyState('… đang nối', '#93c5fd');
+      c.on('connect', () => {
+        if (notifyClient !== c) return;
+        c.subscribe(topic, { qos: 0 }, err =>
+          setNotifyState(err ? '✗ subscribe lỗi: ' + err.message : `● đang nghe ${id}`, err ? '#fca5a5' : '#4ade80'));
+      });
+      c.on('reconnect', () => {
+        if (notifyClient !== c) return;
+        c.options.username = $('sim-mqtt-user').value.trim();
+        c.options.password = $('sim-mqtt-pass').value;
+      });
+      c.on('close', () => { if (notifyClient === c) setNotifyState('○ mất MQTT — tự thử lại', '#fca5a5'); });
+      c.on('error', err => { if (notifyClient === c) setNotifyState('✗ ' + Sim.mqttErrorReason(err), '#fca5a5'); });
+      c.on('message', (t, buf) => {
+        if (notifyClient !== c) return;
+        const raw = new TextDecoder().decode(buf);
+        let payload = null;
+        try { payload = JSON.parse(raw); } catch {}
+        notifyItems.unshift({ payload, raw, receivedAt: new Date(), fresh: true, open: false });
+        if (notifyItems.length > NOTIFY_MAX) notifyItems.length = NOTIFY_MAX;
+        renderNotify();
+      });
+    }
+    $('sim-notify-toggle').addEventListener('click', () => {
+      notifyOn = !notifyOn;
+      try { localStorage.setItem(LS_NOTIFY, notifyOn ? 'on' : 'off'); } catch {}
+      $('sim-notify-toggle').textContent = notifyOn ? 'Tắt' : 'Bật';
+      startNotify();
+      renderNotify();
+    });
+    $('sim-id').addEventListener('change', startNotify);
+    $('sim-notify-toggle').textContent = notifyOn ? 'Tắt' : 'Bật';
+    renderNotify();
+    startNotify(); // lần trước để bật: nối ngay nếu đã có MQTT + Device ID hợp lệ
+
+    // "📤 Gửi cả sang Notify thật": server lưu cờ trên Device (chỉ SIM_*), mặc định tắt.
+    $('sim-notify-forward').addEventListener('change', async () => {
+      const box = $('sim-notify-forward'), out = $('sim-notify-fwd-status');
+      const want = box.checked;
+      if (!st) { box.checked = !want; return showError('Bấm Start trước.'); }
+      out.textContent = '… đang lưu';
+      out.style.color = '#93c5fd';
+      try {
+        const r = await serverCall('PUT', `/api/devices/${encodeURIComponent(st.deviceId)}/sim-notify`, { forwardToNotify: want });
+        if (!r.res.ok) throw new Error(`${r.res.status} ${r.text.slice(0, 120)}`);
+        if (!want) { out.textContent = 'chỉ hiện ở khung này'; out.style.color = '#94a3b8'; }
+        else if (r.data && r.data.notifyConfigured === false) {
+          out.textContent = '⚠ server chưa cấu hình NOTIFY_URL / NOTIFY_API_KEY — bật cũng không gửi được';
+          out.style.color = '#fb923c';
+        } else { out.textContent = '✓ đang gửi cả sang Notify thật'; out.style.color = '#4ade80'; }
+      } catch (e) {
+        box.checked = !want;
+        out.textContent = '✗ ' + e.message;
+        out.style.color = '#fca5a5';
+      }
+    });
+
     async function start() {
       showError('');
       const id = $('sim-id').value.trim();
@@ -3627,6 +3810,8 @@ Liên hệ vấn đề kỹ thuật:
       try {
         const device = await ensureRegistered(id, name);
         st = Sim.createState(id, device && device.controlMode); // mode khớp mode server đang giữ
+        $('sim-notify-forward').checked = !!(device && device.simNotifyForward);
+        $('sim-notify-fwd-status').textContent = '';
       } catch (e) {
         $('sim-start').disabled = false;
         setBadge('chưa chạy', '#94a3b8');
@@ -3643,6 +3828,7 @@ Liên hệ vấn đề kỹ thuật:
       $('sim-stop').disabled = false;
       $('sim-id').disabled = true;
       fillThresholds(true);
+      startNotify(); // khung Thông báo nghe đúng thiết bị vừa Start (nếu đang bật)
       render();
     }
 

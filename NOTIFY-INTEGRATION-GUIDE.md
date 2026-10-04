@@ -151,6 +151,7 @@ pump.on      → title "Đang tưới cây"  body "Đất {soilPercent}% dưới
 2. **Hysteresis cho ngưỡng analog** (nhiệt độ, ánh sáng): dùng 2 mức bật/tắt cách nhau (giống soil on=30 / off=60) để không báo rung quanh ngưỡng.
 3. **`id` ổn định theo đợt** → retry mạng không tạo tin trùng (Notify chống trùng qua `eventId`).
 4. **`deviceId` nhất quán** với `device_id` của MQTT.
+5. **Thiết bị ảo `SIM_*` (demo) mặc định KHÔNG gửi sang Notify** — sự kiện của chúng chỉ hiện ở khung "🔔 Thông báo" trên demo-dashboard (MQTT `xmini-sim/{id}/notify`). Chỉ khi người demo bật "📤 Gửi cả sang Notify thật" (`PUT /api/devices/{id}/sim-notify`) thì webhook mới nhận sự kiện có `deviceId` dạng `SIM_*`. Xem `NotifyDispatcher`.
 
 ---
 

@@ -257,6 +257,23 @@ test('configDiff keeps only edited, valid threshold values', () => {
   assert.deepEqual(diff, { soil_on_pct: 25, pump_cooldown_s: 120 });
 });
 
+// Khung "🔔 Thông báo": dựng thẻ từ ĐÚNG payload server gửi Notify (deviceId, event, severity, occurredAt, id, data).
+test('notifyView turns server notify payloads into readable cards', () => {
+  const at = '2026-10-04T14:04:51Z';
+  assert.deepEqual(
+    Sim.notifyView({ event: 'battery.low', severity: 'warning', occurredAt: at, data: { batteryPercent: 15 } }),
+    { icon: '🪫', title: 'Pin yếu', detail: 'Pin 15%', level: 'warning', at });
+  assert.deepEqual(
+    Sim.notifyView({ event: 'battery.cut', severity: 'critical', occurredAt: at, data: { batteryPercent: 0, batteryVoltageV: 6.4 } }),
+    { icon: '🔌', title: 'Pin cạn — đã ngắt tải', detail: 'Pin 0% · 6.4V', level: 'critical', at });
+  assert.equal(Sim.notifyView({ event: 'water.empty', severity: 'critical', data: { soilPercent: 30, waterOk: false } }).detail, 'Đất 30%');
+  assert.equal(Sim.notifyView({ event: 'device.offline', severity: 'warning', data: { lastSeenSecondsAgo: 245 } }).detail, 'im lặng 245 s');
+  const unknown = Sim.notifyView({ event: 'plant.party', severity: 'info' });
+  assert.equal(unknown.title, 'plant.party');
+  assert.equal(unknown.level, 'info');
+  assert.equal(Sim.notifyView(null).title, 'Thông báo không đọc được');
+});
+
 test('unknown scenario returns false', () => {
   assert.equal(Sim.applyScenario(fresh(), 'meteor'), false);
 });

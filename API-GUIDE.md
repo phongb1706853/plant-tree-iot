@@ -86,6 +86,7 @@ Thiết bị ảo (tab **📟 Thiết bị ảo** trên `demo-dashboard.html`) d
 - Lệnh cho id `SIM_*` đi `xmini-sim/{id}/control` (`SimTopics.ControlTopicFor`), **không bao giờ** lên `xmini/control` — ESP32 thật không nhận.
 - Server chỉ nhận telemetry/config ảo khi `device_id` khớp topic và thiết bị **đã đăng ký trên chính server đó**; telemetry ảo đi cùng pipeline với thiết bị thật (lưu, Notify, tự tưới).
 - Trang giả lập dùng credential HiveMQ riêng (vd `planttree-sim`), nhập trên trang và chỉ lưu localStorage.
+- **Thông báo giả lập:** sự kiện Notify của `SIM_*` (`water.empty`, `battery.low`, `battery.cut`, `device.offline`) được server publish lên `xmini-sim/{deviceId}/notify` (payload y hệt payload gửi team Notify) cho khung "🔔 Thông báo"; mặc định **không** gửi webhook Notify thật. Bật/tắt gửi cả sang Notify thật: `PUT /api/devices/{deviceId}/sim-notify` body `{"forwardToNotify": true}` (chỉ id `SIM_*`, trả `{deviceId, forwardToNotify, notifyConfigured}`).
 
 ---
 
