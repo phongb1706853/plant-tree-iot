@@ -13,8 +13,7 @@
     line-height: 1.6;
   }
   header {
-    background: linear-gradient(13Crash — nod-api không có key dataprocessor (chỉ có SharedTopic) → vẫn phải thêm 1 key vào nod-api
-5deg, #065f46 0%, #047857 100%);
+    background: linear-gradient(135deg, #065f46 0%, #047857 100%);
     padding: 24px 32px;
     border-bottom: 2px solid #10b981;
   }
@@ -363,6 +362,30 @@
   .status-pill.err { background: rgba(239,68,68,0.2); color: #fca5a5; }
   .status-pill.wait { background: rgba(59,130,246,0.2); color: #93c5fd; }
   .status-line .ms { color: #94a3b8; font-family: monospace; }
+
+  /* ===== Thiết bị ảo ===== */
+  .sim-mqtt-cfg { margin: 8px 0 4px; color: #94a3b8; font-size: 13px; }
+  .sim-mqtt-cfg summary { cursor: pointer; }
+  .sim-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; margin-top: 14px; }
+  @media (max-width: 900px) { .sim-layout { grid-template-columns: 1fr; } }
+  .sim-panel { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px; min-width: 0; }
+  .sim-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .sim-chip { background: #0f172a; border: 1px solid #334155; border-radius: 999px; padding: 2px 10px; font-size: 12px; color: #cbd5e1; white-space: nowrap; }
+  .sim-chip.on { border-color: #fbbf24; color: #fde68a; }
+  .sim-chip.pump { border-color: #3b82f6; color: #93c5fd; }
+  .sim-chip.warn { border-color: #ef4444; color: #fca5a5; }
+  .sim-log-panel { background: #020617; }
+  .sim-log-head { font-size: 12px; color: #94a3b8; margin-bottom: 6px; display: flex; gap: 8px; }
+  .sim-log-legend { margin-left: auto; }
+  .sim-log { font-family: "Menlo", "Consolas", monospace; font-size: 11.5px; line-height: 1.45; max-height: 420px; overflow-y: auto; }
+  .sim-log details { border-bottom: 1px solid #0f172a; padding: 2px 0; }
+  .sim-log summary { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; list-style: none; }
+  .sim-log summary::-webkit-details-marker { display: none; }
+  .sim-log pre { white-space: pre-wrap; word-break: break-all; color: #cbd5e1; margin: 4px 0 4px 14px; }
+  .sim-log .up summary { color: #4ade80; }
+  .sim-log .down summary { color: #93c5fd; }
+  .sim-log .cfg summary { color: #fcd34d; }
+  .sim-log .err summary { color: #fca5a5; }
 </style>
 </head>
 <body>
@@ -402,6 +425,9 @@
 
     <div class="group-label">MQTT</div>
     <button class="nav-btn" data-target="mqtt-connect">Kết nối MQTT (IoT team)</button>
+
+    <div class="group-label">Giả lập</div>
+    <button class="nav-btn" data-target="sim-device">📟 Thiết bị ảo</button>
 
     <div class="group-label">MCP / AI</div>
     <button class="nav-btn" data-target="try-assistant">🤖 Trợ lý AI (chat)</button>
@@ -2283,6 +2309,43 @@ Liên hệ vấn đề kỹ thuật:
   </ul>
 </section>
 
+<section id="sim-device">
+  <h2>📟 Thiết bị ảo (ESP32 giả lập qua MQTT)</h2>
+  <p>Trang này <strong>chính là một thiết bị</strong>: nối HiveMQ qua WebSocket, publish telemetry lên <code>xmini-sim/{id}/sensor_data</code> mỗi 10s và nhận lệnh trên <code>xmini-sim/{id}/control</code>. ESP32 thật (nghe <code>xmini/control</code>) không bao giờ nhận lệnh của thiết bị ảo.</p>
+  <div class="alert info">
+    Cần: đăng nhập ở tab <b>Kết nối</b> (host + token của server), credential HiveMQ <b>riêng cho giả lập</b> (vd <code>planttree-sim</code>) và internet. Khi demo hãy <b>giữ tab này hiển thị</b> — tab ẩn lâu bị trình duyệt giãn nhịp gửi.
+  </div>
+
+  <div class="conn-bar">
+    <div class="field"><label for="sim-id">Device ID</label><input id="sim-id" style="width:170px" value="SIM_Zone1"></div>
+    <div class="field"><label for="sim-name">Tên</label><input id="sim-name" style="width:190px" value="Thiết bị ảo Zone 1"></div>
+    <button class="run-btn" id="sim-start">▶ Start</button>
+    <button class="run-btn" id="sim-stop" style="background:#334155;color:#e2e8f0" disabled>■ Stop</button>
+    <div class="conn-status">Trạng thái: <b id="sim-badge">chưa chạy</b> · Mode: <b id="sim-mode">—</b></div>
+  </div>
+
+  <details class="sim-mqtt-cfg">
+    <summary>⚙️ MQTT (HiveMQ WebSocket) — lưu trong trình duyệt, không ghi vào file</summary>
+    <div class="conn-bar">
+      <div class="field"><label for="sim-mqtt-host">Host</label><input id="sim-mqtt-host" style="width:360px"></div>
+      <div class="field"><label for="sim-mqtt-user">User</label><input id="sim-mqtt-user" style="width:150px" placeholder="planttree-sim"></div>
+      <div class="field"><label for="sim-mqtt-pass">Password</label><input id="sim-mqtt-pass" type="password" style="width:150px"></div>
+    </div>
+  </details>
+
+  <div id="sim-error" class="alert danger" style="display:none"></div>
+
+  <div class="sim-layout">
+    <div class="sim-panel" id="sim-left">
+      <div id="sim-chips" class="sim-chips"></div>
+    </div>
+    <div class="sim-panel sim-log-panel">
+      <div class="sim-log-head">MQTT · <span id="sim-log-filter">xmini-sim/…/#</span><span class="sim-log-legend">↑ gửi · ↓ nhận · bấm dòng để xem đủ</span></div>
+      <div id="sim-log" class="sim-log"></div>
+    </div>
+  </div>
+</section>
+
   </main>
 </div>
 
@@ -2380,6 +2443,8 @@ Liên hệ vấn đề kỹ thuật:
       if (authToken) h['Authorization'] = 'Bearer ' + authToken;
       return h;
     }
+    // Cho tab "📟 Thiết bị ảo" dùng chung host + token của tab Kết nối.
+    window.plantTester = { cfg, authHeaders };
     async function doAuth(path) {
       if (!emailEl.value.trim() || !pwEl.value) {
         authStatusEl.textContent = '✗ nhập email + password'; authStatusEl.style.color = '#fca5a5'; return;
@@ -3024,6 +3089,219 @@ Liên hệ vấn đề kỹ thuật:
     window.SimCore = {
       DEFAULT_CONFIG, SCENARIOS, createState, applyControl, step, applyScenario, toTelemetry, configPayload, voltage,
     };
+  })();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js"></script>
+<script>
+  // ===== Tab "📟 Thiết bị ảo": nối MQTT (WebSocket) + vòng tick + log (lõi mô phỏng ở <script id="sim-core">) =====
+  (function () {
+    const $ = id => document.getElementById(id);
+    if (!$('sim-start') || !window.SimCore) return;
+    const Sim = window.SimCore;
+    const ID_RE = /^SIM_[A-Za-z0-9_-]{1,40}$/;
+    const LS_MQTT = 'planttree-sim-mqtt';
+    const DEFAULT_HOST = 'ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud';
+    const TICK_MS = 10000, LOG_MAX = 50;
+
+    let st = null, client = null, tickTimer = null, linkDown = false;
+    const logEntries = [];
+
+    // --- Cấu hình MQTT: chỉ lưu localStorage, KHÔNG ghi vào file ---
+    function loadMqttCfg() { try { return JSON.parse(localStorage.getItem(LS_MQTT)) || {}; } catch { return {}; } }
+    function saveMqttCfg() {
+      try {
+        localStorage.setItem(LS_MQTT, JSON.stringify({
+          host: $('sim-mqtt-host').value.trim(), user: $('sim-mqtt-user').value.trim(), pass: $('sim-mqtt-pass').value,
+        }));
+      } catch {}
+    }
+    const savedMqtt = loadMqttCfg();
+    $('sim-mqtt-host').value = savedMqtt.host || DEFAULT_HOST;
+    $('sim-mqtt-user').value = savedMqtt.user || '';
+    $('sim-mqtt-pass').value = savedMqtt.pass || '';
+    ['sim-mqtt-host', 'sim-mqtt-user', 'sim-mqtt-pass'].forEach(id => $(id).addEventListener('input', saveMqttCfg));
+
+    const topics = id => ({
+      sensor: `xmini-sim/${id}/sensor_data`, config: `xmini-sim/${id}/config`, control: `xmini-sim/${id}/control`,
+    });
+
+    function setBadge(text, color) { $('sim-badge').textContent = text; $('sim-badge').style.color = color; }
+    function showError(msg) { const e = $('sim-error'); e.textContent = msg || ''; e.style.display = msg ? 'block' : 'none'; }
+
+    // --- Log MQTT: dựng DOM bằng textContent (payload từ broker KHÔNG bao giờ được chèn như HTML).
+    // Dòng trùng liên tiếp (vd lỗi kết nối mỗi 5s) được gộp thành ×N để log không bị lụt.
+    function addLog(kind, topic, payload) {
+      const last = logEntries[0];
+      if (last && last.kind === kind && last.topic === topic && last.payload === payload) {
+        last.at = new Date(); last.count += 1;
+      } else {
+        logEntries.unshift({ kind, topic, payload, at: new Date(), count: 1 });
+        if (logEntries.length > LOG_MAX) logEntries.length = LOG_MAX;
+      }
+      renderLog();
+    }
+    function renderLog() {
+      $('sim-log').replaceChildren(...logEntries.map(e => {
+        const d = document.createElement('details');
+        d.className = e.kind;
+        const s = document.createElement('summary');
+        const arrow = { up: '↑', cfg: '↑', down: '↓', err: '✗' }[e.kind];
+        const short = e.topic.replace(/^xmini-sim\/[^/]+\//, '');
+        s.textContent = `${arrow} ${e.at.toLocaleTimeString()} ${short}${e.count > 1 ? ' ×' + e.count : ''}  ${e.payload}`;
+        const p = document.createElement('pre');
+        let body = e.payload;
+        try { body = JSON.stringify(JSON.parse(e.payload), null, 2); } catch {}
+        p.textContent = `${e.topic}\n${body}`;
+        d.append(s, p);
+        return d;
+      }));
+    }
+
+    // --- Gọi server bằng host + token của tab Kết nối ---
+    async function serverCall(method, path, body) {
+      const t = window.plantTester;
+      const opts = { method, headers: t.authHeaders() };
+      if (body !== undefined) opts.body = JSON.stringify(body);
+      const res = await fetch(t.cfg().base + path, opts);
+      const text = await res.text();
+      let data = text; try { data = JSON.parse(text); } catch {}
+      return { res, data, text };
+    }
+    async function ensureRegistered(id, name) {
+      let r = await serverCall('POST', '/api/devices/register', { deviceId: id, name });
+      if (r.res.status === 401) throw new Error('Token hết hạn hoặc chưa đăng nhập — đăng nhập lại ở tab Kết nối.');
+      if (r.res.status !== 201 && r.res.status !== 409) throw new Error(`Đăng ký thiết bị lỗi ${r.res.status}: ${r.text.slice(0, 200)}`);
+      r = await serverCall('GET', `/api/devices/${encodeURIComponent(id)}`);
+      if (r.res.status === 404) throw new Error(`ID ${id} đã thuộc user khác — hãy đổi ID.`);
+      if (!r.res.ok) throw new Error(`Đọc thiết bị lỗi ${r.res.status}: ${r.text.slice(0, 200)}`);
+      return r.data;
+    }
+
+    // --- MQTT ---
+    function publish(kind) {
+      if (!st || linkDown) return; // đang giả "mất kết nối": không gửi gì
+      const tp = topics(st.deviceId);
+      const topic = kind === 'config' ? tp.config : tp.sensor;
+      const payload = JSON.stringify(kind === 'config' ? Sim.configPayload(st) : Sim.toTelemetry(st));
+      if (!client || !client.connected) { addLog('err', topic, 'Chưa nối MQTT — bỏ qua bản tin này'); return; }
+      client.publish(topic, payload, { qos: 0, retain: false }, err =>
+        addLog(err ? 'err' : (kind === 'config' ? 'cfg' : 'up'), topic, err ? `${err.message} · ${payload}` : payload));
+    }
+
+    function connectMqtt() {
+      const host = $('sim-mqtt-host').value.trim();
+      const tp = topics(st.deviceId);
+      const c = mqtt.connect(`wss://${host}:8884/mqtt`, {
+        username: $('sim-mqtt-user').value.trim(),
+        password: $('sim-mqtt-pass').value,
+        clientId: `planttree-sim-${st.deviceId}-${Math.random().toString(16).slice(2, 8)}`,
+        clean: true, reconnectPeriod: 5000, connectTimeout: 10000,
+      });
+      client = c;
+      c.on('connect', () => {
+        setBadge('● online (MQTT)', '#4ade80');
+        c.subscribe(tp.control, { qos: 0 }, err => { if (err) addLog('err', tp.control, 'Subscribe lỗi: ' + err.message); });
+        publish('config'); // như firmware: gửi cấu hình mỗi lần (re)connect
+        publish('sensor');
+      });
+      c.on('reconnect', () => { if (client === c) setBadge('… đang nối lại MQTT', '#fbbf24'); });
+      c.on('close', () => { if (client === c) setBadge('○ mất MQTT (tự thử lại mỗi 5s)', '#fca5a5'); });
+      c.on('error', err => addLog('err', tp.control, 'MQTT: ' + err.message));
+      // TextDecoder: giải mã UTF-8 cho cả Buffer (mqtt.js) lẫn Uint8Array thuần.
+      c.on('message', (topic, buf) => onControl(topic, new TextDecoder().decode(buf)));
+    }
+    function disconnectMqtt() { const c = client; client = null; if (c) c.end(true); }
+
+    function onControl(topic, text) {
+      addLog('down', topic, text);
+      if (!st || linkDown) return; // đã Stop / đang giả mất kết nối: bỏ qua lệnh
+      let cmd;
+      try { cmd = JSON.parse(text); } catch { addLog('err', topic, 'JSON lỗi — bỏ qua lệnh'); return; }
+      const r = Sim.applyControl(st, cmd, Date.now());
+      if (r.publishConfig) publish('config');
+      if (r.changed) publish('sensor'); // KHÁC firmware: gửi ngay để demo phản hồi tức thì
+      render();
+    }
+
+    function tick() {
+      Sim.step(st, TICK_MS / 1000, Date.now());
+      publish('sensor');
+      render();
+    }
+
+    function render() {
+      if (!st) return;
+      $('sim-mode').textContent = st.mode.toUpperCase();
+      const t = Sim.toTelemetry(st);
+      const chip = (txt, cls) => {
+        const c = document.createElement('span');
+        c.className = 'sim-chip' + (cls ? ' ' + cls : '');
+        c.textContent = txt;
+        return c;
+      };
+      $('sim-chips').replaceChildren(
+        chip(`🌱 đất ${t.soil_percent}%`, t.soil_dry_flag ? 'warn' : ''),
+        chip(t.pump_on ? '🚿 bơm BẬT' : '🚿 bơm tắt', t.pump_on ? 'pump' : ''),
+        chip(t.light_on ? `💡 đèn ${t.light_pwm}` : '💡 đèn tắt', t.light_on ? 'on' : ''),
+        chip(t.water_ok ? '🪣 bồn OK' : '🚱 hết nước', t.water_ok ? '' : 'warn'),
+        chip(`🔋 ${t.battery_percent}% · ${t.battery_voltage_v}V`, t.batt_cut || t.low_batt ? 'warn' : ''),
+        chip(`☀️ ${t.light_lux} lux`),
+        chip(`🌡 ${t.temperature_c}°C`),
+        chip(`💧 ${t.humidity_percent}%`),
+        chip(`⏲ ${t.pressure_hpa} hPa`),
+      );
+    }
+
+    async function start() {
+      showError('');
+      const id = $('sim-id').value.trim();
+      const name = $('sim-name').value.trim() || id;
+      if (!ID_RE.test(id)) return showError('Device ID phải bắt đầu bằng SIM_ và chỉ gồm chữ, số, _ hoặc - (vd SIM_Zone1).');
+      if (!window.plantTester || !window.plantTester.cfg().token) return showError('Đăng nhập ở tab "Kết nối" trước (cần host + token của server).');
+      if (!$('sim-mqtt-host').value.trim() || !$('sim-mqtt-user').value.trim() || !$('sim-mqtt-pass').value) {
+        $('sim-mqtt-host').closest('details').open = true;
+        return showError('Nhập MQTT host / user / password của credential giả lập.');
+      }
+      if (!window.mqtt) return showError('Không tải được thư viện mqtt.js (cần internet để lấy từ CDN).');
+
+      $('sim-start').disabled = true;
+      setBadge('… đăng ký thiết bị trên server', '#93c5fd');
+      try {
+        const device = await ensureRegistered(id, name);
+        st = Sim.createState(id, device && device.controlMode); // mode khớp mode server đang giữ
+      } catch (e) {
+        $('sim-start').disabled = false;
+        setBadge('chưa chạy', '#94a3b8');
+        const hint = e instanceof TypeError ? ' — không gọi được server, kiểm tra Host/Port ở tab Kết nối.' : '';
+        return showError(e.message + hint);
+      }
+      linkDown = false;
+      logEntries.length = 0;
+      renderLog();
+      $('sim-log-filter').textContent = `xmini-sim/${id}/#`;
+      setBadge('… đang nối MQTT', '#93c5fd');
+      connectMqtt();
+      tickTimer = setInterval(tick, TICK_MS);
+      $('sim-stop').disabled = false;
+      $('sim-id').disabled = true;
+      render();
+    }
+
+    function stop() {
+      clearInterval(tickTimer);
+      tickTimer = null;
+      disconnectMqtt();
+      linkDown = false;
+      st = null; // lệnh đến muộn sau Stop bị bỏ qua (onControl kiểm tra st)
+      setBadge('■ đã dừng', '#94a3b8');
+      $('sim-start').disabled = false;
+      $('sim-stop').disabled = true;
+      $('sim-id').disabled = false;
+    }
+
+    $('sim-start').addEventListener('click', start);
+    $('sim-stop').addEventListener('click', stop);
   })();
 </script>
 </body>
