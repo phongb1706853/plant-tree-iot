@@ -45,6 +45,11 @@ public class MqttBackgroundService : BackgroundService
     private readonly Dictionary<string, bool?> _lastPumpOn = new();
     private readonly Dictionary<string, DateTime> _cooldownUntil = new();
 
+    // Trạng thái đèn auto theo từng thiết bị (đọc/ghi trong _stateLock): lux ở telemetry trước (phát hiện VƯỢT ngưỡng)
+    // và bối cảnh trước (mode/batt_cut/ngưỡng) để biết khi nào xét lại theo MỨC lux. Xem AutoLightDecider.
+    private readonly Dictionary<string, double?> _lastLux = new();
+    private readonly Dictionary<string, LightContext> _lastLightCtx = new();
+
     // Trạng thái phát hiện sự kiện Notify (đọc/ghi trong _stateLock).
     // _lastHealth: ảnh chụp cờ sức khỏe telemetry trước (để so edge).
     // _lastSeenUtc: mốc telemetry gần nhất mỗi thiết bị (để quét mất kết nối).
@@ -249,6 +254,7 @@ public class MqttBackgroundService : BackgroundService
 
         await EvaluateNotifyEventsAsync(telemetry, sensorData);
         await EvaluateAutoWateringAsync(telemetry);
+        await EvaluateAutoLightAsync(telemetry);
     }
 
     // Phát hiện sự kiện thông báo theo EDGE rồi đẩy sang Notify (best-effort). Cập nhật mốc lastSeen
@@ -370,6 +376,59 @@ public class MqttBackgroundService : BackgroundService
         _logger.LogInformation(
             "Auto-water: {DeviceId} soil={Soil}% mode={Mode} -> pump={Pump} (on<{On} off>{Off})",
             deviceId, telemetry.SoilPercent, telemetry.Mode, pump, onPct, offPct);
+    }
+
+    // Tự bật/tắt đèn theo ánh sáng — SERVER ra lệnh như tự tưới (thiết bị chỉ làm theo). Ngưỡng lux_on / lux_off /
+    // light_auto_pwm lấy từ DeviceConfig (fallback mặc định). Logic thuần ở AutoLightDecider.
+    private async Task EvaluateAutoLightAsync(XminiTelemetry telemetry)
+    {
+        var deviceId = telemetry.DeviceId!;
+
+        var cfg = await _mongoDbService.GetDeviceConfigAsync(deviceId);
+        double luxOn  = cfg?.LuxOn        ?? AutoLightDecider.DefaultLuxOn;
+        double luxOff = cfg?.LuxOff       ?? AutoLightDecider.DefaultLuxOff;
+        int pwm       = cfg?.LightAutoPwm ?? AutoLightDecider.DefaultLightAutoPwm;
+        var serverMode = await _modeStore.GetAsync(deviceId);
+
+        var ctx = new LightContext(serverMode, telemetry.BattCut, luxOn, luxOff);
+        double? prevLux;
+        bool recheck;
+        lock (_stateLock)
+        {
+            prevLux = _lastLux.TryGetValue(deviceId, out var pl) ? pl : null;
+            LightContext? prevCtx = _lastLightCtx.TryGetValue(deviceId, out var pc) ? pc : null;
+            recheck = AutoLightDecider.ShouldRecheckLevel(prevCtx, ctx);
+            _lastLux[deviceId] = telemetry.LightLux;
+            _lastLightCtx[deviceId] = ctx;
+        }
+
+        var action = AutoLightDecider.Decide(
+            serverMode, telemetry.LightLux, prevLux, telemetry.LightOn, telemetry.BattCut, luxOn, luxOff, recheck);
+        if (action == LightAction.None)
+            return;
+
+        // Kèm mode:"auto" (firmware xử lý light trước rồi mới mode -> không rớt khỏi auto); bật thì kèm PWM auto.
+        var on = action == LightAction.TurnOn;
+        var flat = on
+            ? new Dictionary<string, object?> { ["light"] = true, ["light_pwm"] = pwm, ["mode"] = "auto" }
+            : new Dictionary<string, object?> { ["light"] = false, ["mode"] = "auto" };
+
+        if (!await _mqttPublisher.PublishControlAsync(deviceId, flat))
+        {
+            _logger.LogWarning("Auto-light: publisher chưa kết nối broker, bỏ lệnh light={Light} cho {DeviceId}", on, deviceId);
+            return;
+        }
+
+        await _mongoDbService.InsertControlCommandAsync(new ControlCommand
+        {
+            DeviceId = deviceId,
+            Payload = flat,
+            CreatedAt = DateTime.UtcNow,
+        });
+
+        _logger.LogInformation(
+            "Auto-light: {DeviceId} lux={Lux} (prev {Prev}, recheck={Recheck}) -> light={Light} (on<{On} off>{Off})",
+            deviceId, telemetry.LightLux, prevLux, recheck, on, luxOn, luxOff);
     }
 
     private async Task HandleConfigAsync(string payload)
