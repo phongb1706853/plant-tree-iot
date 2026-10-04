@@ -382,6 +382,8 @@ curl "$API/api/control/commands/$DEVICE?limit=20"
 Dùng khi không có phần cứng hoặc Mac tắt. Thiết bị ảo chạy trong trình duyệt và đi qua HiveMQ thật (xem bằng MQTTx được).
 
 > **Hướng dẫn đầy đủ** (lệnh chạy server, chuẩn bị, checklist test 11 bước, sự cố thường gặp) nằm ngay trong `demo-dashboard.html` → tab **📟 Thiết bị ảo** → khung **📋 Hướng dẫn**.
+>
+> **Profile:** copy `demo-profiles.example.js` thành `demo-profiles.local.js` (cạnh dashboard, đã `.gitignore`, có mật khẩu — không commit), điền profile "Test local" / "Demo thật". Lúc demo: tab Kết nối → chọn Profile → Đăng nhập → tab Thiết bị ảo → Start.
 
 > **Điều kiện trước (1 lần, HiveMQ Cloud → Access Management):** credential **của server** (`MQTT_USERNAME`) phải có quyền publish + subscribe trên `xmini-sim/#`. Thiếu quyền thì HiveMQ ngắt publisher của server ngay khi gửi lệnh cho thiết bị ảo — server tự nối lại ở lệnh kế tiếp, nhưng lệnh vừa gửi bị mất và thiết bị ảo không nhận được telemetry nào. Credential `planttree-sim` cho trang chỉ cần quyền trên `xmini-sim/#`.
 

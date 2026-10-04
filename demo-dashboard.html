@@ -260,7 +260,8 @@
     letter-spacing: 0.5px;
     color: #94a3b8;
   }
-  .conn-bar input {
+  .conn-bar input,
+  .conn-bar select {
     background: #020617;
     border: 1px solid #334155;
     border-radius: 6px;
@@ -269,7 +270,8 @@
     font-family: monospace;
     font-size: 13px;
   }
-  .conn-bar input:focus { outline: none; border-color: #10b981; }
+  .conn-bar input:focus,
+  .conn-bar select:focus { outline: none; border-color: #10b981; }
   .conn-status {
     font-size: 12px;
     color: #94a3b8;
@@ -1161,6 +1163,14 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
   </div>
   <div class="alert">
     <strong>Cần đăng nhập trước.</strong> API yêu cầu xác thực: <b>Đăng ký/Đăng nhập</b> để lấy JWT (dùng cho <b>tất cả</b> các nút). ESP32 dùng MQTT (HiveMQ) nên không cần device secret ở đây.
+  </div>
+
+  <div class="conn-bar">
+    <div class="field">
+      <label for="conn-profile">Profile</label>
+      <select id="conn-profile" style="width:280px"></select>
+    </div>
+    <div class="conn-status">Đọc từ <code>demo-profiles.local.js</code> (cạnh file này): <b id="conn-profile-status">—</b></div>
   </div>
 
   <div class="conn-bar">
@@ -2394,6 +2404,7 @@ dotnet run --project PlantTreeIoTServer --launch-profile http</pre>
     <div class="alert">⚠ Server local nối HiveMQ thật và nghe cả <code>xmini/…</code>: nếu ESP32 thật đang cắm điện, server local có thể tự tưới cho nó. Rút điện ESP32 nếu không muốn.</div>
 
     <h4>2. Chuẩn bị trên trang (mỗi lần mở)</h4>
+    <p><b>Cách nhanh — Profile:</b> 1 lần, copy <code>demo-profiles.example.js</code> thành <code>demo-profiles.local.js</code> (cạnh file dashboard, không commit) và điền mật khẩu. Sau đó mỗi lần demo: tab <b>Kết nối</b> → chọn <b>Profile</b> (“Test local” / “Demo thật”) → <b>Đăng nhập</b> → tab này bấm <b>▶ Start</b>. Trang nhớ profile lần trước. Không dùng profile thì làm tay như dưới:</p>
     <ol>
       <li>Tab <b>Kết nối</b>: Host <code>localhost</code>, Port <code>8000</code> → <b>Đăng ký</b> (lần đầu trên DB này) → <b>Đăng nhập</b> (thấy “✓ đã đăng nhập”).</li>
       <li>Quay lại tab này → <b>⚙️ MQTT</b>: User <code>planttree-sim</code> (phân biệt hoa thường) + Password — nhập 1 lần, trình duyệt nhớ.</li>
@@ -2430,13 +2441,15 @@ dotnet run --project PlantTreeIoTServer --launch-profile http</pre>
       <tr><td>Khung Thông báo trống</td><td>Chưa bấm Bật; server chưa restart sau khi cập nhật code; “mất kết nối” cần ~240s.</td></tr>
       <tr><td><code>dotnet test</code> báo MSB3027 (file bị khoá)</td><td>Server đang chạy giữ file exe → dừng server, hoặc thêm <code>--artifacts-path &lt;thư mục tạm&gt;</code>.</td></tr>
       <tr><td>Tải lại trang thì thiết bị ảo dừng</td><td>Trạng thái chỉ nằm trong trang → bấm Start lại (dữ liệu trên server vẫn còn).</td></tr>
+      <tr><td>Ô Profile báo “chưa có file”</td><td>Thiếu <code>demo-profiles.local.js</code> cạnh <code>demo-dashboard.html</code> → copy từ <code>demo-profiles.example.js</code>, điền, Ctrl+F5.</td></tr>
+      <tr><td>Đăng nhập báo sai (401) với profile mới</td><td>Tài khoản chưa có trên server đó → bấm <b>Đăng ký</b> 1 lần (ô đã điền sẵn) rồi Đăng nhập.</td></tr>
     </table>
 
     <h4>5. Test tự động</h4>
     <div class="code-block">
       <button class="copy-btn">Copy</button>
       <pre>dotnet test PlantTreeIoTServer.Tests/PlantTreeIoTServer.Tests.csproj
-node --test tests-js/sim-core.test.mjs</pre>
+node --test "tests-js/*.test.mjs"</pre>
     </div>
   </details>
 
@@ -2587,6 +2600,10 @@ node --test tests-js/sim-core.test.mjs</pre>
   </main>
 </div>
 
+<!-- Profile demo/test (có mật khẩu, KHÔNG commit): copy demo-profiles.example.js thành demo-profiles.local.js.
+     Thiếu file thì trang vẫn chạy, ô Profile báo cách tạo. -->
+<script src="demo-profiles.local.js"></script>
+
 <script>
   // Tab navigation
   document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -2681,8 +2698,10 @@ node --test tests-js/sim-core.test.mjs</pre>
       if (authToken) h['Authorization'] = 'Bearer ' + authToken;
       return h;
     }
-    // Cho tab "📟 Thiết bị ảo" dùng chung host + token của tab Kết nối.
-    window.plantTester = { cfg, authHeaders };
+    // Cho tab "📟 Thiết bị ảo" dùng chung host + token của tab Kết nối. clearToken: khi đổi profile sang server
+    // khác thì token cũ không còn đúng -> xoá để không hiện "✓ đã đăng nhập" giả.
+    function clearToken() { authToken = ''; persist(); setAuthStatus(); }
+    window.plantTester = { cfg, authHeaders, clearToken };
     async function doAuth(path) {
       if (!emailEl.value.trim() || !pwEl.value) {
         authStatusEl.textContent = '✗ nhập email + password'; authStatusEl.style.color = '#fca5a5'; return;
@@ -3416,6 +3435,51 @@ node --test tests-js/sim-core.test.mjs</pre>
 
 <!-- mqtt.js GHIM bản 5.16.0 + SRI: hành vi thử lại kết nối đã kiểm chứng trên đúng bản này; trang giữ credential/JWT
      nên không nạp script CDN trôi phiên bản. Nâng bản = đổi version + tính lại integrity (openssl dgst -sha384 -binary | base64). -->
+<script id="profile-core">
+  // ===== Profile demo/test (HÀM THUẦN) — danh sách đọc từ demo-profiles.local.js (window.PLANTTREE_PROFILES).
+  // Test: node --test "tests-js/*.test.mjs"
+  (function () {
+    const SIM_ID_RE = /^SIM_[A-Za-z0-9_-]{1,40}$/;
+
+    // 1 profile -> { idÔTrênTrang: giá trị }. Thiếu phần nào thì bỏ qua (giữ nguyên ô đang có trên trang).
+    function profileToFields(p) {
+      const f = {};
+      const set = (id, v) => { if (v !== undefined && v !== null && v !== '') f[id] = String(v); };
+      const s = p.server || {}, a = p.account || {}, d = p.device || {}, m = p.mqtt || {};
+      set('conn-host', s.host);
+      set('conn-port', s.port);
+      set('conn-email', a.email);
+      set('conn-password', a.password);
+      set('conn-device', d.id);   // các tab Test dùng luôn thiết bị ảo của profile
+      set('sim-id', d.id);
+      set('sim-name', d.name);
+      set('sim-mqtt-host', m.host);
+      set('sim-mqtt-user', m.user);
+      set('sim-mqtt-pass', m.password);
+      set('mcp-url', p.mcpUrl);
+      return f;
+    }
+
+    // Danh sách lỗi (chuỗi) để hiện cho người dùng; [] = hợp lệ.
+    function validateProfiles(list) {
+      if (!Array.isArray(list)) return ['PLANTTREE_PROFILES phải là một mảng'];
+      const errors = [];
+      list.forEach((p, i) => {
+        const tag = `Profile #${i + 1}${p && p.name ? ` "${p.name}"` : ''}`;
+        if (!p || typeof p !== 'object') { errors.push(`${tag}: không phải object`); return; }
+        if (!p.name) errors.push(`${tag}: thiếu name`);
+        if (!p.server || !p.server.host) errors.push(`${tag}: thiếu server.host`);
+        if (p.device && p.device.id && !SIM_ID_RE.test(p.device.id)) errors.push(`${tag}: device.id phải dạng SIM_…`);
+      });
+      const names = list.map(p => p && p.name).filter(Boolean);
+      if (new Set(names).size !== names.length) errors.push('Tên profile bị trùng');
+      return errors;
+    }
+
+    window.ProfileCore = { profileToFields, validateProfiles };
+  })();
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.16.0/dist/mqtt.min.js"
         integrity="sha384-9WWboT9UtuPFRlOLq4FygQkcJxzYcpz8SXGkNyCEXM+44n14xzjNlrRKYZwuF/A6"
         crossorigin="anonymous"></script>
@@ -3933,6 +3997,64 @@ node --test tests-js/sim-core.test.mjs</pre>
 
     $('sim-start').addEventListener('click', start);
     $('sim-stop').addEventListener('click', stop);
+  })();
+</script>
+
+<script>
+  // ===== Profile demo/test: chọn 1 profile -> điền sẵn mọi ô (tab Kết nối + tab Thiết bị ảo), rồi bấm Đăng nhập.
+  // Danh sách từ demo-profiles.local.js (window.PLANTTREE_PROFILES); logic thuần ở <script id="profile-core">.
+  (function () {
+    const $ = id => document.getElementById(id);
+    const sel = $('conn-profile'), status = $('conn-profile-status');
+    if (!sel || !window.ProfileCore) return;
+    const LS = 'planttree-profile';
+    const setStatus = (text, color) => { status.textContent = text; status.style.color = color; };
+    const list = window.PLANTTREE_PROFILES;
+
+    if (!Array.isArray(list) || !list.length) {
+      sel.disabled = true;
+      sel.replaceChildren(new Option('— chưa có profile —', ''));
+      setStatus('chưa có file — copy demo-profiles.example.js thành demo-profiles.local.js rồi điền thông tin', '#fbbf24');
+      return;
+    }
+
+    const errors = ProfileCore.validateProfiles(list);
+    sel.replaceChildren(new Option('— chọn profile —', ''),
+      ...list.map((p, i) => new Option((p && p.name) || `Profile ${i + 1}`, String(i))));
+    setStatus(errors.length ? '⚠ ' + errors.join(' · ') : `${list.length} profile`, errors.length ? '#fca5a5' : '#94a3b8');
+
+    function apply(i) {
+      const p = list[i];
+      if (!p || typeof p !== 'object') return;
+      const baseBefore = window.plantTester ? window.plantTester.cfg().base : null;
+      let skipped = false;
+      for (const [id, value] of Object.entries(ProfileCore.profileToFields(p))) {
+        const el = $(id);
+        if (!el) continue;
+        if (el.disabled) { skipped = true; continue; } // thiết bị ảo đang chạy: không đổi ID giữa chừng
+        el.value = value;
+        // Bắn sự kiện như khi gõ tay để các tab tự lưu (host/port/device, credential MQTT, khung Thông báo).
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      // Đổi sang server khác -> token cũ không còn đúng.
+      if (window.plantTester && window.plantTester.cfg().base !== baseBefore) window.plantTester.clearToken();
+      // Khung 🔔 Thông báo bật/tắt theo profile (nút hiện "Tắt" nghĩa là đang bật).
+      const toggle = $('sim-notify-toggle');
+      if (toggle && typeof p.notify === 'boolean' && (toggle.textContent === 'Tắt') !== p.notify) toggle.click();
+      try { localStorage.setItem(LS, p.name || ''); } catch {}
+      setStatus(skipped
+        ? `✓ "${p.name}" — thiết bị ảo đang chạy nên giữ ID cũ (Stop rồi chọn lại để đổi)`
+        : `✓ đã điền "${p.name}" — bấm Đăng nhập`, '#4ade80');
+    }
+
+    sel.addEventListener('change', () => { if (sel.value !== '') apply(Number(sel.value)); });
+
+    // Nhớ profile lần trước: tải lại trang là điền sẵn, chỉ cần bấm Đăng nhập.
+    let last = null;
+    try { last = localStorage.getItem(LS); } catch {}
+    const idx = list.findIndex(p => p && p.name && p.name === last);
+    if (idx >= 0) { sel.value = String(idx); apply(idx); }
   })();
 </script>
 </body>
