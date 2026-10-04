@@ -85,6 +85,8 @@ builder.Services.AddHttpClient(NotifyClient.HttpClientName, client =>
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 builder.Services.AddSingleton<NotifyClient>();
+// Định tuyến thông báo: thiết bị thật -> Notify; thiết bị ảo SIM_* -> MQTT xmini-sim/{id}/notify (+ Notify nếu bật).
+builder.Services.AddSingleton<NotifyDispatcher>();
 
 // Configure CORS for ESP32 communication
 builder.Services.AddCors(options =>

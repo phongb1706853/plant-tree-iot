@@ -12,11 +12,13 @@ namespace PlantTreeIoTServer.Controllers;
 public class DevicesController : ControllerBase
 {
     private readonly MongoDbService _mongoDbService;
+    private readonly NotifyClient _notifyClient;
     private readonly ILogger<DevicesController> _logger;
 
-    public DevicesController(MongoDbService mongoDbService, ILogger<DevicesController> logger)
+    public DevicesController(MongoDbService mongoDbService, NotifyClient notifyClient, ILogger<DevicesController> logger)
     {
         _mongoDbService = mongoDbService;
+        _notifyClient = notifyClient;
         _logger = logger;
     }
 
@@ -231,6 +233,39 @@ public class DevicesController : ControllerBase
             return StatusCode(500, "Internal server error");
         }
     }
+
+    /// <summary>
+    /// Thiết bị ảo SIM_*: bật/tắt gửi CẢ sang Notify thật (webhook team Notify). Mặc định tắt: sự kiện chỉ hiện ở
+    /// khung "🔔 Thông báo" trên dashboard (MQTT xmini-sim/{id}/notify). notifyConfigured=false nghĩa là server chưa
+    /// đặt NOTIFY_URL/NOTIFY_API_KEY nên bật cũng không gửi được.
+    /// </summary>
+    [HttpPut("{deviceId}/sim-notify")]
+    public async Task<IActionResult> SetSimNotify(string deviceId, [FromBody] SimNotifyRequest request)
+    {
+        try
+        {
+            if (!SimTopics.IsSimDevice(deviceId))
+                return BadRequest("Chỉ áp dụng cho thiết bị ảo (id tiền tố SIM_).");
+            if (await _mongoDbService.GetAccessibleDeviceAsync(deviceId, UserId) == null)
+                return NotFound($"Device {deviceId} not found");
+
+            await _mongoDbService.SetSimNotifyForwardAsync(deviceId, request.ForwardToNotify);
+            _logger.LogInformation("Sim device {DeviceId}: forward to real Notify = {Forward} (by {UserId})",
+                deviceId, request.ForwardToNotify, UserId);
+            return Ok(new { deviceId, forwardToNotify = request.ForwardToNotify, notifyConfigured = _notifyClient.Enabled });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting sim notify forward for device {DeviceId}", deviceId);
+            return StatusCode(500, "Internal server error");
+        }
+    }
+}
+
+/// <summary>Body cho PUT /api/devices/{deviceId}/sim-notify.</summary>
+public class SimNotifyRequest
+{
+    public bool ForwardToNotify { get; set; }
 }
 
 public class DeviceRegistrationRequest

@@ -28,7 +28,7 @@ public class MqttBackgroundService : BackgroundService
     private readonly MongoDbService _mongoDbService;
     private readonly MqttPublisherService _mqttPublisher;
     private readonly DeviceModeStore _modeStore;
-    private readonly NotifyClient _notifyClient;
+    private readonly NotifyDispatcher _notifyDispatcher;
     private readonly ILogger<MqttBackgroundService> _logger;
     private readonly IConfiguration _configuration;
     private readonly int _offlineThresholdS;
@@ -57,14 +57,14 @@ public class MqttBackgroundService : BackgroundService
         MongoDbService mongoDbService,
         MqttPublisherService mqttPublisher,
         DeviceModeStore modeStore,
-        NotifyClient notifyClient,
+        NotifyDispatcher notifyDispatcher,
         ILogger<MqttBackgroundService> logger,
         IConfiguration configuration)
     {
         _mongoDbService = mongoDbService;
         _mqttPublisher = mqttPublisher;
         _modeStore = modeStore;
-        _notifyClient = notifyClient;
+        _notifyDispatcher = notifyDispatcher;
         _logger = logger;
         _configuration = configuration;
 
@@ -280,7 +280,16 @@ public class MqttBackgroundService : BackgroundService
             _logger.LogInformation("Thiết bị {DeviceId} có telemetry trở lại (online)", deviceId);
 
         foreach (var evt in events)
-            await _notifyClient.SendAsync(evt);
+            await DispatchNotifyAsync(evt);
+    }
+
+    // Thiết bị ảo: luôn đi khung "🔔 Thông báo" (MQTT); chỉ gửi Notify thật khi người dùng bật forward trên
+    // dashboard (Device.SimNotifyForward). Thiết bị thật: Notify thật như cũ. Xem NotifyDispatcher.
+    private async Task DispatchNotifyAsync(NotifyEvent evt)
+    {
+        var forward = SimTopics.IsSimDevice(evt.DeviceId)
+            && (await _mongoDbService.GetDeviceAsync(evt.DeviceId))?.SimNotifyForward == true;
+        await _notifyDispatcher.DispatchAsync(evt, forward);
     }
 
     // Quét các thiết bị đã im lặng quá ngưỡng -> bắn device.offline (1 lần/đợt). Logic thuần ở OfflineMonitor.
@@ -306,7 +315,7 @@ public class MqttBackgroundService : BackgroundService
         {
             var evt = new NotifyEvent(deviceId, "device.offline", NotifySeverity.Warning,
                 new Dictionary<string, object?> { ["lastSeenSecondsAgo"] = silenceS });
-            await _notifyClient.SendAsync(evt);
+            await DispatchNotifyAsync(evt);
         }
     }
 

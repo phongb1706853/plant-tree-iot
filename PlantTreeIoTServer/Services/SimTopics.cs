@@ -33,6 +33,15 @@ public static class SimTopics
     public static string ControlTopicFor(string deviceId)
         => IsSimDevice(deviceId) ? $"{Prefix}/{deviceId}/control" : RealControlTopic;
 
+    /// <summary>
+    /// Topic thông báo giả lập (server -> khung "🔔 Thông báo" trên dashboard): xmini-sim/{id}/notify.
+    /// CHỈ cho thiết bị ảo — sự kiện của thiết bị thật không bao giờ được đưa lên MQTT (ném lỗi nếu gọi nhầm).
+    /// </summary>
+    public static string NotifyTopicFor(string deviceId)
+        => IsSimDevice(deviceId)
+            ? $"{Prefix}/{deviceId}/notify"
+            : throw new ArgumentException($"'{deviceId}' không phải thiết bị ảo SIM_*", nameof(deviceId));
+
     /// <summary>Tách deviceId + loại message (sensor_data / config) từ topic thiết bị ảo gửi lên.</summary>
     public static bool TryParse(string topic, out string deviceId, out string kind)
     {

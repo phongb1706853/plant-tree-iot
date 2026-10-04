@@ -142,6 +142,13 @@ public class Device
     [BsonElement("controlMode")]
     public string? ControlMode { get; set; }
 
+    /// <summary>
+    /// Chỉ thiết bị ảo SIM_*: true = sự kiện thông báo gửi CẢ sang Notify thật (webhook), ngoài khung "🔔 Thông báo"
+    /// trên dashboard. null/false = chỉ hiện ở khung (mặc định, không làm phiền người dùng thật). Xem NotifyDispatcher.
+    /// </summary>
+    [BsonElement("simNotifyForward")]
+    public bool? SimNotifyForward { get; set; }
+
     [BsonElement("lastSeen")]
     [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
     public DateTime? LastSeen { get; set; }

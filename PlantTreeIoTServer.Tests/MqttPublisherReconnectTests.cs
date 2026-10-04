@@ -16,6 +16,7 @@ namespace PlantTreeIoTServer.Tests;
 // của server thiếu quyền xmini-sim/#, lệnh đầu tiên cho thiết bị ảo làm publisher rớt — và trước đây publisher
 // không bao giờ nối lại (cờ _isConnected vẫn true) -> mọi lệnh sau đó, kể cả cho ESP32 THẬT, đều hỏng tới khi
 // restart server. Broker giả dưới đây đá client khi publish lên xmini-sim/ để tái hiện đúng tình huống đó.
+[Collection("MqttEnv")]
 public class MqttPublisherReconnectTests : IAsyncLifetime
 {
     private static readonly string[] EnvKeys =

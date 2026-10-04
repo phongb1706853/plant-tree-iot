@@ -115,26 +115,44 @@ public class MqttPublisherService
     /// message / message_secs. Khoá lạ bị bỏ qua. KHÔNG bọc trong {"command":...,"parameters":...}.
     /// </summary>
     /// <returns>true nếu đã gửi được lên broker.</returns>
-    public async Task<bool> PublishControlAsync(string deviceId, IDictionary<string, object?> flatKeys)
+    public Task<bool> PublishControlAsync(string deviceId, IDictionary<string, object?> flatKeys)
+        => PublishAsync(SimTopics.ControlTopicFor(deviceId), JsonSerializer.Serialize(flatKeys), deviceId, "control");
+
+    /// <summary>
+    /// Publish sự kiện thông báo của thiết bị ẢO lên xmini-sim/{id}/notify — đúng payload gửi team Notify
+    /// (NotifyPayload) — cho khung "🔔 Thông báo" trên dashboard. Thiết bị thật: từ chối (trả false), sự kiện
+    /// của thiết bị thật không bao giờ được đưa lên MQTT.
+    /// </summary>
+    public Task<bool> PublishSimNotifyAsync(NotifyEvent evt)
+    {
+        if (!SimTopics.IsSimDevice(evt.DeviceId))
+        {
+            _logger.LogWarning("Refusing to publish notify for real device {DeviceId} on MQTT", evt.DeviceId);
+            return Task.FromResult(false);
+        }
+
+        var payload = JsonSerializer.Serialize(NotifyPayload.Build(evt, DateTime.UtcNow));
+        return PublishAsync(SimTopics.NotifyTopicFor(evt.DeviceId), payload, evt.DeviceId, "notify");
+    }
+
+    /// <returns>true nếu đã gửi được lên broker.</returns>
+    private async Task<bool> PublishAsync(string topic, string payload, string deviceId, string what)
     {
         if (_mqttClient == null || _options == null)
         {
-            _logger.LogWarning("MQTT Publisher not configured, cannot publish control for {DeviceId}", deviceId);
+            _logger.LogWarning("MQTT Publisher not configured, cannot publish {What} for {DeviceId}", what, deviceId);
             return false;
         }
 
         // Broker có thể đã ngắt (mạng, hoặc HiveMQ đá client publish lên topic không được phép) -> nối lại trước.
         if (!_mqttClient.IsConnected && !await TryReconnectAsync())
         {
-            _logger.LogWarning("MQTT Publisher not connected, cannot publish control for {DeviceId}", deviceId);
+            _logger.LogWarning("MQTT Publisher not connected, cannot publish {What} for {DeviceId}", what, deviceId);
             return false;
         }
 
         try
         {
-            var payload = JsonSerializer.Serialize(flatKeys);
-
-            var topic = SimTopics.ControlTopicFor(deviceId);
             var message = new MqttApplicationMessageBuilder()
                 .WithTopic(topic)
                 .WithPayload(payload)
@@ -143,12 +161,12 @@ public class MqttPublisherService
                 .Build();
 
             await _mqttClient.PublishAsync(message);
-            _logger.LogInformation("Published control to {Topic} for {DeviceId}: {Payload}", topic, deviceId, payload);
+            _logger.LogInformation("Published {What} to {Topic} for {DeviceId}: {Payload}", what, topic, deviceId, payload);
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error publishing MQTT control for device {DeviceId}", deviceId);
+            _logger.LogError(ex, "Error publishing MQTT {What} for device {DeviceId}", what, deviceId);
             return false;
         }
     }

@@ -57,6 +57,16 @@ public class SimTopicsTests
         => Assert.False(SimTopics.TryParse(topic, out _, out _));
 
     [Fact]
+    public void Sim_notify_topic_is_per_device()
+        => Assert.Equal("xmini-sim/SIM_Zone1/notify", SimTopics.NotifyTopicFor("SIM_Zone1"));
+
+    [Theory]
+    [InlineData("ESP32S3_Zone1")]
+    [InlineData("SIM_")]
+    public void Notify_topic_refuses_real_devices(string id)
+        => Assert.Throws<ArgumentException>(() => SimTopics.NotifyTopicFor(id));
+
+    [Fact]
     public void Payload_device_id_must_match_topic_exactly()
     {
         Assert.True(SimTopics.PayloadMatchesTopic("SIM_Zone1", "SIM_Zone1"));
