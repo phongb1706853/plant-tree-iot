@@ -85,11 +85,11 @@ public class MqttPublisherService
         }
     }
 
-    // Topic điều khiển dùng chung theo hợp đồng (mqtt-api.md): thiết bị subscribe xmini/control.
-    private const string ControlTopic = "xmini/control";
-
     /// <summary>
-    /// Publish một object JSON PHẲNG xuống xmini/control (QoS 0, không retained) — đúng hợp đồng
+    /// Publish một object JSON PHẲNG xuống topic điều khiển (QoS 0, không retained) — đúng hợp đồng
+    /// firmware. Thiết bị thật: xmini/control (dùng chung). Thiết bị ảo SIM_*: xmini-sim/{id}/control
+    /// (xem SimTopics) — nên lệnh cho thiết bị ảo KHÔNG BAO GIỜ tới ESP32 thật. Payload y hệt nhau.
+    /// Theo hợp đồng
     /// firmware. Thiết bị chỉ hiểu các khoá phẳng: pump / light / light_pwm / mode / auto / config /
     /// message / message_secs. Khoá lạ bị bỏ qua. KHÔNG bọc trong {"command":...,"parameters":...}.
     /// </summary>
@@ -106,15 +106,16 @@ public class MqttPublisherService
         {
             var payload = JsonSerializer.Serialize(flatKeys);
 
+            var topic = SimTopics.ControlTopicFor(deviceId);
             var message = new MqttApplicationMessageBuilder()
-                .WithTopic(ControlTopic)
+                .WithTopic(topic)
                 .WithPayload(payload)
                 .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce) // QoS 0 theo hợp đồng
                 .WithRetainFlag(false)
                 .Build();
 
             await _mqttClient.PublishAsync(message);
-            _logger.LogInformation("Published control to {Topic} for {DeviceId}: {Payload}", ControlTopic, deviceId, payload);
+            _logger.LogInformation("Published control to {Topic} for {DeviceId}: {Payload}", topic, deviceId, payload);
             return true;
         }
         catch (Exception ex)
