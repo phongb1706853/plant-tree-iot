@@ -226,6 +226,37 @@ test('mqtt.js is pinned to an exact version with SRI', () => {
   assert.match(tag[0], /crossorigin="anonymous"/);
 });
 
+// Lệnh bật bị batt_cut chặn phải được báo ra để trang ghi ⚠ (trước đây im lặng -> trông như "đèn hỏng").
+test('turn-on commands refused by batt_cut are reported as ignored', () => {
+  const s = fresh('auto');
+  Sim.applyScenario(s, 'battery-cut');
+  const r = Sim.applyControl(s, { pump: true, light: true, mode: 'auto' }, T0);
+  assert.deepEqual(r.ignored, ['pump', 'light']);
+  assert.equal(r.changed, false);
+  assert.deepEqual(Sim.applyControl(s, { pump: false, light: false }, T0).ignored, []); // lệnh tắt không bị chặn
+  assert.deepEqual(Sim.applyControl(fresh(), { light: true }, T0).ignored, []);         // pin bình thường
+});
+
+test('night during batt_cut flags the blocked auto light (auto mode only)', () => {
+  const s = fresh('auto');
+  Sim.applyScenario(s, 'battery-cut');
+  Sim.applyScenario(s, 'night');
+  assert.equal(s.lightOn, false);
+  assert.equal(s.autoLightBlocked, true);
+
+  const m = fresh('manual');
+  Sim.applyScenario(m, 'battery-cut');
+  Sim.applyScenario(m, 'night');
+  assert.equal(m.autoLightBlocked, false); // manual: không có ý định bật đèn auto
+});
+
+test('configDiff keeps only edited, valid threshold values', () => {
+  const diff = Sim.configDiff(Sim.DEFAULT_CONFIG, {
+    soil_on_pct: '25', soil_off_pct: '60', lux_on: '', light_auto_pwm: 'abc', pump_cooldown_s: 120, foo: '1',
+  });
+  assert.deepEqual(diff, { soil_on_pct: 25, pump_cooldown_s: 120 });
+});
+
 test('unknown scenario returns false', () => {
   assert.equal(Sim.applyScenario(fresh(), 'meteor'), false);
 });

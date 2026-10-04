@@ -386,6 +386,23 @@
   .sim-log .down summary { color: #93c5fd; }
   .sim-log .cfg summary { color: #fcd34d; }
   .sim-log .err summary { color: #fca5a5; }
+  .sim-log .tick summary { color: #5f8f6f; }   /* telemetry tự gửi 10s: xanh mờ */
+  .sim-log .scn summary { color: #c084fc; }    /* telemetry do kịch bản môi trường: tím */
+  .sim-log .warn summary { color: #fb923c; }   /* lệnh / đèn auto bị pin cạn chặn: cam */
+  .sim-log-legend .lg { white-space: nowrap; }
+  .sim-log-legend .lg.tick { color: #5f8f6f; }
+  .sim-log-legend .lg.scn { color: #c084fc; }
+  .sim-log-legend .lg.up { color: #4ade80; }
+  .sim-log-legend .lg.down { color: #93c5fd; }
+  .sim-log-legend .lg.cfg { color: #fcd34d; }
+  .sim-log-legend .lg.warn { color: #fb923c; }
+  .sim-log-legend .lg.err { color: #fca5a5; }
+  .sim-cut-banner { display: none; background: #7f1d1d; color: #fecaca; font-size: 12px; font-weight: 600; padding: 6px 10px; }
+  .sim-thr { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin: 10px 0; }
+  .sim-thr-group { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #cbd5e1; }
+  .sim-thr-group b { color: #5eead4; font-size: 12px; }
+  .sim-thr input { width: 74px; background: #020617; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; padding: 3px 6px; font-family: monospace; }
+  .sim-thr input.dirty { border-color: #fbbf24; }
   .sim-scene { background: #0f172a; border-radius: 8px; overflow: hidden; }
   .sim-scene svg { display: block; width: 100%; height: auto; }
   .sim-btnrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
@@ -2350,6 +2367,7 @@ Liên hệ vấn đề kỹ thuật:
   <div class="sim-layout">
     <div class="sim-panel" id="sim-left">
       <div class="sim-scene">
+        <div id="sim-cut-banner" class="sim-cut-banner">⚡ PIN CẠN — đã cắt tải, lệnh bật bơm/đèn bị bỏ qua. Bấm 🔋 Sạc đầy</div>
         <svg viewBox="0 0 300 200" role="img" aria-label="Cảnh thiết bị ảo: chậu cây, đèn, bơm, bồn nước, pin">
           <rect id="sv-sky" x="0" y="0" width="300" height="200" rx="8" fill="#e0f2fe"/>
           <g id="sv-sun"><circle cx="268" cy="26" r="13" fill="#facc15"/></g>
@@ -2391,7 +2409,12 @@ Liên hệ vấn đề kỹ thuật:
       <div id="sim-chips" class="sim-chips"></div>
     </div>
     <div class="sim-panel sim-log-panel">
-      <div class="sim-log-head">MQTT · <span id="sim-log-filter">xmini-sim/…/#</span><span class="sim-log-legend">↑ gửi · ↓ nhận · bấm dòng để xem đủ</span></div>
+      <div class="sim-log-head">MQTT · <span id="sim-log-filter">xmini-sim/…/#</span>
+        <span class="sim-log-legend" title="Bấm một dòng log để xem payload đầy đủ">
+          <span class="lg tick">⏱ tự gửi 10s</span> <span class="lg scn">🧪 kịch bản</span> <span class="lg up">↑ sau lệnh</span>
+          <span class="lg down">↓ lệnh</span> <span class="lg cfg">↑ config</span> <span class="lg warn">⚠ bị bỏ qua</span> <span class="lg err">✗ lỗi</span>
+        </span>
+      </div>
       <div id="sim-log" class="sim-log"></div>
     </div>
   </div>
@@ -2411,14 +2434,43 @@ Liên hệ vấn đề kỹ thuật:
     <button class="sim-btn" data-scenario="reset">↺ Reset</button>
   </div>
 
+  <h3>🤖 Chế độ auto &amp; ngưỡng <span style="font-size:12px;color:#94a3b8">(PUT /api/control/{id}/config → MQTT → thiết bị ảo → ↑ config echo)</span></h3>
+  <div class="sim-panel" id="sim-auto">
+    <div class="sim-btnrow">
+      <span style="font-size:13px;color:#cbd5e1">Mode: <b id="sim-mode2">—</b></span>
+      <button class="sim-btn" data-app="auto-on">🤖 Bật auto</button>
+      <button class="sim-btn" data-app="auto-off">✋ Tắt auto</button>
+    </div>
+    <div class="sim-thr" id="sim-thr">
+      <div class="sim-thr-group"><b>Tưới (server tự tưới theo ngưỡng này)</b>
+        <label>bật khi đất &lt; <input type="number" data-key="soil_on_pct" min="0" max="100"> %</label>
+        <label>tắt khi đất &gt; <input type="number" data-key="soil_off_pct" min="0" max="100"> %</label>
+        <label>bơm chạy tối đa <input type="number" data-key="pump_max_run_s" min="0" max="3600"> s</label>
+        <label>nghỉ giữa 2 lần tưới <input type="number" data-key="pump_cooldown_s" min="0" max="3600"> s</label>
+      </div>
+      <div class="sim-thr-group"><b>Đèn (thiết bị tự bật khi trời tối)</b>
+        <label>bật khi ánh sáng &lt; <input type="number" data-key="lux_on" min="0" max="65535"> lux</label>
+        <label>tắt khi ánh sáng &gt; <input type="number" data-key="lux_off" min="0" max="65535"> lux</label>
+        <label>độ sáng auto <input type="number" data-key="light_auto_pwm" min="0" max="255"> /255</label>
+      </div>
+      <div class="sim-thr-group"><b>Pin</b>
+        <label>cảnh báo khi &lt; <input type="number" data-key="batt_warn_pct" min="0" max="100"> %</label>
+        <label>hết cảnh báo khi ≥ <input type="number" data-key="batt_recover_pct" min="0" max="100"> %</label>
+      </div>
+    </div>
+    <div class="sim-btnrow">
+      <button class="sim-btn" id="sim-thr-save">💾 Lưu ngưỡng</button>
+      <button class="sim-btn" id="sim-thr-default">↺ Mặc định</button>
+      <span id="sim-thr-status" class="sim-app-status"></span>
+    </div>
+  </div>
+
   <h3>Điều khiển như App <span style="font-size:12px;color:#94a3b8">(gọi /api/control trên server → MQTT → thiết bị ảo)</span></h3>
   <div class="sim-btnrow" id="sim-app">
     <button class="sim-btn" data-app="water-on">🚿 Tưới</button>
     <button class="sim-btn" data-app="water-off">⏹ Tắt bơm</button>
     <button class="sim-btn" data-app="light-on">💡 Bật đèn</button>
     <button class="sim-btn" data-app="light-off">🌑 Tắt đèn</button>
-    <button class="sim-btn" data-app="auto-on">🤖 Bật auto</button>
-    <button class="sim-btn" data-app="auto-off">✋ Tắt auto</button>
     <span id="sim-app-status" class="sim-app-status"></span>
   </div>
 
@@ -3030,6 +3082,7 @@ Liên hệ vấn đề kỹ thuật:
         pumpOn: false, pumpOnSince: null,
         lightOn: false, lightPwm: DEFAULT_CONFIG.light_auto_pwm,
         lowBatt: false, battFull: false, battCut: false,
+        autoLightBlocked: false, // đèn auto muốn bật (trời tối) nhưng batt_cut chặn — bộ điều khiển ghi ⚠ rồi xoá
         message: '', messageUntil: null,
         config: { ...DEFAULT_CONFIG },
       };
@@ -3054,8 +3107,11 @@ Liên hệ vấn đề kỹ thuật:
     // tới lần vượt ngưỡng kế tiếp.
     function autoLight(s) {
       const c = s.config;
-      if (s.mode === 'auto' && !s.battCut) {
-        if (s.prevLux >= c.lux_on && s.lux < c.lux_on) { s.lightOn = true; s.lightPwm = c.light_auto_pwm; }
+      if (s.mode === 'auto') {
+        if (s.prevLux >= c.lux_on && s.lux < c.lux_on) {
+          if (s.battCut) s.autoLightBlocked = true; // muốn bật nhưng pin cạn đã cắt tải
+          else { s.lightOn = true; s.lightPwm = c.light_auto_pwm; }
+        }
         else if (s.prevLux <= c.lux_off && s.lux > c.lux_off) { s.lightOn = false; }
       }
       s.prevLux = s.lux;
@@ -3065,19 +3121,26 @@ Liên hệ vấn đề kỹ thuật:
     // changed = trạng thái THẤY ĐƯỢC trong telemetry đã đổi. Lệnh không đổi gì (bơm đã bật, batt_cut bỏ qua
     // bơm, cùng mode...) trả changed:false để bộ điều khiển KHÔNG gửi telemetry ngay — nếu không, server
     // (auto + đất khô) sẽ gửi lại {"pump":true} liền, thành vòng lặp lệnh/telemetry vô hạn.
+    // ignored = các khoá BẬT bị batt_cut chặn (để trang ghi ⚠, không im lặng).
     function applyControl(s, cmd, now) {
-      const r = { changed: false, publishConfig: false };
+      const r = { changed: false, publishConfig: false, ignored: [] };
       if (!cmd || typeof cmd !== 'object' || Array.isArray(cmd)) return r;
       const before = JSON.stringify(toTelemetry(s));
 
-      if (typeof cmd.pump === 'boolean' && !(cmd.pump && s.battCut)) {
-        s.pumpOn = cmd.pump;
-        s.pumpOnSince = cmd.pump ? now : null; // bật lại khi đang chạy = đếm lại pump_max_run_s (như firmware)
+      if (typeof cmd.pump === 'boolean') {
+        if (cmd.pump && s.battCut) r.ignored.push('pump');
+        else {
+          s.pumpOn = cmd.pump;
+          s.pumpOnSince = cmd.pump ? now : null; // bật lại khi đang chạy = đếm lại pump_max_run_s (như firmware)
+        }
       }
       if (typeof cmd.light_pwm === 'number' && Number.isFinite(cmd.light_pwm)) {
         s.lightPwm = clamp(Math.round(cmd.light_pwm), 0, 255);
       }
-      if (typeof cmd.light === 'boolean' && !(cmd.light && s.battCut)) s.lightOn = cmd.light;
+      if (typeof cmd.light === 'boolean') {
+        if (cmd.light && s.battCut) r.ignored.push('light');
+        else s.lightOn = cmd.light;
+      }
       if (cmd.mode === 'auto' || cmd.mode === 'manual') s.mode = cmd.mode;
       else if (typeof cmd.auto === 'boolean') s.mode = cmd.auto ? 'auto' : 'manual';
 
@@ -3167,6 +3230,17 @@ Liên hệ vấn đề kỹ thuật:
 
     const configPayload = s => ({ config: { ...s.config } });
 
+    // Ngưỡng người dùng đã sửa trên form: chỉ giữ khoá hợp lệ, là số, và KHÁC giá trị đang dùng.
+    function configDiff(current, values) {
+      const out = {};
+      for (const [k, raw] of Object.entries(values)) {
+        if (!CONFIG_RANGES[k]) continue;
+        const v = typeof raw === 'number' ? raw : (String(raw).trim() === '' ? NaN : Number(raw));
+        if (Number.isFinite(v) && v !== current[k]) out[k] = v;
+      }
+      return out;
+    }
+
     // Tuỳ chọn mqtt.connect. reconnectOnConnackError: mqtt.js 5 mặc định KHÔNG thử lại khi broker từ chối
     // CONNECT (sai user/pass) — bật để đúng spec "tự thử lại mỗi 5s"; bộ điều khiển nạp lại user/pass từ ô ⚙️
     // trước mỗi lần thử nên sửa credential là tự nối được.
@@ -3189,7 +3263,7 @@ Liên hệ vấn đề kỹ thuật:
 
     window.SimCore = {
       DEFAULT_CONFIG, SCENARIOS, createState, applyControl, step, applyScenario, toTelemetry, configPayload, voltage,
-      mqttOptions, mqttErrorReason,
+      mqttOptions, mqttErrorReason, configDiff,
     };
   })();
 </script>
@@ -3239,12 +3313,14 @@ Liên hệ vấn đề kỹ thuật:
 
     // --- Log MQTT: dựng DOM bằng textContent (payload từ broker KHÔNG bao giờ được chèn như HTML).
     // Dòng trùng liên tiếp (vd lỗi kết nối mỗi 5s) được gộp thành ×N để log không bị lụt.
-    function addLog(kind, topic, payload) {
+    // kind (= màu): tick (telemetry tự gửi 10s) · scn (telemetry do kịch bản môi trường) · up (telemetry sau lệnh)
+    //               · down (lệnh nhận) · cfg (config) · warn (lệnh/đèn auto bị pin cạn chặn) · err (lỗi).
+    function addLog(kind, topic, payload, label) {
       const last = logEntries[0];
       if (last && last.kind === kind && last.topic === topic && last.payload === payload) {
         last.at = new Date(); last.count += 1;
       } else {
-        logEntries.unshift({ kind, topic, payload, at: new Date(), count: 1, open: false });
+        logEntries.unshift({ kind, topic, payload, label: label || '', at: new Date(), count: 1, open: false });
         if (logEntries.length > LOG_MAX) logEntries.length = LOG_MAX;
       }
       renderLog();
@@ -3256,9 +3332,10 @@ Liên hệ vấn đề kỹ thuật:
         d.open = e.open; // giữ dòng đang mở khi log vẽ lại (mỗi tick / mỗi lệnh)
         d.addEventListener('toggle', () => { e.open = d.open; });
         const s = document.createElement('summary');
-        const arrow = { up: '↑', cfg: '↑', down: '↓', err: '✗' }[e.kind];
+        const arrow = { tick: '↑', scn: '↑', up: '↑', cfg: '↑', down: '↓', warn: '⚠', err: '✗' }[e.kind];
         const short = e.topic.replace(/^xmini-sim\/[^/]+\//, '');
-        s.textContent = `${arrow} ${e.at.toLocaleTimeString()} ${short}${e.count > 1 ? ' ×' + e.count : ''}  ${e.payload}`;
+        const label = e.label ? e.label + ' ' : '';
+        s.textContent = `${arrow} ${e.at.toLocaleTimeString()} ${label}${short}${e.count > 1 ? ' ×' + e.count : ''}  ${e.payload}`;
         const p = document.createElement('pre');
         let body = e.payload;
         try { body = JSON.stringify(JSON.parse(e.payload), null, 2); } catch {}
@@ -3289,7 +3366,9 @@ Liên hệ vấn đề kỹ thuật:
     }
 
     // --- MQTT ---
-    function publish(kind) {
+    // src (chỉ cho telemetry): 'tick' = tự gửi định kỳ · 'scn' = do kịch bản môi trường (label = tên nút)
+    //                        · 'cmd' = ngay sau lệnh. Mỗi nguồn một màu trong log.
+    function publish(kind, src, label) {
       if (!st || linkDown) return; // đang giả "mất kết nối": không gửi gì
       const tp = topics(st.deviceId);
       const topic = kind === 'config' ? tp.config : tp.sensor;
@@ -3299,8 +3378,18 @@ Liên hệ vấn đề kỹ thuật:
         skipLogged = true;
         return;
       }
-      client.publish(topic, payload, { qos: 0, retain: false }, err =>
-        addLog(err ? 'err' : (kind === 'config' ? 'cfg' : 'up'), topic, err ? `${err.message} · ${payload}` : payload));
+      const logKind = kind === 'config' ? 'cfg' : src === 'tick' ? 'tick' : src === 'scn' ? 'scn' : 'up';
+      const logLabel = logKind === 'tick' ? '⏱' : logKind === 'scn' ? `🧪 ${String(label).replace(/^\S+\s+/, '')}` : ''; // bỏ emoji của nút
+      client.publish(topic, payload, { qos: 0, retain: false }, err => err
+        ? addLog('err', topic, `${err.message} · ${payload}`)
+        : addLog(logKind, topic, payload, logLabel));
+    }
+
+    // Đèn auto muốn bật (trời tối) nhưng pin cạn đã cắt tải -> ghi ⚠ một lần.
+    function logBlockedAutoLight() {
+      if (!st || !st.autoLightBlocked) return;
+      st.autoLightBlocked = false;
+      addLog('warn', 'auto', 'đèn auto không bật dù trời tối — pin cạn (batt_cut) đã cắt tải. Bấm 🔋 Sạc đầy');
     }
 
     function connectMqtt() {
@@ -3316,7 +3405,7 @@ Liên hệ vấn đề kỹ thuật:
         setBadge('● online (MQTT)', '#4ade80');
         c.subscribe(tp.control, { qos: 0 }, err => { if (err) addLog('err', tp.control, 'Subscribe lỗi: ' + err.message); });
         publish('config'); // như firmware: gửi cấu hình mỗi lần (re)connect
-        publish('sensor');
+        publish('sensor', 'tick');
       });
       c.on('reconnect', () => {
         if (client !== c) return;
@@ -3345,20 +3434,26 @@ Liên hệ vấn đề kỹ thuật:
       let cmd;
       try { cmd = JSON.parse(text); } catch { addLog('err', topic, 'JSON lỗi — bỏ qua lệnh'); return; }
       const r = Sim.applyControl(st, cmd, Date.now());
+      if (r.ignored.length)
+        addLog('warn', topic, `bỏ qua ${r.ignored.map(k => k + ':true').join(', ')} — pin cạn (batt_cut) đã cắt tải. Bấm 🔋 Sạc đầy`);
       if (r.publishConfig) publish('config');
-      if (r.changed) publish('sensor'); // KHÁC firmware: gửi ngay để demo phản hồi tức thì
+      if (r.changed) publish('sensor', 'cmd'); // KHÁC firmware: gửi ngay để demo phản hồi tức thì
       render();
     }
 
     function tick() {
       Sim.step(st, TICK_MS / 1000, Date.now());
-      publish('sensor');
+      logBlockedAutoLight();
+      publish('sensor', 'tick');
       render();
     }
 
     function render() {
       if (!st) return;
       $('sim-mode').textContent = st.mode.toUpperCase();
+      $('sim-mode2').textContent = st.mode.toUpperCase();
+      $('sim-mode2').style.color = st.mode === 'auto' ? '#4ade80' : '#fbbf24';
+      fillThresholds(false);
       const t = Sim.toTelemetry(st);
       const chip = (txt, cls) => {
         const c = document.createElement('span');
@@ -3411,10 +3506,11 @@ Liên hệ vấn đề kỹ thuật:
       $('sv-batt-txt').textContent = t.batt_cut ? `CẠN ${t.battery_voltage_v}V` : `pin ${t.battery_percent}%`;
       $('sv-batt-txt').setAttribute('fill', night ? '#cbd5e1' : '#334155'); // đọc được trên nền trời đêm
       $('sv-tft').textContent = st.message ? st.message.slice(0, 22) : (linkDown ? '-- offline --' : 'Xmini SIM');
+      $('sim-cut-banner').style.display = t.batt_cut ? 'block' : 'none';
     }
 
     // --- Nút kịch bản ---
-    function onScenario(name) {
+    function onScenario(name, label) {
       if (!st) return showError('Bấm Start trước.');
       if (name === 'link-down') {
         if (linkDown) return;
@@ -3427,13 +3523,15 @@ Liên hệ vấn đề kỹ thuật:
         setBadge('… đang nối MQTT', '#93c5fd');
         connectMqtt(); // khi connect sẽ tự gửi config + telemetry
       } else if (Sim.applyScenario(st, name)) {
-        publish('sensor');
+        logBlockedAutoLight();
+        if (name === 'reset') publish('config'); // config về mặc định -> báo server, tránh server giữ ngưỡng cũ
+        publish('sensor', 'scn', label);
       }
       render();
     }
     $('sim-scenarios').addEventListener('click', e => {
       const b = e.target.closest('[data-scenario]');
-      if (b) onScenario(b.dataset.scenario);
+      if (b) onScenario(b.dataset.scenario, b.textContent.trim());
     });
 
     // --- Nút "Điều khiển như App": gọi API server thật (lệnh đi server -> MQTT -> thiết bị ảo) ---
@@ -3445,10 +3543,9 @@ Liên hệ vấn đề kỹ thuật:
       'auto-on':   [id => `/api/control/${id}/auto`, undefined],
       'auto-off':  [id => `/api/control/${id}`, { mode: 'manual' }],
     };
-    async function onApp(action) {
+    async function onApp(action, out) {
       if (!st) return showError('Bấm Start trước.');
       const [path, body] = APP_ACTIONS[action];
-      const out = $('sim-app-status');
       out.textContent = '… đang gọi server';
       out.style.color = '#93c5fd';
       try {
@@ -3462,7 +3559,55 @@ Liên hệ vấn đề kỹ thuật:
     }
     $('sim-app').addEventListener('click', e => {
       const b = e.target.closest('[data-app]');
-      if (b) onApp(b.dataset.app);
+      if (b) onApp(b.dataset.app, $('sim-app-status'));
+    });
+
+    // --- Khung "Chế độ auto & ngưỡng": bật/tắt auto + đặt ngưỡng qua server (PUT /config -> MQTT -> echo) ---
+    $('sim-auto').addEventListener('click', e => {
+      const b = e.target.closest('[data-app]');
+      if (b) onApp(b.dataset.app, $('sim-thr-status'));
+    });
+    const thrInputs = () => [...document.querySelectorAll('#sim-thr input[data-key]')];
+    thrInputs().forEach(i => i.addEventListener('input', () => i.classList.add('dirty')));
+    // Điền giá trị thiết bị ảo đang dùng; ô đang sửa dở (dirty) chỉ bị ghi đè khi force.
+    function fillThresholds(force) {
+      if (!st) return;
+      thrInputs().forEach(i => {
+        if (force) i.classList.remove('dirty');
+        if (!i.classList.contains('dirty')) i.value = st.config[i.dataset.key];
+      });
+    }
+    $('sim-thr-default').addEventListener('click', () => {
+      thrInputs().forEach(i => { i.value = Sim.DEFAULT_CONFIG[i.dataset.key]; i.classList.add('dirty'); });
+      $('sim-thr-status').textContent = 'đã điền mặc định — bấm 💾 Lưu ngưỡng để gửi';
+      $('sim-thr-status').style.color = '#fbbf24';
+    });
+    $('sim-thr-save').addEventListener('click', async () => {
+      if (!st) return showError('Bấm Start trước.');
+      const out = $('sim-thr-status');
+      const values = Object.fromEntries(thrInputs().map(i => [i.dataset.key, i.value]));
+      const diff = Sim.configDiff(st.config, values);
+      if (!Object.keys(diff).length) {
+        out.textContent = 'không có ngưỡng nào thay đổi';
+        out.style.color = '#94a3b8';
+        return;
+      }
+      out.textContent = '… đang gửi ' + JSON.stringify(diff);
+      out.style.color = '#93c5fd';
+      try {
+        const r = await serverCall('PUT', `/api/control/${encodeURIComponent(st.deviceId)}/config`, diff);
+        if (r.res.ok) {
+          fillThresholds(true); // bỏ dirty: giá trị thật sẽ về qua echo config (đã clamp)
+          out.textContent = `✓ ${r.res.status} — chờ ↓ control {"config":…} rồi ↑ config echo`;
+          out.style.color = '#4ade80';
+        } else {
+          out.textContent = `✗ ${r.res.status} ${r.text.slice(0, 120)}`;
+          out.style.color = '#fca5a5';
+        }
+      } catch (e) {
+        out.textContent = '✗ ' + e.message;
+        out.style.color = '#fca5a5';
+      }
     });
 
     async function start() {
@@ -3497,6 +3642,7 @@ Liên hệ vấn đề kỹ thuật:
       tickTimer = setInterval(tick, TICK_MS);
       $('sim-stop').disabled = false;
       $('sim-id').disabled = true;
+      fillThresholds(true);
       render();
     }
 

@@ -175,7 +175,14 @@ Thêm nhóm "Giả lập" ở menu trái của `demo-dashboard.html`, với 1 ta
   (cạn khi `water_ok=false`), pin, nắng/trăng theo lux, màn TFT. Bên dưới là chip nhiệt, ẩm, áp suất.
 - **Phải:** luồng MQTT, gồm 50 message gần nhất mà trang **thực sự** gửi/nhận. ↑ là thiết bị gửi, ↓ là
   lệnh nhận. Mỗi dòng có giờ, topic rút gọn và payload rút gọn; bấm vào để xem đầy đủ.
-- **Hàng nút kịch bản** (mục 3.6).
+- **Màu log theo nguồn** (có chú thích ở đầu khung): ⏱ telemetry tự gửi 10s (xanh mờ) · 🧪 telemetry do kịch bản
+  môi trường (tím) · ↑ telemetry ngay sau lệnh (xanh) · ↓ lệnh (xanh dương) · ↑ config (vàng) · ⚠ lệnh bật / đèn
+  auto bị `batt_cut` chặn (cam) · ✗ lỗi (đỏ). Khi `batt_cut`: băng đỏ "PIN CẠN" trên cảnh.
+- **Hàng nút kịch bản** (mục 3.6). Reset gửi lại config để server không giữ ngưỡng cũ.
+- **Khung "🤖 Chế độ auto & ngưỡng":** nút Bật/Tắt auto + 9 ngưỡng (tưới: `soil_on_pct`, `soil_off_pct`,
+  `pump_max_run_s`, `pump_cooldown_s`; đèn: `lux_on`, `lux_off`, `light_auto_pwm`; pin: `batt_warn_pct`,
+  `batt_recover_pct`). Ô lấy giá trị thiết bị ảo đang dùng; "💾 Lưu ngưỡng" chỉ gửi ô đã sửa qua
+  `PUT /api/control/{id}/config` (server → MQTT → thiết bị clamp → echo config). Ô đang sửa không bị ghi đè mỗi tick.
 - **Hàng nút "Điều khiển như App":** Tưới, Tắt bơm, Bật đèn, Tắt đèn, Bật auto, Tắt auto. Các nút
   gọi `/api/control/{id}/water|light|auto` và `POST /api/control/{id}` `{"mode":"manual"}` trên server
   bằng token của tab "Kết nối". Nhờ vậy demo được trọn luồng App → server → MQTT → thiết bị.
