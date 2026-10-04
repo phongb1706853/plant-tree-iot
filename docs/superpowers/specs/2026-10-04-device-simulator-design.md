@@ -162,7 +162,7 @@ firmware, để demo phản hồi tức thì).
 | Nút | Ép | Kết quả mong đợi trên server |
 |---|---|---|
 | 🏜 Đất khô | soil = 15 | Tự tưới: `{"pump":true,"mode":"auto"}` (nếu đang auto và hết cooldown) |
-| 🚱 Hết nước / 💧 Đổ nước | `water_ok` = false / true | Notify `water.empty` |
+| 🚱 Hết nước / 💧 Đổ nước | `water_ok` = false / true | Notify `water.empty`; server không bơm khi bồn cạn (đang bơm thì tắt); đổ nước lại → xoá cooldown, đất khô được tưới ngay |
 | 🪫 Pin yếu | pin 15% | Notify `battery.low` |
 | 🔌 Pin cạn | pin 0% (volt 6.4 ≤ `batt_crit_v`, bật `batt_cut`) | Notify `battery.cut`, tắt bơm và đèn |
 | 🔋 Sạc đầy | pin 100% | `batt_full`; nếu đang `batt_cut` thì hết `batt_cut` |

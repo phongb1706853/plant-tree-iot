@@ -332,7 +332,7 @@ curl -X POST http://localhost:8000/api/assistant/v1/chat/completions \
 ### Ai quyết định tưới / chiếu sáng?
 
 - **SERVER quyết định** khi mode server giữ là `auto` (`DeviceModeStore`), theo ngưỡng thiết bị báo lên (`xmini/config` → DeviceConfig; thiếu thì mặc định):
-  - Tưới: `soil_percent` < `soil_on_pct` → `{"pump":true,"mode":"auto"}`; > `soil_off_pct` → tắt; có cooldown `pump_cooldown_s`.
+  - Tưới: `soil_percent` < `soil_on_pct` → `{"pump":true,"mode":"auto"}`; > `soil_off_pct` → tắt; có cooldown `pump_cooldown_s` sau mỗi lượt bơm CÓ nước. Bồn cạn (`water_ok=false`) → không bật, đang bơm thì tắt (tránh chạy khô); đổ nước lại → xoá cooldown, đất khô được tưới ngay. Pin cạn (`batt_cut`) → không bật.
   - Đèn: lux xuống dưới `lux_on` → `{"light":true,"light_pwm":<light_auto_pwm>,"mode":"auto"}`; lên trên `lux_off` → `{"light":false,"mode":"auto"}`. Chỉ ra lệnh lúc VƯỢT ngưỡng (lệnh tắt tay ban đêm được giữ); xét lại theo mức lux khi chuyển sang auto, hết `batt_cut`, đổi ngưỡng lux. Đang `batt_cut` thì không gửi.
 - Muốn đổi hành vi auto → ghi ngưỡng qua `PUT /api/control/{deviceId}/config` (`{"config":{...}}`).
 - Có thể can thiệp **thủ công** (ép MANUAL): `pump` / `light` / `light_pwm` / `mode` / `message` qua `POST /api/control/{deviceId}`.

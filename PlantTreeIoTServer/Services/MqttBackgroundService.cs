@@ -44,6 +44,8 @@ public class MqttBackgroundService : BackgroundService
     private readonly object _stateLock = new();
     private readonly Dictionary<string, bool?> _lastPumpOn = new();
     private readonly Dictionary<string, DateTime> _cooldownUntil = new();
+    // _lastWaterOk: water_ok ở telemetry trước — lượt bơm chạy khô không mở cooldown, đổ nước lại thì xoá cooldown.
+    private readonly Dictionary<string, bool?> _lastWaterOk = new();
 
     // Trạng thái đèn auto theo từng thiết bị (đọc/ghi trong _stateLock): lux ở telemetry trước (phát hiện VƯỢT ngưỡng)
     // và bối cảnh trước (mode/batt_cut/ngưỡng) để biết khi nào xét lại theo MỨC lux. Xem AutoLightDecider.
@@ -340,9 +342,17 @@ public class MqttBackgroundService : BackgroundService
         bool cooldownActive;
         lock (_stateLock)
         {
-            if (_lastPumpOn.TryGetValue(deviceId, out var prev) && prev == true && telemetry.PumpOn == false)
+            bool? prevPumpOn = _lastPumpOn.TryGetValue(deviceId, out var pp) ? pp : null;
+            bool? prevWaterOk = _lastWaterOk.TryGetValue(deviceId, out var pw) ? pw : null;
+
+            // Lượt bơm có nước vừa xong -> mở cooldown (lượt chạy khô không tính). Đổ nước lại -> xoá cooldown.
+            if (AutoWateringDecider.ShouldStartCooldown(prevPumpOn, telemetry.PumpOn, prevWaterOk, telemetry.WaterOk))
                 _cooldownUntil[deviceId] = DateTime.UtcNow.AddSeconds(cooldownS);
+            if (AutoWateringDecider.ShouldClearCooldown(prevWaterOk, telemetry.WaterOk))
+                _cooldownUntil.Remove(deviceId);
+
             _lastPumpOn[deviceId] = telemetry.PumpOn;
+            _lastWaterOk[deviceId] = telemetry.WaterOk;
 
             cooldownActive = _cooldownUntil.TryGetValue(deviceId, out var until) && DateTime.UtcNow < until;
         }
@@ -351,7 +361,8 @@ public class MqttBackgroundService : BackgroundService
         // nhận pump/light nên telemetry không đáng tin làm nguồn sự thật cho auto).
         var serverMode = await _modeStore.GetAsync(deviceId);
         var action = AutoWateringDecider.Decide(
-            serverMode, telemetry.SoilPercent, telemetry.PumpOn, onPct, offPct, cooldownActive);
+            serverMode, telemetry.SoilPercent, telemetry.PumpOn, onPct, offPct, cooldownActive,
+            telemetry.WaterOk, telemetry.BattCut);
         if (action == PumpAction.None)
             return;
 

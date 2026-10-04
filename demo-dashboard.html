@@ -2424,7 +2424,7 @@ dotnet run --project PlantTreeIoTServer --launch-profile http</pre>
       <tr><td>5</td><td>Ngưỡng “bật khi đất &lt;” = 40 → 💾 Lưu ngưỡng</td><td>↓ <code>{"config":{"soil_on_pct":40}}</code> → ↑ config echo; server tự tưới theo ngưỡng mới. Giá trị quá giới hạn bị kẹp (PWM 999 → 255).</td></tr>
       <tr><td>6</td><td>🪫 Pin yếu</td><td>Pin màu cam 15%; 🔔 “Pin yếu · Pin 15%”; bơm/đèn vẫn chạy.</td></tr>
       <tr><td>7</td><td>🔌 Pin cạn → 💡 Bật đèn → 🔋 Sạc đầy</td><td>Băng đỏ PIN CẠN, tải bị cắt, log ⚠ “bỏ qua light:true”; 🔔 “Pin cạn — đã ngắt tải”. Sạc đầy → dùng lại bình thường.</td></tr>
-      <tr><td>8</td><td>🚱 Hết nước → 💧 Đổ nước</td><td>Bồn “HẾT NƯỚC”, bơm chạy không làm đất tăng; 🔔 “Bồn hết nước”.</td></tr>
+      <tr><td>8</td><td>🚱 Hết nước → 🏜 Đất khô → 💧 Đổ nước</td><td>Bồn “HẾT NƯỚC”, 🔔 “Bồn hết nước”; server KHÔNG bơm khi bồn cạn (đang bơm thì tắt). Đổ nước xong, đất còn khô → server tưới ngay (↓ <code>{"pump":true,…}</code>).</td></tr>
       <tr><td>9</td><td>📴 Mất kết nối (hoặc ■ Stop) → chờ ~4 phút → 📶 Kết nối lại</td><td>Ngừng gửi; sau ~240s 🔔 “Thiết bị mất kết nối”; kết nối lại → gửi lại config + telemetry.</td></tr>
       <tr><td>10</td><td>(Tuỳ chọn) tick 📤 Gửi cả sang Notify thật</td><td>“✓ đang gửi cả sang Notify thật”, hoặc ⚠ nếu server chưa có <code>NOTIFY_URL</code>/<code>NOTIFY_API_KEY</code>.</td></tr>
       <tr><td>11</td><td>Suốt quá trình (xem trên MQTTx)</td><td>Không có message nào trên <code>xmini/control</code> do thiết bị ảo gây ra.</td></tr>
@@ -2437,7 +2437,7 @@ dotnet run --project PlantTreeIoTServer --launch-profile http</pre>
       <tr><td>“Token hết hạn…” / “ID đã thuộc user khác”</td><td>Đăng nhập lại / đổi Device ID (vd <code>SIM_Zone2</code>).</td></tr>
       <tr><td>Badge “MQTT từ chối đăng nhập”</td><td>Sai user/password (phân biệt hoa thường) — sửa ở ⚙️, trang tự thử lại mỗi 5s.</td></tr>
       <tr><td>Đèn/bơm không bật, log ⚠ “bỏ qua”</td><td>Đang pin cạn → bấm 🔋 Sạc đầy.</td></tr>
-      <tr><td>Đất khô mà không tự tưới</td><td>Đang MANUAL, hoặc trong 300s nghỉ sau lần tưới trước, hoặc đất chưa xuống dưới ngưỡng “bật khi đất &lt;”.</td></tr>
+      <tr><td>Đất khô mà không tự tưới</td><td>Đang MANUAL; hoặc bồn cạn / pin cạn (server không bơm); hoặc trong 300s nghỉ sau lần tưới có nước trước đó; hoặc đất chưa xuống dưới ngưỡng “bật khi đất &lt;”.</td></tr>
       <tr><td>Khung Thông báo trống</td><td>Chưa bấm Bật; server chưa restart sau khi cập nhật code; “mất kết nối” cần ~240s.</td></tr>
       <tr><td><code>dotnet test</code> báo MSB3027 (file bị khoá)</td><td>Server đang chạy giữ file exe → dừng server, hoặc thêm <code>--artifacts-path &lt;thư mục tạm&gt;</code>.</td></tr>
       <tr><td>Tải lại trang thì thiết bị ảo dừng</td><td>Trạng thái chỉ nằm trong trang → bấm Start lại (dữ liệu trên server vẫn còn).</td></tr>
