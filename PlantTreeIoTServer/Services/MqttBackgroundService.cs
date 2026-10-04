@@ -17,6 +17,8 @@ namespace PlantTreeIoTServer.Services;
 /// ngưỡng (DeviceConfig, fallback mặc định) rồi publish {"pump":..., "mode":"auto"} xuống xmini/control
 /// khi cờ mode do server giữ (DeviceModeStore) đang "auto" (logic ở AutoWateringDecider). Kèm mode:"auto"
 /// để firmware không rớt khỏi auto khi nhận pump. Điều khiển tay vẫn qua ControlController.
+/// Thiết bị ẢO (SIM_*, giả lập trong demo-dashboard) dùng xmini-sim/{id}/sensor_data|config — cùng
+/// pipeline, chỉ khác cách lấy deviceId (từ topic) và phải đã đăng ký trên server này. Xem SimTopics.
 /// </summary>
 public class MqttBackgroundService : BackgroundService
 {
@@ -140,9 +142,13 @@ public class MqttBackgroundService : BackgroundService
                     var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
                         .WithTopicFilter(TopicSensorData, MqttQualityOfServiceLevel.AtMostOnce)
                         .WithTopicFilter(TopicConfig, MqttQualityOfServiceLevel.AtMostOnce)
+                        // Thiết bị ảo SIM_* (namespace riêng theo từng thiết bị, xem SimTopics).
+                        .WithTopicFilter(SimTopics.SensorDataFilter, MqttQualityOfServiceLevel.AtMostOnce)
+                        .WithTopicFilter(SimTopics.ConfigFilter, MqttQualityOfServiceLevel.AtMostOnce)
                         .Build();
                     await _mqttClient.SubscribeAsync(subscribeOptions, stoppingToken);
-                    _logger.LogInformation("Subscribed to {S} and {C} (QoS 0)", TopicSensorData, TopicConfig);
+                    _logger.LogInformation("Subscribed to {S}, {C}, {SimS}, {SimC} (QoS 0)",
+                        TopicSensorData, TopicConfig, SimTopics.SensorDataFilter, SimTopics.ConfigFilter);
                 }
             }
             catch (Exception ex)
@@ -178,6 +184,13 @@ public class MqttBackgroundService : BackgroundService
                 await HandleSensorDataAsync(payload);
             else if (topic == TopicConfig)
                 await HandleConfigAsync(payload);
+            else if (SimTopics.TryParse(topic, out var simDeviceId, out var simKind))
+            {
+                if (simKind == SimTopics.KindSensorData)
+                    await HandleSimSensorDataAsync(simDeviceId, payload);
+                else
+                    await HandleSimConfigAsync(simDeviceId, payload);
+            }
             else
                 _logger.LogDebug("Ignoring message on unexpected topic {Topic}", topic);
         }
@@ -197,10 +210,37 @@ public class MqttBackgroundService : BackgroundService
         }
 
         _lastSeenDeviceId = telemetry.DeviceId;
+        await ProcessTelemetryAsync(telemetry);
+    }
 
+    // Thiết bị ảo: chỉ nhận khi device_id khớp topic VÀ thiết bị có trong DB của server NÀY — server khác
+    // cùng nghe broker (vd Mac) sẽ bỏ qua thiết bị ảo không phải của mình. KHÔNG ghi _lastSeenDeviceId,
+    // để xmini/config của thiết bị THẬT không bị gán nhầm sang thiết bị ảo.
+    private async Task HandleSimSensorDataAsync(string deviceId, string payload)
+    {
+        var telemetry = JsonSerializer.Deserialize<XminiTelemetry>(payload, JsonOpts);
+        if (!SimTopics.PayloadMatchesTopic(deviceId, telemetry?.DeviceId))
+        {
+            _logger.LogWarning("Sim telemetry on topic of {DeviceId} carries device_id={PayloadId}, skipping",
+                deviceId, telemetry?.DeviceId);
+            return;
+        }
+
+        if (await _mongoDbService.GetDeviceAsync(deviceId) == null)
+        {
+            _logger.LogDebug("Sim telemetry for {DeviceId} not registered on this server, skipping", deviceId);
+            return;
+        }
+
+        await ProcessTelemetryAsync(telemetry!);
+    }
+
+    // Pipeline chung cho telemetry thật và ảo: lưu, lastSeen, Notify, tự tưới.
+    private async Task ProcessTelemetryAsync(XminiTelemetry telemetry)
+    {
         var sensorData = telemetry.ToSensorData();
         await _mongoDbService.InsertSensorDataAsync(sensorData);
-        await _mongoDbService.UpdateDeviceLastSeenAsync(telemetry.DeviceId);
+        await _mongoDbService.UpdateDeviceLastSeenAsync(telemetry.DeviceId!);
 
         _logger.LogInformation(
             "Telemetry from {DeviceId}: mode={Mode} soil={Soil}% light={Lux}lux batt={Batt}% pump={Pump} lightOn={Light}",
@@ -342,5 +382,26 @@ public class MqttBackgroundService : BackgroundService
 
         await _mongoDbService.UpsertDeviceConfigAsync(envelope.Config.ToDeviceConfig(deviceId));
         _logger.LogInformation("Stored device config for {DeviceId} from xmini/config", deviceId);
+    }
+
+    // Config thiết bị ảo: deviceId lấy TỪ TOPIC (không đoán theo telemetry gần nhất như xmini/config thật).
+    private async Task HandleSimConfigAsync(string deviceId, string payload)
+    {
+        var envelope = JsonSerializer.Deserialize<XminiConfigEnvelope>(payload, JsonOpts);
+        if (envelope?.Config == null)
+        {
+            _logger.LogWarning("Sim config for {DeviceId} without 'config' object, skipping", deviceId);
+            return;
+        }
+
+        if (await _mongoDbService.GetDeviceAsync(deviceId) == null)
+        {
+            _logger.LogDebug("Sim config for {DeviceId} not registered on this server, skipping", deviceId);
+            return;
+        }
+
+        await _mongoDbService.UpsertDeviceConfigAsync(envelope.Config.ToDeviceConfig(deviceId));
+        _logger.LogInformation("Stored device config for {DeviceId} from {Topic}", deviceId,
+            $"{SimTopics.Prefix}/{deviceId}/{SimTopics.KindConfig}");
     }
 }

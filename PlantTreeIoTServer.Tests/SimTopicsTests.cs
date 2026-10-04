@@ -55,4 +55,14 @@ public class SimTopicsTests
     [InlineData("other/SIM_Zone1/sensor_data")]
     public void TryParse_rejects_non_sim_topics(string topic)
         => Assert.False(SimTopics.TryParse(topic, out _, out _));
+
+    [Fact]
+    public void Payload_device_id_must_match_topic_exactly()
+    {
+        Assert.True(SimTopics.PayloadMatchesTopic("SIM_Zone1", "SIM_Zone1"));
+        Assert.False(SimTopics.PayloadMatchesTopic("SIM_Zone1", "SIM_Zone2"));
+        Assert.False(SimTopics.PayloadMatchesTopic("SIM_Zone1", "sim_zone1"));
+        Assert.False(SimTopics.PayloadMatchesTopic("SIM_Zone1", null));
+        Assert.False(SimTopics.PayloadMatchesTopic("ESP32S3_Zone1", "ESP32S3_Zone1")); // không phải id ảo
+    }
 }

@@ -49,4 +49,10 @@ public static class SimTopics
         kind = parts[2];
         return true;
     }
+
+    /// <summary>
+    /// Telemetry ảo chỉ hợp lệ khi device_id trong payload TRÙNG deviceId trong topic (chống nhầm/giả topic).
+    /// </summary>
+    public static bool PayloadMatchesTopic(string topicDeviceId, string? payloadDeviceId)
+        => IsSimDevice(topicDeviceId) && string.Equals(topicDeviceId, payloadDeviceId, StringComparison.Ordinal);
 }
