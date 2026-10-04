@@ -56,13 +56,14 @@ QoS 0, không retained (giống hợp đồng thật).
 
 1. **`SimTopics` (mới, hàm thuần)**
    - Hằng `Prefix = "xmini-sim"` và `DevicePrefix = "SIM_"`.
-   - `IsSimDevice(deviceId)`: id bắt đầu bằng `SIM_`.
-   - `ControlTopicFor(deviceId)` → `xmini-sim/{id}/control`.
+   - `IsSimDevice(deviceId)`: id bắt đầu bằng `SIM_` và có ít nhất 1 ký tự sau tiền tố.
+   - `ControlTopicFor(deviceId)`: thiết bị ảo → `xmini-sim/{id}/control`; còn lại → `xmini/control`.
+   - `PayloadMatchesTopic(topicDeviceId, payloadDeviceId)`: kiểm tra `device_id` trong payload trùng topic.
    - Filter subscribe: `xmini-sim/+/sensor_data` và `xmini-sim/+/config`.
    - `TryParse(topic, out deviceId, out kind)`: tách deviceId và loại message (`sensor_data` / `config`)
      từ topic.
-2. **`MqttPublisherService.PublishControlAsync`**: topic = `SimTopics.IsSimDevice(id) ?
-   SimTopics.ControlTopicFor(id) : "xmini/control"`. Payload không đổi. Vì mọi đường gửi lệnh (App
+2. **`MqttPublisherService.PublishControlAsync`**: topic = `SimTopics.ControlTopicFor(id)`. Payload
+   không đổi. Vì mọi đường gửi lệnh (App
    `/api/control/*`, MCP, AI chat, tự tưới) đều đi qua hàm này, thiết bị ảo tự động dùng được hết.
 3. **`MqttBackgroundService`**
    - Subscribe thêm 2 filter của `SimTopics`.
@@ -143,7 +144,7 @@ pump/light). Lý do: server đã làm chủ mode, còn lệnh tay chỉ đè lê
 3. `light_pwm` (0–255, clamp): đặt độ sáng.
 4. `mode` (`"auto"`/`"manual"`) hoặc `auto` (bool): **chỉ** các khoá này đổi mode.
 5. `config`: `{}` thì publish lại config hiện tại. `{...}` thì gộp các khoá hợp lệ, clamp (% về 0–100,
-   PWM 0–255, giây ≥ 0, volt 5.0–9.0), rồi publish config.
+   PWM 0–255, giây 0–3600, lux 0–65535, `soil_dry`/`soil_wet` 0–4095, volt 5.0–9.0), rồi publish config.
 6. `message` + `message_secs`: hiện chữ trên màn TFT ảo trong `message_secs` giây (0 = tới khi bị
    xoá). `""` để xoá.
 7. Khoá lạ: bỏ qua. JSON lỗi: ghi vào log, bỏ qua.
@@ -162,7 +163,7 @@ firmware, để demo phản hồi tức thì).
 | 🔋 Sạc đầy | pin 100% | `batt_full`; nếu đang `batt_cut` thì hết `batt_cut` |
 | 🌙 Ban đêm / ☀️ Ban ngày | lux 5 / 600 | Đèn auto bật / tắt |
 | 📴 Mất kết nối / 📶 Kết nối lại | **Ngắt hẳn MQTT** (không gửi, không nhận lệnh; mô phỏng vẫn chạy trong trang) / nối lại | Sau `NOTIFY_OFFLINE_SECONDS` (240s) thì có `device.offline`; nối lại thì server log online |
-| ↺ Reset | Về trạng thái ban đầu (mục 3.3) | |
+| ↺ Reset | Về trạng thái ban đầu (mục 3.3), **giữ nguyên mode** (mode là của server) | |
 
 ## 4. Giao diện tab "📟 Thiết bị ảo"
 
@@ -203,7 +204,13 @@ Mockup tham khảo: `.superpowers/brainstorm/614-1791101956/content/device-layou
 - `SimTopics.TryParse`: tách đúng deviceId và loại message từ `xmini-sim/SIM_Zone1/sensor_data` và
   `.../config`; từ chối `xmini/sensor_data`, `xmini-sim/x`, `xmini-sim/SIM_Zone1/control`, và id
   không có tiền tố `SIM_`.
-- Hàm chọn topic trong publisher: `SIM_*` đi topic ảo, id khác đi `xmini/control`.
+- `ControlTopicFor` (publisher dùng hàm này): `SIM_*` đi topic ảo, id khác đi `xmini/control`.
+- `PayloadMatchesTopic`: khớp đúng từng ký tự; `null` hoặc khác hoa thường thì false.
+
+**Node (lõi JS của thiết bị ảo, không cần cài gì: `node --test tests-js/sim-core.test.mjs`):** lõi mô phỏng nằm trong
+block `<script id="sim-core">` của dashboard (hàm thuần, không DOM/MQTT). Test nạp block đó từ file HTML
+và kiểm tra: 21 trường telemetry; pump/light không đổi mode; chỉ `mode`/`auto` đổi mode; tự tắt bơm;
+hết nước; `batt_cut`; đèn auto theo cạnh; config echo + clamp; message hết hạn; lệnh rác bị bỏ qua.
 
 **Test tay (checklist):**
 1. Chạy server local (`dotnet run`, profile `http`) với MongoDB local. Đăng nhập ở tab "Kết nối".
@@ -231,4 +238,4 @@ Mockup tham khảo: `.superpowers/brainstorm/614-1791101956/content/device-layou
 - Topic theo từng thiết bị cho ESP32 **thật** (`xmini/control` vẫn dùng chung, vẫn giữ giới hạn cũ).
 - REST endpoint `/api/simulator/*` hoặc app simulator chạy riêng (đã cân nhắc, không chọn).
 - Lưu bền trạng thái thiết bị ảo; phát hiện 2 tab cùng giả lập một ID.
-- Test tự động cho phần JS.
+- Test tự động cho phần giao diện/MQTT của tab (chỉ test lõi mô phỏng, xem mục 6).
