@@ -3244,7 +3244,7 @@ Liên hệ vấn đề kỹ thuật:
       if (last && last.kind === kind && last.topic === topic && last.payload === payload) {
         last.at = new Date(); last.count += 1;
       } else {
-        logEntries.unshift({ kind, topic, payload, at: new Date(), count: 1 });
+        logEntries.unshift({ kind, topic, payload, at: new Date(), count: 1, open: false });
         if (logEntries.length > LOG_MAX) logEntries.length = LOG_MAX;
       }
       renderLog();
@@ -3253,6 +3253,8 @@ Liên hệ vấn đề kỹ thuật:
       $('sim-log').replaceChildren(...logEntries.map(e => {
         const d = document.createElement('details');
         d.className = e.kind;
+        d.open = e.open; // giữ dòng đang mở khi log vẽ lại (mỗi tick / mỗi lệnh)
+        d.addEventListener('toggle', () => { e.open = d.open; });
         const s = document.createElement('summary');
         const arrow = { up: '↑', cfg: '↑', down: '↓', err: '✗' }[e.kind];
         const short = e.topic.replace(/^xmini-sim\/[^/]+\//, '');
