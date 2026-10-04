@@ -200,6 +200,23 @@ test('no-op commands report changed:false (prevents a command/telemetry storm)',
   assert.equal(Sim.applyControl(fresh(), { pump: true }, T0).changed, true);           // đổi thật
 });
 
+// Review #2: mqtt.js 5 mặc định KHÔNG thử lại khi broker từ chối CONNECT (sai user/pass).
+test('MQTT options keep retrying after a refused CONNACK', () => {
+  const o = Sim.mqttOptions('SIM_Zone1', 'u', 'p', () => 0.5);
+  assert.equal(o.reconnectOnConnackError, true);
+  assert.equal(o.reconnectPeriod, 5000);
+  assert.equal(o.username, 'u');
+  assert.equal(o.password, 'p');
+  assert.match(o.clientId, /^planttree-sim-SIM_Zone1-/);
+});
+
+test('MQTT errors get a readable reason for the badge', () => {
+  assert.match(Sim.mqttErrorReason({ code: 5, message: 'Connection refused: Not authorized' }), /user\/password/);
+  assert.match(Sim.mqttErrorReason({ code: 4, message: 'Bad username or password' }), /user\/password/);
+  assert.match(Sim.mqttErrorReason({ code: 135, message: 'Not authorized' }), /user\/password/);
+  assert.equal(Sim.mqttErrorReason({ message: 'boom' }), 'boom');
+});
+
 test('unknown scenario returns false', () => {
   assert.equal(Sim.applyScenario(fresh(), 'meteor'), false);
 });

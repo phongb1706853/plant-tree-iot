@@ -3167,8 +3167,29 @@ Liên hệ vấn đề kỹ thuật:
 
     const configPayload = s => ({ config: { ...s.config } });
 
+    // Tuỳ chọn mqtt.connect. reconnectOnConnackError: mqtt.js 5 mặc định KHÔNG thử lại khi broker từ chối
+    // CONNECT (sai user/pass) — bật để đúng spec "tự thử lại mỗi 5s"; bộ điều khiển nạp lại user/pass từ ô ⚙️
+    // trước mỗi lần thử nên sửa credential là tự nối được.
+    function mqttOptions(deviceId, username, password, rand) {
+      rand = rand || Math.random;
+      return {
+        username, password,
+        clientId: `planttree-sim-${deviceId}-${rand().toString(16).slice(2, 8)}`,
+        clean: true, reconnectPeriod: 5000, connectTimeout: 10000, reconnectOnConnackError: true,
+      };
+    }
+
+    // Lý do lỗi MQTT cho badge. Mã CONNACK: 4/134 sai user/pass, 5/135 Not authorized (3.1.1 / 5.0) —
+    // HiveMQ Cloud trả "Not authorized" khi sai user/pass.
+    function mqttErrorReason(err) {
+      const code = err && err.code;
+      if ([4, 5, 134, 135].includes(code)) return 'MQTT từ chối đăng nhập — kiểm tra user/password ở ⚙️ (trang tự thử lại mỗi 5s)';
+      return (err && err.message) || 'lỗi MQTT không rõ';
+    }
+
     window.SimCore = {
       DEFAULT_CONFIG, SCENARIOS, createState, applyControl, step, applyScenario, toTelemetry, configPayload, voltage,
+      mqttOptions, mqttErrorReason,
     };
   })();
 </script>
@@ -3186,6 +3207,8 @@ Liên hệ vấn đề kỹ thuật:
     const TICK_MS = 10000, LOG_MAX = 50;
 
     let st = null, client = null, tickTimer = null, linkDown = false;
+    let lastMqttError = null;  // lý do lỗi MQTT gần nhất (hiện trên badge khi đang thử lại)
+    let skipLogged = false;    // đã ghi "chưa nối MQTT" cho đợt mất kết nối này chưa (tránh lụt log mỗi tick)
     const logEntries = [];
 
     // --- Cấu hình MQTT: chỉ lưu localStorage, KHÔNG ghi vào file ---
@@ -3265,7 +3288,11 @@ Liên hệ vấn đề kỹ thuật:
       const tp = topics(st.deviceId);
       const topic = kind === 'config' ? tp.config : tp.sensor;
       const payload = JSON.stringify(kind === 'config' ? Sim.configPayload(st) : Sim.toTelemetry(st));
-      if (!client || !client.connected) { addLog('err', topic, 'Chưa nối MQTT — bỏ qua bản tin này'); return; }
+      if (!client || !client.connected) {
+        if (!skipLogged) addLog('err', topic, 'Chưa nối MQTT — bỏ qua các bản tin cho tới khi nối lại');
+        skipLogged = true;
+        return;
+      }
       client.publish(topic, payload, { qos: 0, retain: false }, err =>
         addLog(err ? 'err' : (kind === 'config' ? 'cfg' : 'up'), topic, err ? `${err.message} · ${payload}` : payload));
     }
@@ -3273,22 +3300,34 @@ Liên hệ vấn đề kỹ thuật:
     function connectMqtt() {
       const host = $('sim-mqtt-host').value.trim();
       const tp = topics(st.deviceId);
-      const c = mqtt.connect(`wss://${host}:8884/mqtt`, {
-        username: $('sim-mqtt-user').value.trim(),
-        password: $('sim-mqtt-pass').value,
-        clientId: `planttree-sim-${st.deviceId}-${Math.random().toString(16).slice(2, 8)}`,
-        clean: true, reconnectPeriod: 5000, connectTimeout: 10000,
-      });
+      const c = mqtt.connect(`wss://${host}:8884/mqtt`,
+        Sim.mqttOptions(st.deviceId, $('sim-mqtt-user').value.trim(), $('sim-mqtt-pass').value));
       client = c;
+      lastMqttError = null;
       c.on('connect', () => {
+        lastMqttError = null;
+        skipLogged = false;
         setBadge('● online (MQTT)', '#4ade80');
         c.subscribe(tp.control, { qos: 0 }, err => { if (err) addLog('err', tp.control, 'Subscribe lỗi: ' + err.message); });
         publish('config'); // như firmware: gửi cấu hình mỗi lần (re)connect
         publish('sensor');
       });
-      c.on('reconnect', () => { if (client === c) setBadge('… đang nối lại MQTT', '#fbbf24'); });
-      c.on('close', () => { if (client === c) setBadge('○ mất MQTT (tự thử lại mỗi 5s)', '#fca5a5'); });
-      c.on('error', err => addLog('err', tp.control, 'MQTT: ' + err.message));
+      c.on('reconnect', () => {
+        if (client !== c) return;
+        // Nạp lại user/pass từ ô ⚙️ — sửa credential sai là lần thử kế tiếp dùng luôn, không cần Stop/Start.
+        c.options.username = $('sim-mqtt-user').value.trim();
+        c.options.password = $('sim-mqtt-pass').value;
+        setBadge('… đang nối lại MQTT' + (lastMqttError ? ' — ' + lastMqttError : ''), '#fbbf24');
+      });
+      c.on('close', () => {
+        if (client === c) setBadge('○ mất MQTT — ' + (lastMqttError || 'tự thử lại mỗi 5s'), '#fca5a5');
+      });
+      c.on('error', err => {
+        if (client !== c) return; // lỗi muộn của client đã bỏ
+        lastMqttError = Sim.mqttErrorReason(err);
+        setBadge('✗ ' + lastMqttError, '#fca5a5');
+        addLog('err', 'mqtt', 'MQTT: ' + err.message);
+      });
       // TextDecoder: giải mã UTF-8 cho cả Buffer (mqtt.js) lẫn Uint8Array thuần.
       c.on('message', (topic, buf) => onControl(topic, new TextDecoder().decode(buf)));
     }
