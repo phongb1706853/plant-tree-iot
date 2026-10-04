@@ -49,3 +49,5 @@
 
 # Backups
 **/backups/
+# Mockup brainstorming (superpowers visual companion)
+.superpowers/
