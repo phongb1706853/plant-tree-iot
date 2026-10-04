@@ -3062,24 +3062,24 @@ Liên hệ vấn đề kỹ thuật:
     }
 
     // Áp lệnh từ xmini-sim/{id}/control. Thứ tự như firmware: pump, light_pwm, light, mode/auto, config, message.
+    // changed = trạng thái THẤY ĐƯỢC trong telemetry đã đổi. Lệnh không đổi gì (bơm đã bật, batt_cut bỏ qua
+    // bơm, cùng mode...) trả changed:false để bộ điều khiển KHÔNG gửi telemetry ngay — nếu không, server
+    // (auto + đất khô) sẽ gửi lại {"pump":true} liền, thành vòng lặp lệnh/telemetry vô hạn.
     function applyControl(s, cmd, now) {
       const r = { changed: false, publishConfig: false };
       if (!cmd || typeof cmd !== 'object' || Array.isArray(cmd)) return r;
+      const before = JSON.stringify(toTelemetry(s));
 
-      if (typeof cmd.pump === 'boolean') {
-        r.changed = true;
-        if (!(cmd.pump && s.battCut)) { s.pumpOn = cmd.pump; s.pumpOnSince = cmd.pump ? now : null; }
+      if (typeof cmd.pump === 'boolean' && !(cmd.pump && s.battCut)) {
+        s.pumpOn = cmd.pump;
+        s.pumpOnSince = cmd.pump ? now : null; // bật lại khi đang chạy = đếm lại pump_max_run_s (như firmware)
       }
       if (typeof cmd.light_pwm === 'number' && Number.isFinite(cmd.light_pwm)) {
-        r.changed = true;
         s.lightPwm = clamp(Math.round(cmd.light_pwm), 0, 255);
       }
-      if (typeof cmd.light === 'boolean') {
-        r.changed = true;
-        if (!(cmd.light && s.battCut)) s.lightOn = cmd.light;
-      }
-      if (cmd.mode === 'auto' || cmd.mode === 'manual') { r.changed = true; s.mode = cmd.mode; }
-      else if (typeof cmd.auto === 'boolean') { r.changed = true; s.mode = cmd.auto ? 'auto' : 'manual'; }
+      if (typeof cmd.light === 'boolean' && !(cmd.light && s.battCut)) s.lightOn = cmd.light;
+      if (cmd.mode === 'auto' || cmd.mode === 'manual') s.mode = cmd.mode;
+      else if (typeof cmd.auto === 'boolean') s.mode = cmd.auto ? 'auto' : 'manual';
 
       if (cmd.config && typeof cmd.config === 'object' && !Array.isArray(cmd.config)) {
         r.publishConfig = true; // {} = yêu cầu gửi lại; {...} = gộp + clamp rồi echo
@@ -3090,12 +3090,12 @@ Liên hệ vấn đề kỹ thuật:
           s.config[k] = clamp(val, range[0], range[1]);
         }
       }
-      if (typeof cmd.message === 'string') {
-        r.changed = true;
+      if (typeof cmd.message === 'string') { // chỉ hiện trên TFT, không nằm trong telemetry
         s.message = cmd.message;
         const secs = typeof cmd.message_secs === 'number' ? Math.max(0, cmd.message_secs) : 0;
         s.messageUntil = cmd.message && secs > 0 ? now + secs * 1000 : null;
       }
+      r.changed = JSON.stringify(toTelemetry(s)) !== before;
       return r;
     }
 

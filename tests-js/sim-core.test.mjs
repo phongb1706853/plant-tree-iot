@@ -184,6 +184,22 @@ test('reset restores the initial state but keeps the server-owned mode', () => {
   assert.equal(s.pumpOn, false);
 });
 
+// Review #1: lệnh không đổi gì trong telemetry phải trả changed:false — nếu không, thiết bị ảo gửi telemetry
+// ngay -> server (auto, đất khô, batt_cut) lại gửi {"pump":true} -> vòng lặp vô hạn ở tốc độ mạng.
+test('no-op commands report changed:false (prevents a command/telemetry storm)', () => {
+  const cut = fresh('auto');
+  Sim.applyScenario(cut, 'battery-cut');
+  assert.equal(Sim.applyControl(cut, { pump: true, mode: 'auto' }, T0).changed, false); // batt_cut bỏ qua bơm
+
+  const on = fresh('auto');
+  Sim.applyControl(on, { pump: true }, T0);
+  assert.equal(Sim.applyControl(on, { pump: true, mode: 'auto' }, T0 + 1000).changed, false); // đã bật sẵn
+
+  assert.equal(Sim.applyControl(fresh('auto'), { mode: 'auto' }, T0).changed, false); // cùng mode
+  assert.equal(Sim.applyControl(fresh(), { light_pwm: 180 }, T0).changed, false);      // cùng PWM
+  assert.equal(Sim.applyControl(fresh(), { pump: true }, T0).changed, true);           // đổi thật
+});
+
 test('unknown scenario returns false', () => {
   assert.equal(Sim.applyScenario(fresh(), 'meteor'), false);
 });
