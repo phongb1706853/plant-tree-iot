@@ -419,7 +419,7 @@
   .sim-log .err summary { color: #fca5a5; }
   .sim-log .tick summary { color: #5f8f6f; }   /* telemetry tự gửi 10s: xanh mờ */
   .sim-log .scn summary { color: #c084fc; }    /* telemetry do kịch bản môi trường: tím */
-  .sim-log .warn summary { color: #fb923c; }   /* lệnh / đèn auto bị pin cạn chặn: cam */
+  .sim-log .warn summary { color: #fb923c; }   /* lệnh bật bị pin cạn chặn: cam */
   .sim-log-legend .lg { white-space: nowrap; }
   .sim-log-legend .lg.tick { color: #5f8f6f; }
   .sim-log-legend .lg.scn { color: #c084fc; }
@@ -2419,8 +2419,8 @@ dotnet run --project PlantTreeIoTServer --launch-profile http</pre>
       <tr><th>#</th><th>Thao tác</th><th>Kết quả mong đợi</th></tr>
       <tr><td>1</td><td>Mode AUTO → 🏜 Đất khô</td><td>↓ <code>{"pump":true,"mode":"auto"}</code>; giọt nước, đất +8%/10s; bơm tự tắt sau 20s; nghỉ 300s mới tự tưới lại.</td></tr>
       <tr><td>2</td><td>Điều khiển như App: 🚿 Tưới · ⏹ Tắt bơm · 💡 Bật đèn · 🌑 Tắt đèn</td><td><code>✓ 200</code>, log ↓ lệnh rồi ↑ telemetry; mode giữ nguyên.</td></tr>
-      <tr><td>3</td><td>✋ Tắt auto → 🤖 Bật auto</td><td>Mode MANUAL ↔ AUTO. Bật auto lúc trời tối → đèn bật ngay.</td></tr>
-      <tr><td>4</td><td>🌙 Ban đêm / ☀️ Ban ngày (AUTO)</td><td>Đèn tự bật PWM 180 / tự tắt. Tắt đèn tay ban đêm → giữ tắt tới lần vượt ngưỡng sau.</td></tr>
+      <tr><td>3</td><td>✋ Tắt auto → 🤖 Bật auto</td><td>Mode MANUAL ↔ AUTO. Bật auto lúc trời tối → server gửi ↓ <code>{"light":true,…}</code> ở telemetry kế tiếp → đèn bật.</td></tr>
+      <tr><td>4</td><td>🌙 Ban đêm / ☀️ Ban ngày (AUTO)</td><td>Server gửi ↓ <code>{"light":true,"light_pwm":180,"mode":"auto"}</code> → đèn bật / ↓ <code>{"light":false,…}</code> → tắt (thiết bị không tự bật). Tắt đèn tay ban đêm → giữ tắt tới lần vượt ngưỡng sau.</td></tr>
       <tr><td>5</td><td>Ngưỡng “bật khi đất &lt;” = 40 → 💾 Lưu ngưỡng</td><td>↓ <code>{"config":{"soil_on_pct":40}}</code> → ↑ config echo; server tự tưới theo ngưỡng mới. Giá trị quá giới hạn bị kẹp (PWM 999 → 255).</td></tr>
       <tr><td>6</td><td>🪫 Pin yếu</td><td>Pin màu cam 15%; 🔔 “Pin yếu · Pin 15%”; bơm/đèn vẫn chạy.</td></tr>
       <tr><td>7</td><td>🔌 Pin cạn → 💡 Bật đèn → 🔋 Sạc đầy</td><td>Băng đỏ PIN CẠN, tải bị cắt, log ⚠ “bỏ qua light:true”; 🔔 “Pin cạn — đã ngắt tải”. Sạc đầy → dùng lại bình thường.</td></tr>
@@ -2566,7 +2566,7 @@ node --test "tests-js/*.test.mjs"</pre>
         <label>bơm chạy tối đa <input type="number" data-key="pump_max_run_s" min="0" max="3600"> s</label>
         <label>nghỉ giữa 2 lần tưới <input type="number" data-key="pump_cooldown_s" min="0" max="3600"> s</label>
       </div>
-      <div class="sim-thr-group"><b>Đèn (thiết bị tự bật khi trời tối)</b>
+      <div class="sim-thr-group"><b>Đèn (server tự bật/tắt theo ngưỡng này)</b>
         <label>bật khi ánh sáng &lt; <input type="number" data-key="lux_on" min="0" max="65535"> lux</label>
         <label>tắt khi ánh sáng &gt; <input type="number" data-key="lux_off" min="0" max="65535"> lux</label>
         <label>độ sáng auto <input type="number" data-key="light_auto_pwm" min="0" max="255"> /255</label>
@@ -3201,12 +3201,11 @@ node --test "tests-js/*.test.mjs"</pre>
         deviceId,
         mode: mode === 'manual' ? 'manual' : 'auto',
         soil: INITIAL.soil, tempC: INITIAL.tempC, humidity: INITIAL.humidity,
-        pressure: INITIAL.pressure, lux: INITIAL.lux, prevLux: INITIAL.lux,
+        pressure: INITIAL.pressure, lux: INITIAL.lux,
         battPct: INITIAL.battPct, waterOk: true,
         pumpOn: false, pumpOnSince: null,
         lightOn: false, lightPwm: DEFAULT_CONFIG.light_auto_pwm,
         lowBatt: false, battFull: false, battCut: false,
-        autoLightBlocked: false, // đèn auto muốn bật (trời tối) nhưng batt_cut chặn — bộ điều khiển ghi ⚠ rồi xoá
         message: '', messageUntil: null,
         config: { ...DEFAULT_CONFIG },
       };
@@ -3217,7 +3216,7 @@ node --test "tests-js/*.test.mjs"</pre>
 
     // Cờ pin có trễ (hysteresis). batt_cut cắt bơm + đèn ở MỌI mode.
     function updateBatteryFlags(s) {
-      const c = s.config, v = voltage(s), wasCut = s.battCut;
+      const c = s.config, v = voltage(s);
       if (s.battPct < c.batt_warn_pct) s.lowBatt = true;
       else if (s.battPct >= c.batt_recover_pct) s.lowBatt = false;
       if (v >= c.batt_full_on_v) s.battFull = true;
@@ -3225,32 +3224,10 @@ node --test "tests-js/*.test.mjs"</pre>
       if (v <= c.batt_crit_v) s.battCut = true;
       else if (s.battCut && v >= c.batt_crit_recover_v) s.battCut = false;
       if (s.battCut) { s.pumpOn = false; s.pumpOnSince = null; s.lightOn = false; }
-      else if (wasCut) autoLightLevel(s); // vừa hết pin cạn: xét lại đèn auto theo mức sáng hiện tại
     }
 
-    // Đèn auto theo MỨC lux hiện tại — chỉ gọi lúc "vào lại auto": chuyển manual -> auto, hết batt_cut khi đang
-    // auto, đổi lux_on/lux_off. (Tick thường vẫn chỉ xét lúc VƯỢT ngưỡng để lệnh tắt tay ban đêm được giữ.)
-    // Nằm giữa 2 ngưỡng (lux_on..lux_off) thì giữ nguyên.
-    function autoLightLevel(s) {
-      const c = s.config;
-      if (s.mode !== 'auto' || s.battCut) return;
-      if (s.lux < c.lux_on) { s.lightOn = true; s.lightPwm = c.light_auto_pwm; }
-      else if (s.lux > c.lux_off) s.lightOn = false;
-    }
-
-    // Đèn auto: CHỈ ở mode auto, và chỉ phản ứng lúc lux VƯỢT ngưỡng (edge) — lệnh tay được giữ
-    // tới lần vượt ngưỡng kế tiếp.
-    function autoLight(s) {
-      const c = s.config;
-      if (s.mode === 'auto') {
-        if (s.prevLux >= c.lux_on && s.lux < c.lux_on) {
-          if (s.battCut) s.autoLightBlocked = true; // muốn bật nhưng pin cạn đã cắt tải
-          else { s.lightOn = true; s.lightPwm = c.light_auto_pwm; }
-        }
-        else if (s.prevLux <= c.lux_off && s.lux > c.lux_off) { s.lightOn = false; }
-      }
-      s.prevLux = s.lux;
-    }
+    // ĐÈN AUTO KHÔNG Ở ĐÂY: server quyết định (AutoLightDecider) rồi gửi {"light":…,"light_pwm":…,"mode":"auto"}
+    // xuống — thiết bị ảo chỉ làm theo lệnh, giống tự tưới.
 
     // Áp lệnh từ xmini-sim/{id}/control. Thứ tự như firmware: pump, light_pwm, light, mode/auto, config, message.
     // changed = trạng thái THẤY ĐƯỢC trong telemetry đã đổi. Lệnh không đổi gì (bơm đã bật, batt_cut bỏ qua
@@ -3276,11 +3253,9 @@ node --test "tests-js/*.test.mjs"</pre>
         if (cmd.light && s.battCut) r.ignored.push('light');
         else s.lightOn = cmd.light;
       }
-      const modeBefore = s.mode;
       if (cmd.mode === 'auto' || cmd.mode === 'manual') s.mode = cmd.mode;
       else if (typeof cmd.auto === 'boolean') s.mode = cmd.auto ? 'auto' : 'manual';
 
-      const luxBefore = `${s.config.lux_on}/${s.config.lux_off}`;
       if (cmd.config && typeof cmd.config === 'object' && !Array.isArray(cmd.config)) {
         r.publishConfig = true; // {} = yêu cầu gửi lại; {...} = gộp + clamp rồi echo
         for (const [k, v] of Object.entries(cmd.config)) {
@@ -3290,11 +3265,6 @@ node --test "tests-js/*.test.mjs"</pre>
           s.config[k] = clamp(val, range[0], range[1]);
         }
       }
-      // Vào lại auto (manual -> auto) hoặc đổi ngưỡng lux: xét đèn theo mức sáng hiện tại. Lệnh light tường minh
-      // trong CÙNG lệnh thì thắng (không ghi đè).
-      const enteredAuto = modeBefore !== 'auto' && s.mode === 'auto';
-      const luxChanged = `${s.config.lux_on}/${s.config.lux_off}` !== luxBefore;
-      if ((enteredAuto || luxChanged) && typeof cmd.light !== 'boolean') autoLightLevel(s);
       if (typeof cmd.message === 'string') { // chỉ hiện trên TFT, không nằm trong telemetry
         s.message = cmd.message;
         const secs = typeof cmd.message_secs === 'number' ? Math.max(0, cmd.message_secs) : 0;
@@ -3318,7 +3288,6 @@ node --test "tests-js/*.test.mjs"</pre>
         s.pumpOn = false; s.pumpOnSince = null; // tự tắt an toàn (giống firmware)
       }
       if (s.messageUntil != null && now >= s.messageUntil) { s.message = ''; s.messageUntil = null; }
-      autoLight(s);
       updateBatteryFlags(s);
     }
 
@@ -3336,7 +3305,6 @@ node --test "tests-js/*.test.mjs"</pre>
         case 'reset': Object.assign(s, createState(s.deviceId, s.mode)); break;
         default: return false;
       }
-      autoLight(s);
       updateBatteryFlags(s);
       return true;
     }
@@ -3524,7 +3492,7 @@ node --test "tests-js/*.test.mjs"</pre>
     // --- Log MQTT: dựng DOM bằng textContent (payload từ broker KHÔNG bao giờ được chèn như HTML).
     // Dòng trùng liên tiếp (vd lỗi kết nối mỗi 5s) được gộp thành ×N để log không bị lụt.
     // kind (= màu): tick (telemetry tự gửi 10s) · scn (telemetry do kịch bản môi trường) · up (telemetry sau lệnh)
-    //               · down (lệnh nhận) · cfg (config) · warn (lệnh/đèn auto bị pin cạn chặn) · err (lỗi).
+    //               · down (lệnh nhận) · cfg (config) · warn (lệnh bật bị pin cạn chặn) · err (lỗi).
     function addLog(kind, topic, payload, label) {
       const last = logEntries[0];
       if (last && last.kind === kind && last.topic === topic && last.payload === payload) {
@@ -3595,13 +3563,6 @@ node --test "tests-js/*.test.mjs"</pre>
         : addLog(logKind, topic, payload, logLabel));
     }
 
-    // Đèn auto muốn bật (trời tối) nhưng pin cạn đã cắt tải -> ghi ⚠ một lần.
-    function logBlockedAutoLight() {
-      if (!st || !st.autoLightBlocked) return;
-      st.autoLightBlocked = false;
-      addLog('warn', 'auto', 'đèn auto không bật dù trời tối — pin cạn (batt_cut) đã cắt tải. Bấm 🔋 Sạc đầy');
-    }
-
     function connectMqtt() {
       const host = $('sim-mqtt-host').value.trim();
       const tp = topics(st.deviceId);
@@ -3653,7 +3614,6 @@ node --test "tests-js/*.test.mjs"</pre>
 
     function tick() {
       Sim.step(st, TICK_MS / 1000, Date.now());
-      logBlockedAutoLight();
       publish('sensor', 'tick');
       render();
     }
@@ -3733,7 +3693,6 @@ node --test "tests-js/*.test.mjs"</pre>
         setBadge('… đang nối MQTT', '#93c5fd');
         connectMqtt(); // khi connect sẽ tự gửi config + telemetry
       } else if (Sim.applyScenario(st, name)) {
-        logBlockedAutoLight();
         if (name === 'reset') publish('config'); // config về mặc định -> báo server, tránh server giữ ngưỡng cũ
         publish('sensor', 'scn', label);
       }

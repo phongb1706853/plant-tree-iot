@@ -134,7 +134,7 @@ ngưỡng còn lại (`batt_recover_pct`, `soil_dry`, `soil_wet`, `batt_full_on_
 |---|---|
 | Đất | Bơm chạy và `water_ok`: **+8%/tick**. Bình thường: **−1%/tick**. Kẹp 0–100. Hết nước thì bơm chạy không, đất không lên. `soil_dry_flag = soil < soil_on_pct`. |
 | Bơm | Tự tắt sau `pump_max_run_s`, tính từ lúc bật (an toàn, giống firmware). |
-| Đèn auto | Chỉ khi `mode="auto"`, và **chỉ phản ứng khi lux vượt ngưỡng**: lux đi xuống dưới `lux_on` thì bật với PWM = `light_auto_pwm`; lux đi lên trên `lux_off` thì tắt. Không ép liên tục, nên lệnh tay vẫn giữ tới lần vượt ngưỡng kế tiếp. **Ngoại lệ (xét theo MỨC lux hiện tại):** lúc chuyển manual → auto, lúc hết `batt_cut` khi đang auto, và lúc đổi `lux_on`/`lux_off` khi đang auto — vd bật auto giữa đêm thì đèn bật ngay. |
+| Đèn auto | **Cập nhật 2026-10-04: SERVER quyết định** (`AutoLightDecider`, mọi thiết bị, như tự tưới) và gửi `{"light":true,"light_pwm":…,"mode":"auto"}` / `{"light":false,"mode":"auto"}`; thiết bị ảo KHÔNG tự bật/tắt đèn, đang `batt_cut` thì server không gửi. Quy tắc server (giữ nguyên ý cũ): chỉ khi `mode="auto"`, và **chỉ phản ứng khi lux vượt ngưỡng**: lux đi xuống dưới `lux_on` thì bật với PWM = `light_auto_pwm`; lux đi lên trên `lux_off` thì tắt. Không ép liên tục, nên lệnh tay vẫn giữ tới lần vượt ngưỡng kế tiếp. **Ngoại lệ (xét theo MỨC lux hiện tại):** lúc chuyển manual → auto, lúc hết `batt_cut` khi đang auto, và lúc đổi `lux_on`/`lux_off` khi đang auto — vd bật auto giữa đêm thì đèn bật ngay. |
 | Pin | State giữ **%**; volt luôn suy ra từ %: volt = 6.4 + 2.0 × % / 100 (2S: 0% = 6.4V, 100% = 8.4V). Tụt 0.1%/tick, tụt thêm 0.5%/tick khi bơm chạy, kẹp 0–100. Dòng và công suất suy từ tải. `low_batt` bật khi % < `batt_warn_pct`, tắt khi % ≥ `batt_recover_pct`. `batt_full` khi volt ≥ `batt_full_on_v`. `batt_cut` khi volt ≤ `batt_crit_v` (mặc định 6.4V, tức 0%), hết khi volt ≥ `batt_crit_recover_v` (6.8V, tức 20%). Khi `batt_cut`, **cắt bơm và đèn ở mọi mode**, và lệnh bật bị bỏ qua. |
 | Môi trường | Nhiệt độ, ẩm, áp suất dao động nhẹ ngẫu nhiên quanh giá trị nền. Ẩm nhích lên khi đang tưới. `altitude_m` suy từ áp suất. `temperature_bmp_c` ≈ nhiệt độ ± 0.3. |
 
@@ -166,7 +166,7 @@ firmware, để demo phản hồi tức thì).
 | 🪫 Pin yếu | pin 15% | Notify `battery.low` |
 | 🔌 Pin cạn | pin 0% (volt 6.4 ≤ `batt_crit_v`, bật `batt_cut`) | Notify `battery.cut`, tắt bơm và đèn |
 | 🔋 Sạc đầy | pin 100% | `batt_full`; nếu đang `batt_cut` thì hết `batt_cut` |
-| 🌙 Ban đêm / ☀️ Ban ngày | lux 5 / 600 | Đèn auto bật / tắt |
+| 🌙 Ban đêm / ☀️ Ban ngày | lux 5 / 600 | Server gửi ↓ `light:true` / `light:false` (mode auto) |
 | 📴 Mất kết nối / 📶 Kết nối lại | **Ngắt hẳn MQTT** (không gửi, không nhận lệnh; mô phỏng vẫn chạy trong trang) / nối lại | Sau `NOTIFY_OFFLINE_SECONDS` (240s) thì có `device.offline`; nối lại thì server log online |
 | ↺ Reset | Về trạng thái ban đầu (mục 3.3), **giữ nguyên mode** (mode là của server) | |
 
@@ -226,7 +226,7 @@ Mockup tham khảo: `.superpowers/brainstorm/614-1791101956/content/device-layou
 **Node (lõi JS của thiết bị ảo, không cần cài gì: `node --test tests-js/sim-core.test.mjs`):** lõi mô phỏng nằm trong
 block `<script id="sim-core">` của dashboard (hàm thuần, không DOM/MQTT). Test nạp block đó từ file HTML
 và kiểm tra: 21 trường telemetry; pump/light không đổi mode; chỉ `mode`/`auto` đổi mode; tự tắt bơm;
-hết nước; `batt_cut`; đèn auto theo cạnh; config echo + clamp; message hết hạn; lệnh rác bị bỏ qua.
+hết nước; `batt_cut`; thiết bị không tự đổi đèn (server quyết định); config echo + clamp; message hết hạn; lệnh rác bị bỏ qua.
 
 **Test tay (checklist):**
 1. Chạy server local (`dotnet run`, profile `http`) với MongoDB local. Đăng nhập ở tab "Kết nối".
@@ -236,7 +236,7 @@ hết nước; `batt_cut`; đèn auto theo cạnh; config echo + clamp; message 
 4. Bấm "Đất khô": thấy `{"pump":true,"mode":"auto"}` trên `xmini-sim/SIM_Zone1/control`, cảnh có giọt
    nước, đất tăng, bơm tự tắt sau 20 giây.
 5. Bấm "Tắt auto" rồi "Tưới": bơm bật, mode vẫn `manual`. Bấm "Bật auto": mode thành `auto`.
-6. "Ban đêm": đèn auto bật. Tắt đèn tay: đèn vẫn tắt ở các tick sau.
+6. "Ban đêm": server gửi ↓ `{"light":true,"light_pwm":180,"mode":"auto"}`, đèn bật. Tắt đèn tay: đèn vẫn tắt ở các tick sau.
 7. "Hết nước", "Pin yếu", "Pin cạn": thấy log Notify trên server (nếu đã cấu hình Notify).
 8. "Mất kết nối" 4 phút: server log `device.offline`. "Kết nối lại": log online.
 9. Suốt quá trình, **không có message nào trên `xmini/control`** do thiết bị ảo gây ra.

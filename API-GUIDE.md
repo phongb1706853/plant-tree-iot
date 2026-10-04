@@ -11,8 +11,8 @@ IoT Device (xmini) — TỰ chạy AUTO theo ngưỡng lưu trong NVS
   │
   └─ Lệnh thủ công / đổi ngưỡng ◄── MQTT: xmini/control ◄─ Server (publish object JSON phẳng)
 
-Thiết bị TỰ quyết định tưới / chiếu sáng dựa trên ngưỡng NVS.
-Backend KHÔNG chạy rule tự tưới (WATER_ON/LIGHT_ON đã bị gỡ bỏ).
+SERVER quyết định tự tưới (AutoWateringDecider) và tự bật/tắt đèn (AutoLightDecider) theo ngưỡng DeviceConfig, rồi publish lệnh phẳng kèm "mode":"auto".
+(WATER_ON/LIGHT_ON kiểu cũ đã bị gỡ bỏ.)
 Muốn đổi hành vi auto → ghi NGƯỠNG qua {"config":{...}}; hoặc gửi lệnh thủ công pump/light/mode/message.
 ```
 
@@ -331,8 +331,10 @@ curl -X POST http://localhost:8000/api/assistant/v1/chat/completions \
 
 ### Ai quyết định tưới / chiếu sáng?
 
-- **THIẾT BỊ tự quyết định**, dựa trên các ngưỡng NVS (`soil_on_pct`/`soil_off_pct`, `lux_on`/`lux_off`, ...).
-- **Backend KHÔNG chạy rule tự tưới.** Muốn đổi hành vi auto → ghi ngưỡng qua `PUT /api/control/{deviceId}/config` (`{"config":{...}}`).
+- **SERVER quyết định** khi mode server giữ là `auto` (`DeviceModeStore`), theo ngưỡng thiết bị báo lên (`xmini/config` → DeviceConfig; thiếu thì mặc định):
+  - Tưới: `soil_percent` < `soil_on_pct` → `{"pump":true,"mode":"auto"}`; > `soil_off_pct` → tắt; có cooldown `pump_cooldown_s`.
+  - Đèn: lux xuống dưới `lux_on` → `{"light":true,"light_pwm":<light_auto_pwm>,"mode":"auto"}`; lên trên `lux_off` → `{"light":false,"mode":"auto"}`. Chỉ ra lệnh lúc VƯỢT ngưỡng (lệnh tắt tay ban đêm được giữ); xét lại theo mức lux khi chuyển sang auto, hết `batt_cut`, đổi ngưỡng lux. Đang `batt_cut` thì không gửi.
+- Muốn đổi hành vi auto → ghi ngưỡng qua `PUT /api/control/{deviceId}/config` (`{"config":{...}}`).
 - Có thể can thiệp **thủ công** (ép MANUAL): `pump` / `light` / `light_pwm` / `mode` / `message` qua `POST /api/control/{deviceId}`.
 
 ---

@@ -117,63 +117,25 @@ test('battery cut switches loads off in any mode and ignores turn-on; full charg
   }
 });
 
-test('auto light reacts only when lux crosses a threshold; manual override sticks', () => {
-  const s = fresh('auto');
-  Sim.applyScenario(s, 'night');
-  assert.equal(s.lightOn, true);
-  assert.equal(s.lightPwm, 180);
-  Sim.applyControl(s, { light: false, mode: 'auto' }, T0);
-  Sim.step(s, 10, T0 + 10_000, noRand);
-  Sim.step(s, 10, T0 + 20_000, noRand);
-  assert.equal(s.lightOn, false); // vẫn tôn trọng lệnh tay
-  Sim.applyScenario(s, 'day');
-  assert.equal(s.lightOn, false);
-  Sim.applyScenario(s, 'night');
-  assert.equal(s.lightOn, true); // lần vượt ngưỡng kế tiếp
-});
-
-// Bug báo từ người dùng: ban đêm + Bật auto (đang manual) mà đèn không bật — vì đèn auto chỉ xét lúc lux VƯỢT ngưỡng.
-// Sửa: xét lại theo MỨC lux hiện tại khi chuyển sang auto, khi hết batt_cut (đang auto), khi đổi lux_on/lux_off.
-test('switching manual -> auto at night turns the light on', () => {
-  const s = fresh('manual');
-  Sim.applyScenario(s, 'night');
-  assert.equal(s.lightOn, false);
-  const r = Sim.applyControl(s, { mode: 'auto' }, T0);
-  assert.equal(s.lightOn, true);
-  assert.equal(s.lightPwm, 180);
-  assert.equal(r.changed, true);
-});
-
-test('staying in auto does not re-override a manual light-off at night', () => {
-  const s = fresh('auto');
-  Sim.applyScenario(s, 'night');
-  Sim.applyControl(s, { light: false, mode: 'auto' }, T0);
-  Sim.applyControl(s, { pump: true, mode: 'auto' }, T0); // server gửi kèm mode auto — không phải chuyển mode
-  Sim.step(s, 10, T0 + 10_000, noRand);
-  assert.equal(s.lightOn, false);
-});
-
-test('battery recovering from batt_cut at night (auto) turns the light on', () => {
-  const s = fresh('auto');
-  Sim.applyScenario(s, 'battery-cut');
-  Sim.applyScenario(s, 'night');
-  assert.equal(s.lightOn, false);
-  Sim.applyScenario(s, 'battery-full');
-  assert.equal(s.lightOn, true);
-});
-
-test('changing lux thresholds in auto re-checks the current light level', () => {
-  const s = fresh('auto'); // 600 lux, đèn tắt
-  Sim.applyControl(s, { config: { lux_on: 700, lux_off: 900 } }, T0);
-  assert.equal(s.lightOn, true);
-  Sim.applyControl(s, { config: { lux_on: 120, lux_off: 300 } }, T0);
-  assert.equal(s.lightOn, false);
-});
-
-test('auto light does nothing in manual mode', () => {
-  const s = fresh('manual');
-  Sim.applyScenario(s, 'night');
-  assert.equal(s.lightOn, false);
+// Đèn auto do SERVER quyết định (AutoLightDecider): bấm 🌙 Ban đêm lúc auto thì server gửi ↓ {"light":true,...}
+// rồi thiết bị mới bật. Thiết bị ảo KHÔNG được tự bật/tắt đèn trong bất kỳ trường hợp nào.
+test('the simulated device never switches the light by itself (server decides)', () => {
+  for (const mode of ['auto', 'manual']) {
+    const s = fresh(mode);
+    Sim.applyScenario(s, 'night');
+    Sim.step(s, 10, T0 + 10_000, noRand);
+    assert.equal(s.lightOn, false);
+    Sim.applyControl(s, { mode: 'auto' }, T0);                         // vào auto giữa đêm
+    Sim.applyControl(s, { config: { lux_on: 700, lux_off: 900 } }, T0); // đổi ngưỡng
+    Sim.applyScenario(s, 'battery-cut');
+    Sim.applyScenario(s, 'battery-full');                               // hết pin cạn
+    assert.equal(s.lightOn, false);
+  }
+  const lit = fresh('auto');
+  Sim.applyControl(lit, { light: true, light_pwm: 180, mode: 'auto' }, T0); // lệnh server bật đèn
+  Sim.applyScenario(lit, 'day');
+  Sim.step(lit, 10, T0 + 10_000, noRand);
+  assert.equal(lit.lightOn, true);                                     // trời sáng: chờ server ra lệnh tắt
 });
 
 test('config {} asks for an echo; partial config is clamped, merged, unknown keys ignored', () => {
@@ -273,19 +235,6 @@ test('turn-on commands refused by batt_cut are reported as ignored', () => {
   assert.equal(r.changed, false);
   assert.deepEqual(Sim.applyControl(s, { pump: false, light: false }, T0).ignored, []); // lệnh tắt không bị chặn
   assert.deepEqual(Sim.applyControl(fresh(), { light: true }, T0).ignored, []);         // pin bình thường
-});
-
-test('night during batt_cut flags the blocked auto light (auto mode only)', () => {
-  const s = fresh('auto');
-  Sim.applyScenario(s, 'battery-cut');
-  Sim.applyScenario(s, 'night');
-  assert.equal(s.lightOn, false);
-  assert.equal(s.autoLightBlocked, true);
-
-  const m = fresh('manual');
-  Sim.applyScenario(m, 'battery-cut');
-  Sim.applyScenario(m, 'night');
-  assert.equal(m.autoLightBlocked, false); // manual: không có ý định bật đèn auto
 });
 
 test('configDiff keeps only edited, valid threshold values', () => {

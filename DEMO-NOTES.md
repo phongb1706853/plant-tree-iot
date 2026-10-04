@@ -391,7 +391,7 @@ Dùng khi không có phần cứng hoặc Mac tắt. Thiết bị ảo chạy tr
 2. Mở `demo-dashboard.html` → tab **Kết nối**: host/port của server, đăng nhập.
 3. Tab **📟 Thiết bị ảo** → ⚙️ MQTT: nhập credential `planttree-sim` (1 lần) → **Start** (`SIM_Zone1`).
 4. (Tuỳ chọn) MQTTx subscribe `xmini-sim/#` để người xem thấy message thật.
-5. Kịch bản gợi ý: 🏜 Đất khô → server tự tưới (↓ `{"pump":true,"mode":"auto"}`) → giọt nước, đất tăng, bơm tự tắt sau 20s · 🌙 Ban đêm → đèn auto · 🚱 Hết nước / 🪫 Pin yếu → Notify · hàng nút "Điều khiển như App".
+5. Kịch bản gợi ý: 🏜 Đất khô → server tự tưới (↓ `{"pump":true,"mode":"auto"}`) → giọt nước, đất tăng, bơm tự tắt sau 20s · 🌙 Ban đêm → server gửi ↓ `{"light":true,…}` → đèn bật · 🚱 Hết nước / 🪫 Pin yếu → Notify · hàng nút "Điều khiển như App".
 6. Khung **🤖 Chế độ auto & ngưỡng**: đổi ngưỡng (vd tưới khi đất < 40%) → 💾 Lưu → log hiện ↓ `{"config":…}` rồi ↑ config echo; server tự tưới theo ngưỡng mới. Log có màu theo nguồn: ⏱ tự gửi 10s · 🧪 kịch bản · ⚠ lệnh bị bỏ qua (vd đang 🔌 Pin cạn — bấm 🔋 Sạc đầy để dùng lại bơm/đèn).
 7. Khung **🔔 Thông báo** (cột phải, bấm **Bật**): hiện thông báo server gửi cho thiết bị ảo — 🪫 Pin yếu, 🚱 Hết nước, 🔌 Pin cạn ngay khi bấm kịch bản; 📴 Mất kết nối sau ~240s kể từ khi bấm Mất kết nối/Stop. Mặc định không gửi sang Notify thật; tick **📤 Gửi cả sang Notify thật** nếu muốn người dùng thật nhận (server phải có `NOTIFY_URL`/`NOTIFY_API_KEY`).
 8. AI chat / MCP: chia sẻ thiết bị cho service-account MCP — `POST /api/devices/SIM_Zone1/share` body `{"email":"mcp@plant-tree.local"}`.
