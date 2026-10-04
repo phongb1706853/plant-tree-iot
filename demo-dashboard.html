@@ -375,7 +375,7 @@
   .sim-chip.pump { border-color: #3b82f6; color: #93c5fd; }
   .sim-chip.warn { border-color: #ef4444; color: #fca5a5; }
   .sim-log-panel { background: #020617; }
-  .sim-log-head { font-size: 12px; color: #94a3b8; margin-bottom: 6px; display: flex; gap: 8px; }
+  .sim-log-head { font-size: 12px; color: #94a3b8; margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 4px 8px; }
   .sim-log-legend { margin-left: auto; }
   .sim-log { font-family: "Menlo", "Consolas", monospace; font-size: 11.5px; line-height: 1.45; max-height: 420px; overflow-y: auto; }
   .sim-log details { border-bottom: 1px solid #0f172a; padding: 2px 0; }
@@ -386,6 +386,18 @@
   .sim-log .down summary { color: #93c5fd; }
   .sim-log .cfg summary { color: #fcd34d; }
   .sim-log .err summary { color: #fca5a5; }
+  .sim-scene { background: #0f172a; border-radius: 8px; overflow: hidden; }
+  .sim-scene svg { display: block; width: 100%; height: auto; }
+  .sim-btnrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .sim-btn { background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+  .sim-btn:hover { border-color: #10b981; }
+  .sim-app-status { font-family: monospace; font-size: 12px; margin-left: 6px; }
+  @keyframes simDrop { from { transform: translateY(-4px); opacity: 1; } to { transform: translateY(10px); opacity: 0.15; } }
+  .sv-drop { animation: simDrop 0.8s linear infinite; }
+  .sv-drop:nth-child(2) { animation-delay: 0.2s; }
+  .sv-drop:nth-child(3) { animation-delay: 0.4s; }
+  .sv-drop:nth-child(4) { animation-delay: 0.6s; }
+  @media (prefers-reduced-motion: reduce) { .sv-drop { animation: none; } }
 </style>
 </head>
 <body>
@@ -2337,12 +2349,81 @@ Liên hệ vấn đề kỹ thuật:
 
   <div class="sim-layout">
     <div class="sim-panel" id="sim-left">
+      <div class="sim-scene">
+        <svg viewBox="0 0 300 200" role="img" aria-label="Cảnh thiết bị ảo: chậu cây, đèn, bơm, bồn nước, pin">
+          <rect id="sv-sky" x="0" y="0" width="300" height="200" rx="8" fill="#e0f2fe"/>
+          <g id="sv-sun"><circle cx="268" cy="26" r="13" fill="#facc15"/></g>
+          <g id="sv-moon" style="display:none"><circle cx="268" cy="26" r="12" fill="#e2e8f0"/><circle cx="274" cy="22" r="10" fill="#1e293b"/></g>
+          <text id="sv-lux" x="232" y="54" font-size="9" fill="#475569">— lux</text>
+          <line x1="150" y1="0" x2="150" y2="22" stroke="#475569" stroke-width="2"/>
+          <path d="M132 22 h36 l-6 12 h-24z" fill="#334155"/>
+          <circle id="sv-bulb" cx="150" cy="38" r="8" fill="#64748b"/>
+          <polygon id="sv-glow" points="128,40 172,40 205,124 95,124" fill="#fde047" opacity="0"/>
+          <text id="sv-pwm" x="176" y="34" font-size="9" fill="#a16207"></text>
+          <path d="M150 132 C150 110 150 98 150 82" stroke="#15803d" stroke-width="3" fill="none"/>
+          <g id="sv-leaves" fill="#4ade80">
+            <ellipse cx="136" cy="98" rx="14" ry="6" transform="rotate(-25 136 98)"/>
+            <ellipse cx="164" cy="92" rx="14" ry="6" transform="rotate(25 164 92)"/>
+            <ellipse cx="140" cy="114" rx="12" ry="5" transform="rotate(-15 140 114)"/>
+            <ellipse cx="161" cy="110" rx="12" ry="5" transform="rotate(15 161 110)"/>
+          </g>
+          <path d="M118 132 h64 l-8 44 h-48z" fill="#c2410c"/>
+          <rect id="sv-soil" x="114" y="127" width="72" height="9" rx="2" fill="#78350f"/>
+          <text id="sv-soil-txt" x="150" y="160" font-size="11" text-anchor="middle" fill="#fff">—</text>
+          <rect x="20" y="106" width="42" height="70" rx="5" fill="#e2e8f0" stroke="#94a3b8"/>
+          <rect id="sv-water" x="22" y="124" width="38" height="50" rx="4" fill="#60a5fa"/>
+          <text id="sv-tank-txt" x="41" y="100" font-size="9" text-anchor="middle" fill="#1d4ed8">bồn OK</text>
+          <rect id="sv-pump" x="70" y="154" width="24" height="16" rx="3" fill="#475569"/>
+          <text id="sv-pump-txt" x="82" y="165" font-size="8" text-anchor="middle" fill="#fff">OFF</text>
+          <path d="M62 162 h8 M94 162 h8 v-64 h22" stroke="#3b82f6" stroke-width="3" fill="none"/>
+          <g id="sv-drops" fill="#3b82f6" style="display:none">
+            <circle class="sv-drop" cx="126" cy="106" r="2"/><circle class="sv-drop" cx="131" cy="114" r="2"/>
+            <circle class="sv-drop" cx="124" cy="119" r="2"/><circle class="sv-drop" cx="134" cy="123" r="2"/>
+          </g>
+          <rect x="226" y="146" width="50" height="22" rx="4" fill="#fff" stroke="#64748b"/>
+          <rect x="276" y="153" width="4" height="8" fill="#64748b"/>
+          <rect id="sv-batt" x="229" y="149" width="34" height="16" rx="2" fill="#22c55e"/>
+          <text id="sv-batt-txt" x="251" y="182" font-size="9" text-anchor="middle" fill="#334155">—</text>
+          <rect x="8" y="8" width="118" height="22" rx="3" fill="#020617" stroke="#334155"/>
+          <text id="sv-tft" x="14" y="23" font-size="9" fill="#6ee7b7" font-family="monospace">Xmini SIM</text>
+        </svg>
+      </div>
       <div id="sim-chips" class="sim-chips"></div>
     </div>
     <div class="sim-panel sim-log-panel">
       <div class="sim-log-head">MQTT · <span id="sim-log-filter">xmini-sim/…/#</span><span class="sim-log-legend">↑ gửi · ↓ nhận · bấm dòng để xem đủ</span></div>
       <div id="sim-log" class="sim-log"></div>
     </div>
+  </div>
+
+  <h3>Kịch bản <span style="font-size:12px;color:#94a3b8">(ép giá trị rồi gửi telemetry ngay)</span></h3>
+  <div class="sim-btnrow" id="sim-scenarios">
+    <button class="sim-btn" data-scenario="dry-soil">🏜 Đất khô</button>
+    <button class="sim-btn" data-scenario="water-empty">🚱 Hết nước</button>
+    <button class="sim-btn" data-scenario="water-refill">💧 Đổ nước</button>
+    <button class="sim-btn" data-scenario="low-battery">🪫 Pin yếu</button>
+    <button class="sim-btn" data-scenario="battery-cut">🔌 Pin cạn</button>
+    <button class="sim-btn" data-scenario="battery-full">🔋 Sạc đầy</button>
+    <button class="sim-btn" data-scenario="night">🌙 Ban đêm</button>
+    <button class="sim-btn" data-scenario="day">☀️ Ban ngày</button>
+    <button class="sim-btn" data-scenario="link-down">📴 Mất kết nối</button>
+    <button class="sim-btn" data-scenario="link-up">📶 Kết nối lại</button>
+    <button class="sim-btn" data-scenario="reset">↺ Reset</button>
+  </div>
+
+  <h3>Điều khiển như App <span style="font-size:12px;color:#94a3b8">(gọi /api/control trên server → MQTT → thiết bị ảo)</span></h3>
+  <div class="sim-btnrow" id="sim-app">
+    <button class="sim-btn" data-app="water-on">🚿 Tưới</button>
+    <button class="sim-btn" data-app="water-off">⏹ Tắt bơm</button>
+    <button class="sim-btn" data-app="light-on">💡 Bật đèn</button>
+    <button class="sim-btn" data-app="light-off">🌑 Tắt đèn</button>
+    <button class="sim-btn" data-app="auto-on">🤖 Bật auto</button>
+    <button class="sim-btn" data-app="auto-off">✋ Tắt auto</button>
+    <span id="sim-app-status" class="sim-app-status"></span>
+  </div>
+
+  <div class="alert info">
+    Muốn <b>AI chat / MCP</b> điều khiển thiết bị ảo: chia sẻ nó cho service-account MCP — <code>POST /api/devices/SIM_Zone1/share</code> với body <code>{"email":"mcp@plant-tree.local"}</code>.
   </div>
 </section>
 
@@ -3251,7 +3332,93 @@ Liên hệ vấn đề kỹ thuật:
         chip(`💧 ${t.humidity_percent}%`),
         chip(`⏲ ${t.pressure_hpa} hPa`),
       );
+      renderScene(t);
     }
+
+    // --- Cảnh SVG (chỉ setAttribute/textContent — message từ broker không bao giờ thành HTML) ---
+    const lerp = (a, b, k) => Math.round(a + (b - a) * k);
+    function soilColor(pct) { // khô (vàng nâu) -> ướt (nâu đậm)
+      const k = Math.min(1, Math.max(0, pct / 100));
+      return `rgb(${lerp(180, 69, k)},${lerp(130, 36, k)},${lerp(70, 10, k)})`;
+    }
+    function renderScene(t) {
+      const night = t.light_lux < st.config.lux_on;
+      $('sv-sky').setAttribute('fill', night ? '#1e293b' : '#e0f2fe');
+      $('sv-sun').style.display = night ? 'none' : '';
+      $('sv-moon').style.display = night ? '' : 'none';
+      $('sv-lux').textContent = `${t.light_lux} lux`;
+      $('sv-lux').setAttribute('fill', night ? '#cbd5e1' : '#475569');
+      $('sv-bulb').setAttribute('fill', t.light_on ? '#fde047' : '#64748b');
+      $('sv-glow').setAttribute('opacity', t.light_on ? (0.12 + 0.4 * t.light_pwm / 255).toFixed(2) : '0');
+      $('sv-pwm').textContent = t.light_on ? `PWM ${t.light_pwm}` : '';
+      $('sv-soil').setAttribute('fill', soilColor(t.soil_percent));
+      $('sv-soil-txt').textContent = `đất ${t.soil_percent}%`;
+      $('sv-leaves').setAttribute('fill', t.soil_dry_flag ? '#a3a33a' : '#4ade80'); // lá héo khi đất khô
+      $('sv-water').setAttribute('height', t.water_ok ? '50' : '4');
+      $('sv-water').setAttribute('y', t.water_ok ? '124' : '170');
+      $('sv-tank-txt').textContent = t.water_ok ? 'bồn OK' : 'HẾT NƯỚC';
+      $('sv-tank-txt').setAttribute('fill', !t.water_ok ? '#dc2626' : night ? '#93c5fd' : '#1d4ed8');
+      $('sv-pump').setAttribute('fill', t.pump_on ? '#2563eb' : '#475569');
+      $('sv-pump-txt').textContent = t.pump_on ? 'ON' : 'OFF';
+      $('sv-drops').style.display = t.pump_on && t.water_ok ? '' : 'none';
+      $('sv-batt').setAttribute('width', String(Math.max(1, Math.round(34 * t.battery_percent / 100))));
+      $('sv-batt').setAttribute('fill', t.batt_cut ? '#dc2626' : t.low_batt ? '#f59e0b' : '#22c55e');
+      $('sv-batt-txt').textContent = t.batt_cut ? `CẠN ${t.battery_voltage_v}V` : `pin ${t.battery_percent}%`;
+      $('sv-batt-txt').setAttribute('fill', night ? '#cbd5e1' : '#334155'); // đọc được trên nền trời đêm
+      $('sv-tft').textContent = st.message ? st.message.slice(0, 22) : (linkDown ? '-- offline --' : 'Xmini SIM');
+    }
+
+    // --- Nút kịch bản ---
+    function onScenario(name) {
+      if (!st) return showError('Bấm Start trước.');
+      if (name === 'link-down') {
+        if (linkDown) return;
+        linkDown = true;
+        disconnectMqtt();
+        setBadge('📴 mất kết nối (giả lập) — server báo offline sau ~240s', '#fca5a5');
+      } else if (name === 'link-up') {
+        if (!linkDown) return;
+        linkDown = false;
+        setBadge('… đang nối MQTT', '#93c5fd');
+        connectMqtt(); // khi connect sẽ tự gửi config + telemetry
+      } else if (Sim.applyScenario(st, name)) {
+        publish('sensor');
+      }
+      render();
+    }
+    $('sim-scenarios').addEventListener('click', e => {
+      const b = e.target.closest('[data-scenario]');
+      if (b) onScenario(b.dataset.scenario);
+    });
+
+    // --- Nút "Điều khiển như App": gọi API server thật (lệnh đi server -> MQTT -> thiết bị ảo) ---
+    const APP_ACTIONS = {
+      'water-on':  [id => `/api/control/${id}/water`, { on: true }],
+      'water-off': [id => `/api/control/${id}/water`, { on: false }],
+      'light-on':  [id => `/api/control/${id}/light`, { on: true }],
+      'light-off': [id => `/api/control/${id}/light`, { on: false }],
+      'auto-on':   [id => `/api/control/${id}/auto`, undefined],
+      'auto-off':  [id => `/api/control/${id}`, { mode: 'manual' }],
+    };
+    async function onApp(action) {
+      if (!st) return showError('Bấm Start trước.');
+      const [path, body] = APP_ACTIONS[action];
+      const out = $('sim-app-status');
+      out.textContent = '… đang gọi server';
+      out.style.color = '#93c5fd';
+      try {
+        const r = await serverCall('POST', path(encodeURIComponent(st.deviceId)), body);
+        out.textContent = r.res.ok ? `✓ ${r.res.status} — chờ lệnh ↓ trên MQTT` : `✗ ${r.res.status} ${r.text.slice(0, 120)}`;
+        out.style.color = r.res.ok ? '#4ade80' : '#fca5a5';
+      } catch (e) {
+        out.textContent = '✗ ' + e.message;
+        out.style.color = '#fca5a5';
+      }
+    }
+    $('sim-app').addEventListener('click', e => {
+      const b = e.target.closest('[data-app]');
+      if (b) onApp(b.dataset.app);
+    });
 
     async function start() {
       showError('');
