@@ -469,12 +469,15 @@
     <button class="nav-btn" data-target="setup">Setup mỗi lần chạy</button>
     <button class="nav-btn" data-target="demo">Kịch bản demo</button>
 
-    <div class="group-label">API Reference</div>
-    <button class="nav-btn" data-target="api-config">URL Config</button>
+    <div class="group-label">API Reference (cho App)</div>
+    <button class="nav-btn" data-target="api-app-start">Bắt đầu cho App</button>
+    <button class="nav-btn" data-target="api-config">URL Config &amp; Token</button>
+    <button class="nav-btn" data-target="api-auth">Auth</button>
     <button class="nav-btn" data-target="api-devices">Devices</button>
     <button class="nav-btn" data-target="api-sensors">Sensor Data</button>
     <button class="nav-btn" data-target="api-thresholds">Ngưỡng auto (Config)</button>
     <button class="nav-btn" data-target="api-control">Control</button>
+    <button class="nav-btn" data-target="api-assistant">Trợ lý AI (Chat)</button>
 
     <div class="group-label">🧪 Test trực tiếp</div>
     <button class="nav-btn" data-target="try-config">Kết nối</button>
@@ -503,7 +506,8 @@
 
 <section id="intro" class="active">
   <h2>Giới thiệu</h2>
-  <p><strong>Plant Tree IoT</strong> là hệ thống quản lý vườn cây thông minh dùng ESP32 + .NET + MongoDB. Thiết bị (ESP32) <strong>tự chạy chế độ auto</strong> theo ngưỡng lưu trong NVS; server chỉ đọc telemetry, đọc/đặt ngưỡng auto (config) và gửi lệnh <strong>thủ công</strong> (bơm, đèn, chế độ, tin nhắn) xuống ESP32 qua MQTT.</p>
+  <p><strong>Plant Tree IoT</strong> là hệ thống quản lý vườn cây thông minh dùng ESP32 + .NET + MongoDB. Thiết bị (ESP32) gửi telemetry lên server qua MQTT. Ở chế độ auto, <strong>server</strong> tự quyết định tưới và bật/tắt đèn theo ngưỡng của từng thiết bị; server cũng nhận lệnh <strong>thủ công</strong> từ App (bơm, đèn, chế độ, tin nhắn) rồi gửi xuống ESP32 qua MQTT.</p>
+  <p>Người làm App: bắt đầu ở tab <a href="#" onclick="document.querySelector('[data-target=api-app-start]').click(); return false;">Bắt đầu cho App</a>.</p>
 
   <h3>Thành phần chính</h3>
   <div class="stack-grid">
@@ -591,16 +595,16 @@
     <li>Lấy sensor mới nhất, history, theo khoảng thời gian</li>
   </ul>
 
-  <h3>Device auto (thiết bị tự chạy)</h3>
+  <h3>Chế độ auto (server quyết định)</h3>
   <ul>
-    <li>Thiết bị <strong>tự chạy chế độ auto</strong> dựa trên 15 ngưỡng lưu trong NVS — server KHÔNG sinh lệnh tưới/đèn</li>
+    <li>Server giữ chế độ auto/manual của từng thiết bị (<code>controlMode</code>). Ở chế độ auto, mỗi khi telemetry về, server tự tưới theo <code>soil_on_pct</code>/<code>soil_off_pct</code> và tự bật/tắt đèn theo <code>lux_on</code>/<code>lux_off</code></li>
     <li>Muốn đổi hành vi auto → chỉnh <strong>ngưỡng (config)</strong>: <code>GET/PUT /api/control/{deviceId}/config</code></li>
     <li>Thiết bị publish cấu hình hiện tại lên <code>xmini/config</code> khi kết nối và sau mỗi lần đổi</li>
   </ul>
 
   <h3>Control</h3>
   <ul>
-    <li>Gửi lệnh <strong>thủ công</strong> (ép MANUAL): bơm <code>{"pump":true}</code>, đèn <code>{"light":true}</code>, PWM đèn <code>{"light_pwm":180}</code></li>
+    <li>Gửi lệnh <strong>thủ công</strong>: bơm <code>{"pump":true}</code>, đèn <code>{"light":true}</code>, PWM đèn <code>{"light_pwm":180}</code>. Lệnh bơm/đèn <strong>không đổi chế độ</strong>: server tự gộp chế độ hiện tại vào lệnh</li>
     <li>Đổi chế độ <code>{"mode":"auto"|"manual"}</code> và hiển thị màn hình TFT <code>{"message":"...","message_secs":N}</code></li>
     <li>Server publish khoá phẳng xuống <code>xmini/control</code>; xem nhật ký lệnh đã gửi qua <code>GET /api/control/commands/{deviceId}</code></li>
   </ul>
@@ -729,9 +733,107 @@ curl $API/api/control/commands/$DEVICE</pre>
   </div>
 </section>
 
+<section id="api-app-start">
+  <h2>Bắt đầu cho App</h2>
+  <p>Phần <strong>API Reference</strong> viết cho người làm <strong>App</strong> (mobile/web). App chỉ gọi <strong>REST API của .NET server</strong> qua HTTPS kèm JWT, không cần kết nối MQTT hay MCP. Server tự đẩy lệnh xuống thiết bị qua MQTT; thiết bị gửi số đo lên server khoảng <strong>10 giây/lần</strong>.</p>
+
+  <h3>Quy ước chung</h3>
+  <table>
+    <tr><th>Mục</th><th>Quy ước</th></tr>
+    <tr><td>Base URL</td><td>URL server/tunnel (xem tab <a href="#" onclick="document.querySelector('[data-target=api-config]').click(); return false;">URL Config &amp; Token</a>). Mọi path bắt đầu bằng <code>/api/</code>.</td></tr>
+    <tr><td>Xác thực</td><td>Gửi header <code>Authorization: Bearer &lt;token&gt;</code> ở <strong>mọi</strong> request, trừ <code>POST /api/auth/register</code> và <code>POST /api/auth/login</code>. Token hết hạn sau <strong>24 giờ</strong> và <strong>không có refresh token</strong>: gặp <code>401</code> thì đưa người dùng về màn đăng nhập.</td></tr>
+    <tr><td>Request body</td><td>JSON, header <code>Content-Type: application/json</code>.</td></tr>
+    <tr><td>Tên trường</td><td>Response dùng <strong>camelCase</strong> (<code>deviceId</code>, <code>soilPercent</code>). Hai chỗ dùng <strong>snake_case</strong>: body ngưỡng và lệnh gửi lên (<code>soil_on_pct</code>, <code>light_pwm</code>), và object <code>published</code> / <code>payload</code> trong response lệnh.</td></tr>
+    <tr><td>Thời gian</td><td>ISO-8601 UTC, vd <code>2026-11-09T08:17:47.471Z</code>. App tự đổi sang giờ địa phương. Khi gửi thời gian lên (<code>range</code>) luôn kèm <code>Z</code>.</td></tr>
+    <tr><td>Giá trị null</td><td>Trường đo có thể <code>null</code> khi cảm biến lỗi. App phải xử lý null cho mọi trường số.</td></tr>
+  </table>
+
+  <h3>Mã lỗi</h3>
+  <table>
+    <tr><th>HTTP</th><th>Khi nào</th></tr>
+    <tr><td><code>400</code></td><td>Thiếu trường, sai kiểu hoặc sai giá trị.</td></tr>
+    <tr><td><code>401</code></td><td>Thiếu token, token sai hoặc hết hạn (body rỗng). Login sai email/password cũng trả <code>401</code>.</td></tr>
+    <tr><td><code>404</code></td><td>Device không tồn tại <strong>hoặc</strong> user không có quyền với device đó. Server không dùng <code>403</code>.</td></tr>
+    <tr><td><code>409</code></td><td>Trùng: email đã đăng ký, <code>deviceId</code> đã tồn tại, claim device đã có chủ.</td></tr>
+    <tr><td><code>502</code> / <code>503</code></td><td>AI server lỗi hoặc không kết nối được (chat). <code>503</code> cũng xảy ra khi server mất kết nối MQTT nên chưa gửi được lệnh.</td></tr>
+    <tr><td><code>500</code></td><td>Lỗi server, body <code>Internal server error</code>.</td></tr>
+  </table>
+  <div class="alert info">
+    <strong>Body lỗi là chuỗi text, không phải JSON object</strong>, vd <code>Device ESP32S3_Zone1 not found</code>. App nên đọc body dạng text rồi mới thử parse JSON. Riêng lỗi body không đúng JSON hoặc sai kiểu dữ liệu (vd <code>{"on":"yes"}</code>) trả <code>application/problem+json</code> có trường <code>errors</code>. Nếu App gửi header <code>Accept: application/json</code>, chuỗi lỗi được trả dưới dạng chuỗi JSON (có dấu nháy kép).
+  </div>
+
+  <h3>Quyền: owner và member</h3>
+  <p>Mỗi device có 1 <strong>owner</strong> (người đăng ký device) và danh sách <strong>members</strong> (được owner chia sẻ). <code>GET /api/devices</code> trả cả device mình sở hữu lẫn device được chia sẻ.</p>
+  <table>
+    <tr><th>Thao tác</th><th>Owner</th><th>Member</th></tr>
+    <tr><td>Xem device, số đo, ngưỡng, nhật ký lệnh, danh sách thành viên</td><td>✅</td><td>✅</td></tr>
+    <tr><td>Điều khiển (tưới, đèn, chế độ, tin nhắn) và đổi ngưỡng</td><td>✅</td><td>✅</td></tr>
+    <tr><td>Chia sẻ, thu hồi chia sẻ, xoá device</td><td>✅</td><td>❌ (trả <code>404</code>)</td></tr>
+  </table>
+  <p>Để biết user hiện tại có phải owner: so <code>device.ownerId</code> với claim <code>nameid</code> (userId) trong JWT, hoặc so <code>owner.email</code> của <code>GET /api/devices/{deviceId}/members</code> với email đăng nhập. <code>GET /api/auth/me</code> không trả userId. Member <strong>chưa</strong> tự rời device được, chỉ owner thu hồi.</p>
+
+  <h3>Chế độ auto / manual</h3>
+  <ul>
+    <li>Server giữ chế độ của từng device ở trường <code>controlMode</code> trong <code>GET /api/devices/{deviceId}</code>: <code>"auto"</code> hoặc <code>"manual"</code>, <code>null</code> nghĩa là <code>"auto"</code>. App hiển thị chế độ theo trường này.</li>
+    <li><strong>Auto</strong>: mỗi khi có số đo mới, server tự tưới theo <code>soil_on_pct</code> / <code>soil_off_pct</code> (có thời gian nghỉ <code>pump_cooldown_s</code>) và tự bật/tắt đèn theo <code>lux_on</code> / <code>lux_off</code>. Server không tưới khi bồn hết nước (<code>waterOk=false</code>) hoặc pin đã bị cắt (<code>battCut=true</code>).</li>
+    <li>Lệnh tưới/đèn từ App <strong>không đổi chế độ</strong>. Khi đang auto, lệnh tay có thể bị server ghi đè: bơm bật tay khi đất đã đủ ẩm (<code>soilPercent &gt; soil_off_pct</code>) sẽ bị tắt ở lần đo sau; đèn bật/tắt tay được giữ tới lần ánh sáng vượt ngưỡng kế tiếp.</li>
+    <li>Muốn người dùng điều khiển hoàn toàn bằng tay: chuyển manual trước (<code>POST /api/control/{deviceId}</code> body <code>{"mode":"manual"}</code>), xong thì về auto bằng <code>POST /api/control/{deviceId}/auto</code>.</li>
+    <li>Lệnh trả <code>200</code> nghĩa là server <strong>đã gửi</strong> lệnh xuống MQTT, chưa chắc thiết bị đã làm. Lệnh gửi lúc thiết bị offline sẽ <strong>mất</strong> (không xếp hàng). Xác nhận bằng số đo kế tiếp (<code>pumpOn</code>, <code>lightOn</code>, <code>lightPwm</code>) qua <code>GET /api/sensordata/latest/{deviceId}</code>.</li>
+  </ul>
+
+  <h3>Online / offline</h3>
+  <p><code>lastSeen</code> của device được cập nhật mỗi lần có số đo (~10 giây). Gợi ý: coi device <strong>offline</strong> khi <code>now − lastSeen &gt; 240 giây</code>, cùng ngưỡng server dùng để gửi thông báo mất kết nối. Đừng dùng <code>isActive</code> (luôn <code>true</code>).</p>
+
+  <h3>Luồng màn hình gợi ý</h3>
+  <ol>
+    <li><strong>Đăng nhập / đăng ký</strong>: <code>POST /api/auth/login</code> hoặc <code>/api/auth/register</code>, lưu <code>token</code>. Khi mở lại App, gọi <code>GET /api/auth/me</code>; nếu <code>401</code> thì về màn đăng nhập.</li>
+    <li><strong>Danh sách cây</strong>: <code>GET /api/devices</code>.</li>
+    <li><strong>Thêm cây</strong>: <code>POST /api/devices/register</code> với <code>deviceId</code> của thiết bị.</li>
+    <li><strong>Chi tiết cây</strong>: <code>GET /api/devices/{deviceId}</code> (chế độ, lastSeen) và <code>GET /api/sensordata/latest/{deviceId}</code>. Khi màn hình đang mở, gọi lại <code>latest</code> mỗi ~10 giây.</li>
+    <li><strong>Biểu đồ</strong>: <code>GET /api/sensordata/history/{deviceId}?limit=N</code>.</li>
+    <li><strong>Điều khiển</strong>: <code>/water</code>, <code>/light</code>, <code>/auto</code>; chuyển manual bằng <code>{"mode":"manual"}</code>.</li>
+    <li><strong>Cài đặt ngưỡng</strong>: <code>GET</code> và <code>PUT /api/control/{deviceId}/config</code>.</li>
+    <li><strong>Chia sẻ</strong>: <code>share</code>, <code>members</code>, thu hồi bằng <code>DELETE /api/devices/{deviceId}/share/{memberId}</code>.</li>
+    <li><strong>Trợ lý AI</strong>: <code>POST /api/assistant/v1/chat/completions</code>.</li>
+  </ol>
+
+  <h3>Tất cả endpoint (27)</h3>
+  <p>Cột <strong>Dùng cho</strong>: <em>App</em> là endpoint App cần; <em>Test</em> chỉ để test/debug, App không cần.</p>
+  <table>
+    <tr><th>Nhóm</th><th>Method</th><th>Path</th><th>Mục đích</th><th>Dùng cho</th></tr>
+    <tr><td>Auth</td><td><span class="badge post">POST</span></td><td><code>/api/auth/register</code></td><td>Đăng ký tài khoản, trả token</td><td>App</td></tr>
+    <tr><td>Auth</td><td><span class="badge post">POST</span></td><td><code>/api/auth/login</code></td><td>Đăng nhập, trả token</td><td>App</td></tr>
+    <tr><td>Auth</td><td><span class="badge get">GET</span></td><td><code>/api/auth/me</code></td><td>Thông tin user đang đăng nhập</td><td>App</td></tr>
+    <tr><td>Auth</td><td><span class="badge post">POST</span></td><td><code>/api/auth/dev-token</code></td><td>Token debug, chỉ môi trường Development</td><td>Test</td></tr>
+    <tr><td>Devices</td><td><span class="badge post">POST</span></td><td><code>/api/devices/register</code></td><td>Thêm device, người gọi thành owner</td><td>App</td></tr>
+    <tr><td>Devices</td><td><span class="badge get">GET</span></td><td><code>/api/devices</code></td><td>Device sở hữu + được chia sẻ</td><td>App</td></tr>
+    <tr><td>Devices</td><td><span class="badge get">GET</span></td><td><code>/api/devices/{deviceId}</code></td><td>Chi tiết 1 device</td><td>App</td></tr>
+    <tr><td>Devices</td><td><span class="badge delete">DELETE</span></td><td><code>/api/devices/{deviceId}</code></td><td>Xoá device và toàn bộ dữ liệu (owner)</td><td>App</td></tr>
+    <tr><td>Devices</td><td><span class="badge post">POST</span></td><td><code>/api/devices/{deviceId}/claim</code></td><td>Nhận device chưa có chủ</td><td>App</td></tr>
+    <tr><td>Devices</td><td><span class="badge post">POST</span></td><td><code>/api/devices/{deviceId}/share</code></td><td>Chia sẻ cho user khác qua email (owner)</td><td>App</td></tr>
+    <tr><td>Devices</td><td><span class="badge delete">DELETE</span></td><td><code>/api/devices/{deviceId}/share/{memberId}</code></td><td>Thu hồi chia sẻ (owner)</td><td>App</td></tr>
+    <tr><td>Devices</td><td><span class="badge get">GET</span></td><td><code>/api/devices/{deviceId}/members</code></td><td>Owner + người được chia sẻ</td><td>App</td></tr>
+    <tr><td>Devices</td><td><span class="badge post">POST</span></td><td><code>/api/devices/{deviceId}/heartbeat</code></td><td>Cập nhật <code>lastSeen</code> bằng tay</td><td>Test</td></tr>
+    <tr><td>Devices</td><td><span class="badge put">PUT</span></td><td><code>/api/devices/{deviceId}/sim-notify</code></td><td>Thông báo cho thiết bị ảo <code>SIM_*</code></td><td>Test</td></tr>
+    <tr><td>Sensor Data</td><td><span class="badge get">GET</span></td><td><code>/api/sensordata/latest/{deviceId}</code></td><td>Số đo mới nhất</td><td>App</td></tr>
+    <tr><td>Sensor Data</td><td><span class="badge get">GET</span></td><td><code>/api/sensordata/history/{deviceId}</code></td><td>N số đo gần nhất</td><td>App</td></tr>
+    <tr><td>Sensor Data</td><td><span class="badge get">GET</span></td><td><code>/api/sensordata/range/{deviceId}</code></td><td>Số đo trong khoảng thời gian (có giới hạn, xem tab Sensor Data)</td><td>App</td></tr>
+    <tr><td>Sensor Data</td><td><span class="badge post">POST</span></td><td><code>/api/sensordata/upload</code></td><td>Nạp số đo qua HTTP (thiết bị thật gửi qua MQTT)</td><td>Test</td></tr>
+    <tr><td>Ngưỡng</td><td><span class="badge get">GET</span></td><td><code>/api/control/{deviceId}/config</code></td><td>Ngưỡng auto hiện tại</td><td>App</td></tr>
+    <tr><td>Ngưỡng</td><td><span class="badge put">PUT</span></td><td><code>/api/control/{deviceId}/config</code></td><td>Đổi ngưỡng</td><td>App</td></tr>
+    <tr><td>Ngưỡng</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/config/refresh</code></td><td>Yêu cầu thiết bị gửi lại ngưỡng</td><td>App</td></tr>
+    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/water</code></td><td>Bật/tắt bơm</td><td>App</td></tr>
+    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/light</code></td><td>Bật/tắt đèn, đặt độ sáng</td><td>App</td></tr>
+    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/auto</code></td><td>Về chế độ auto</td><td>App</td></tr>
+    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}</code></td><td>Lệnh tổng quát: manual, tin nhắn màn hình, gộp nhiều lệnh</td><td>App</td></tr>
+    <tr><td>Control</td><td><span class="badge get">GET</span></td><td><code>/api/control/commands/{deviceId}</code></td><td>Nhật ký lệnh đã gửi</td><td>App</td></tr>
+    <tr><td>Trợ lý AI</td><td><span class="badge post">POST</span></td><td><code>/api/assistant/v1/chat/completions</code></td><td>Chat (chuẩn OpenAI)</td><td>App</td></tr>
+  </table>
+</section>
+
 <section id="api-config">
-  <h2>URL Config</h2>
-  <p>Đặt biến môi trường trước khi chạy các lệnh curl, đỡ phải copy URL nhiều lần.</p>
+  <h2>URL Config &amp; Token</h2>
+  <p>Đặt biến môi trường trước khi chạy các lệnh curl ở các tab sau, đỡ phải copy URL và token nhiều lần.</p>
 
   <h3>Tunnel URL hiện tại</h3>
   <label class="url-label">Copy URL từ output cloudflared, paste vào đây để in/copy:</label>
@@ -757,47 +859,159 @@ $DEVICE="ESP32S3_Zone1"</pre>
     <pre>export API=http://localhost:8080
 export DEVICE=ESP32S3_Zone1</pre>
   </div>
+
+  <h3>Lấy token</h3>
+  <p>Mọi lệnh curl ở các tab sau đều gửi <code>-H "Authorization: Bearer $TOKEN"</code>. Lấy token bằng tài khoản đã đăng ký (chưa có thì xem <code>POST /api/auth/register</code> ở tab <a href="#" onclick="document.querySelector('[data-target=api-auth]').click(); return false;">Auth</a>).</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># bash/zsh (cần jq)
+export TOKEN=$(curl -s -X POST $API/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"your-password"}' | jq -r .token)</pre>
+  </div>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre># PowerShell
+$TOKEN = (Invoke-RestMethod -Method Post "$API/api/auth/login" -ContentType "application/json" `
+  -Body '{"email":"you@example.com","password":"your-password"}').token</pre>
+  </div>
+  <div class="alert info">Ví dụ curl ở các tab sau viết theo cú pháp bash/zsh. Trên PowerShell 5.1 dùng <code>curl.exe</code> (không phải <code>curl</code>) hoặc <code>Invoke-RestMethod</code>.</div>
+</section>
+
+<section id="api-auth">
+  <h2>Auth API</h2>
+  <p>Đăng ký và đăng nhập trả về JWT. Hai endpoint này <strong>không</strong> cần token.</p>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/auth/register</div>
+  <p>Tạo tài khoản và trả token luôn, không cần đăng nhập lại. <code>password</code> tối thiểu 6 ký tự. <code>displayName</code> không bắt buộc, bỏ trống thì lấy bằng email. Email được lưu dạng chữ thường.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"your-password","displayName":"Minh"}'</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "email": "you@example.com",
+  "displayName": "Minh",
+  "role": "User"
+}</pre>
+  </div>
+
+  <div class="response-label">Lỗi — HTTP 400 / 409</div>
+  <div class="code-block response-block error">
+    <pre>400  Email và password là bắt buộc
+400  Password tối thiểu 6 ký tự
+409  Email đã được đăng ký</pre>
+  </div>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/auth/login</div>
+  <p>Đăng nhập, trả cùng dạng response với <code>register</code>. Email không phân biệt hoa thường.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"your-password"}'</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "email": "you@example.com",
+  "displayName": "Minh",
+  "role": "User"
+}</pre>
+  </div>
+
+  <div class="response-label">Sai email hoặc password — HTTP 401</div>
+  <div class="code-block response-block error">
+    <pre>Email hoặc password không đúng</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/auth/me</div>
+  <p>Thông tin user đang đăng nhập. Dùng khi mở App để kiểm tra token còn hạn.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl $API/api/auth/me -H "Authorization: Bearer $TOKEN"</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "email": "you@example.com",
+  "displayName": "Minh",
+  "role": "User",
+  "createdAt": "2026-11-01T08:00:00Z"
+}</pre>
+  </div>
+
+  <div class="response-label">Token thiếu, sai hoặc hết hạn — HTTP 401 (body rỗng)</div>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/auth/dev-token</div>
+  <div class="alert">
+    <strong>Không dùng trong App.</strong> Chỉ hoạt động khi server chạy môi trường Development: trả token của user debug <code>dev@plant-tree.local</code> mà không cần đăng ký. Production trả <code>404</code>.
+  </div>
+
+  <div class="alert info">
+    <strong>Về token</strong>: JWT ký HS256, sống 24 giờ. Payload có <code>nameid</code> (userId), <code>email</code>, <code>role</code>, <code>exp</code>. Không có refresh token và không có endpoint logout: đăng xuất = App xoá token đã lưu.
+  </div>
 </section>
 
 <section id="api-devices">
   <h2>Devices API</h2>
+  <p>Mọi endpoint cần <code>Authorization: Bearer $TOKEN</code>. <code>{deviceId}</code> là mã thiết bị (vd <code>ESP32S3_Zone1</code>), không phải trường <code>id</code>.</p>
+
+  <h3>Object Device</h3>
+  <table>
+    <tr><th>Trường</th><th>Kiểu</th><th>Ý nghĩa</th></tr>
+    <tr><td><code>deviceId</code></td><td>string</td><td>Mã thiết bị, dùng trong mọi path <code>{deviceId}</code>.</td></tr>
+    <tr><td><code>name</code></td><td>string</td><td>Tên hiển thị.</td></tr>
+    <tr><td><code>location</code>, <code>plantType</code></td><td>string | null</td><td>Vị trí, loại cây.</td></tr>
+    <tr><td><code>ownerId</code></td><td>string | null</td><td>userId của owner. <code>null</code> = device cũ chưa có chủ (xem <code>claim</code>).</td></tr>
+    <tr><td><code>members</code></td><td>string[]</td><td>userId của những người được chia sẻ (không gồm owner).</td></tr>
+    <tr><td><code>controlMode</code></td><td>"auto" | "manual" | null</td><td>Chế độ server đang giữ. <code>null</code> = <code>"auto"</code>.</td></tr>
+    <tr><td><code>lastSeen</code></td><td>datetime | null</td><td>Lần cuối nhận số đo. Dùng để tính online/offline.</td></tr>
+    <tr><td><code>createdAt</code></td><td>datetime</td><td>Thời điểm đăng ký.</td></tr>
+    <tr><td><code>id</code></td><td>string</td><td>Id nội bộ (MongoDB), App không cần.</td></tr>
+    <tr><td><code>isActive</code></td><td>bool</td><td>Luôn <code>true</code>, bỏ qua.</td></tr>
+    <tr><td><code>simNotifyForward</code></td><td>bool | null</td><td>Chỉ dùng cho thiết bị ảo <code>SIM_*</code>, bỏ qua.</td></tr>
+  </table>
 
   <div class="endpoint post"><span class="badge post">POST</span> /api/devices/register</div>
-  <p>Đăng ký device mới.</p>
+  <p>Thêm device, người gọi thành owner. Body: <code>deviceId</code> và <code>name</code> bắt buộc; <code>location</code>, <code>plantType</code> tuỳ chọn. <code>deviceId</code> là duy nhất trên toàn hệ thống: nếu người khác đã đăng ký mã đó, server trả <code>409</code>.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/devices/register \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"deviceId":"ESP32S3_Zone1","name":"Zone 1","plantType":"Mixed","location":"IoT lab"}'</pre>
   </div>
 
   <div class="response-label">Response — HTTP 201 Created</div>
   <div class="code-block response-block">
     <pre>{
-  "id": "65f8a1b2c3d4e5f678901234",
   "deviceId": "ESP32S3_Zone1",
-  "name": "Zone 1",
-  "location": "IoT lab",
-  "plantType": "Mixed",
-  "isActive": true,
-  "lastSeen": null,
-  "createdAt": "2026-05-24T08:00:00.123456Z"
+  "name": "Zone 1"
 }</pre>
   </div>
 
-  <div class="response-label">Nếu thiếu deviceId hoặc name — HTTP 400</div>
+  <div class="response-label">Lỗi — HTTP 400 / 409</div>
   <div class="code-block response-block error">
-    <pre>DeviceId and Name are required</pre>
+    <pre>400  DeviceId and Name are required
+409  Device ESP32S3_Zone1 already exists</pre>
   </div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/devices</div>
-  <p>Lấy tất cả devices.</p>
+  <p>Device user sở hữu và device được chia sẻ. Chưa có device thì trả <code>[]</code>.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl $API/api/devices</pre>
+    <pre>curl $API/api/devices -H "Authorization: Bearer $TOKEN"</pre>
   </div>
 
-  <div class="response-label">Response — HTTP 200 (mảng device)</div>
+  <div class="response-label">Response — HTTP 200 (mảng Device)</div>
   <div class="code-block response-block">
     <pre>[
   {
@@ -806,116 +1020,190 @@ export DEVICE=ESP32S3_Zone1</pre>
     "name": "Zone 1",
     "location": "IoT lab",
     "plantType": "Mixed",
+    "ownerId": "6650a0c1e2f3a4b5c6d7e8f9",
+    "members": ["6650a0c1e2f3a4b5c6d7e8fa"],
     "isActive": true,
-    "lastSeen": "2026-05-24T08:17:47Z",
-    "createdAt": "2026-05-24T08:00:00Z"
+    "controlMode": "auto",
+    "simNotifyForward": null,
+    "lastSeen": "2026-11-09T08:17:47.471Z",
+    "createdAt": "2026-11-01T08:00:00Z"
   }
 ]</pre>
   </div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/devices/{deviceId}</div>
-  <p>Lấy 1 device theo ID.</p>
+  <p>Chi tiết 1 device, cùng dạng object như trên.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl $API/api/devices/$DEVICE</pre>
+    <pre>curl $API/api/devices/$DEVICE -H "Authorization: Bearer $TOKEN"</pre>
   </div>
 
-  <div class="response-label">Response — HTTP 200</div>
-  <div class="code-block response-block">
-    <pre>{
-  "id": "65f8a1b2c3d4e5f678901234",
-  "deviceId": "ESP32S3_Zone1",
-  "name": "Zone 1",
-  "location": "IoT lab",
-  "plantType": "Mixed",
-  "isActive": true,
-  "lastSeen": "2026-05-24T08:17:47Z",
-  "createdAt": "2026-05-24T08:00:00Z"
-}</pre>
-  </div>
-
-  <div class="response-label">Device không tồn tại — HTTP 404</div>
+  <div class="response-label">Không tồn tại hoặc không có quyền — HTTP 404</div>
   <div class="code-block response-block error">
     <pre>Device ESP32S3_Zone1 not found</pre>
   </div>
 
-  <div class="endpoint post"><span class="badge post">POST</span> /api/devices/{deviceId}/heartbeat</div>
-  <p>ESP32 gọi định kỳ để cập nhật <code>lastSeen</code>.</p>
+  <div class="endpoint delete"><span class="badge delete">DELETE</span> /api/devices/{deviceId}</div>
+  <p><strong>Chỉ owner.</strong> Xoá device cùng toàn bộ số đo, ngưỡng và nhật ký lệnh. Không hoàn tác được, App nên hỏi xác nhận trước.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/devices/$DEVICE/heartbeat</pre>
+    <pre>curl -X DELETE $API/api/devices/$DEVICE -H "Authorization: Bearer $TOKEN"</pre>
   </div>
 
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Device ESP32S3_Zone1 deleted",
+  "deviceId": "ESP32S3_Zone1",
+  "deletedSensorData": 1520,
+  "deletedDeviceConfigs": 1,
+  "deletedCommands": 37
+}</pre>
+  </div>
+  <p>Member gọi sẽ nhận <code>404 Device ESP32S3_Zone1 not found</code>.</p>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/devices/{deviceId}/claim</div>
+  <p>Nhận quyền sở hữu device <strong>chưa có chủ</strong> (<code>ownerId</code> = <code>null</code>, tức device tạo trước khi hệ thống có đăng nhập). Không cần body.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/devices/$DEVICE/claim -H "Authorization: Bearer $TOKEN"</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "deviceId": "ESP32S3_Zone1",
+  "message": "Claimed"
+}</pre>
+  </div>
+
+  <div class="response-label">Lỗi — HTTP 404 / 409</div>
+  <div class="code-block response-block error">
+    <pre>404  Device ESP32S3_Zone1 not found
+409  Device đã có chủ sở hữu</pre>
+  </div>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/devices/{deviceId}/share</div>
+  <p><strong>Chỉ owner.</strong> Chia sẻ cho một tài khoản <strong>đã đăng ký</strong>, theo email. Người được chia sẻ xem và điều khiển được. Chia sẻ lại cho cùng người vẫn trả <code>200</code>, không tạo trùng.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/devices/$DEVICE/share \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"email":"nguoikhac@example.com"}'</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Đã chia sẻ ESP32S3_Zone1 cho nguoikhac@example.com",
+  "deviceId": "ESP32S3_Zone1",
+  "sharedWith": "nguoikhac@example.com"
+}</pre>
+  </div>
+
+  <div class="response-label">Lỗi — HTTP 404 / 400</div>
+  <div class="code-block response-block error">
+    <pre>404  Device ESP32S3_Zone1 not found        (không phải owner)
+404  User nguoikhac@example.com not found  (email chưa đăng ký)
+400  User đã là chủ sở hữu</pre>
+  </div>
+
+  <div class="endpoint delete"><span class="badge delete">DELETE</span> /api/devices/{deviceId}/share/{memberId}</div>
+  <p><strong>Chỉ owner.</strong> Thu hồi chia sẻ. <code>memberId</code> là <code>members[].id</code> lấy từ <code>GET .../members</code>, <strong>không phải email</strong>. Server không kiểm tra <code>memberId</code> có trong danh sách: id sai vẫn trả <code>200</code>.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X DELETE $API/api/devices/$DEVICE/share/6650a0c1e2f3a4b5c6d7e8fa \
+  -H "Authorization: Bearer $TOKEN"</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Đã thu hồi chia sẻ",
+  "deviceId": "ESP32S3_Zone1",
+  "memberId": "6650a0c1e2f3a4b5c6d7e8fa"
+}</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/devices/{deviceId}/members</div>
+  <p>Owner và danh sách người được chia sẻ. Owner hoặc member đều xem được. <code>owner</code> là <code>null</code> với device chưa có chủ.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl $API/api/devices/$DEVICE/members -H "Authorization: Bearer $TOKEN"</pre>
+  </div>
+
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "deviceId": "ESP32S3_Zone1",
+  "owner": { "id": "6650a0c1e2f3a4b5c6d7e8f9", "email": "you@example.com", "displayName": "Minh" },
+  "members": [
+    { "id": "6650a0c1e2f3a4b5c6d7e8fa", "email": "nguoikhac@example.com", "displayName": "Lan" }
+  ]
+}</pre>
+  </div>
+
+  <h3>Endpoint chỉ để test (App không cần)</h3>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/devices/{deviceId}/heartbeat</div>
+  <p>Đặt <code>lastSeen</code> = bây giờ. Thiết bị thật tự cập nhật <code>lastSeen</code> mỗi lần gửi số đo qua MQTT.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/devices/$DEVICE/heartbeat -H "Authorization: Bearer $TOKEN"</pre>
+  </div>
   <div class="response-label">Response — HTTP 200</div>
   <div class="code-block response-block">
     <pre>{
   "message": "Heartbeat received",
-  "timestamp": "2026-05-24T08:20:15.123456Z"
+  "timestamp": "2026-11-09T08:20:15.123Z"
 }</pre>
   </div>
+
+  <div class="endpoint put"><span class="badge put">PUT</span> /api/devices/{deviceId}/sim-notify</div>
+  <p>Chỉ cho thiết bị ảo <code>SIM_*</code> ở tab <a href="#" onclick="document.querySelector('[data-target=sim-device]').click(); return false;">📟 Thiết bị ảo</a>: bật/tắt gửi thông báo của thiết bị ảo sang hệ thống Notify thật. Body <code>{"forwardToNotify":true}</code>, response <code>{deviceId, forwardToNotify, notifyConfigured}</code>. Device không phải <code>SIM_*</code> trả <code>400</code>.</p>
 </section>
 
 <section id="api-sensors">
   <h2>Sensor Data API</h2>
+  <p>Thiết bị gửi số đo qua MQTT khoảng <strong>10 giây/lần</strong> (≈ 360 bản ghi/giờ); server lưu từng bản. App đọc qua 3 endpoint GET bên dưới. Mọi endpoint cần <code>Authorization: Bearer $TOKEN</code>.</p>
 
-  <div class="alert info">
-    <strong>Payload snake_case (đúng hợp đồng)</strong>: Server nhận các field <code>device_id</code>, <code>temperature_c</code>, <code>humidity_percent</code>, <code>pressure_hpa</code>, <code>altitude_m</code>, <code>light_lux</code>, <code>soil_percent</code> (int 0–100), <code>battery_voltage_v</code>, <code>battery_percent</code>, <code>mode</code>, <code>pump_on</code>, <code>light_on</code>… — cùng khuôn với telemetry thiết bị publish lên <code>xmini/sensor_data</code>.
-  </div>
-
-  <div class="endpoint post"><span class="badge post">POST</span> /api/sensordata/upload</div>
-  <p>ESP32 / IoT gửi telemetry. Server lưu lại và trả về <code>{message, timestamp}</code> — <strong>không</strong> còn <code>triggeredCommands</code> (thiết bị tự chạy auto).</p>
-
-  <h4>Payload telemetry (snake_case)</h4>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/sensordata/upload \
-  -H "Content-Type: application/json" \
-  -d '{
-    "device_id":"ESP32S3_Zone1",
-    "temperature_c":28.4,
-    "humidity_percent":65,
-    "pressure_hpa":1008.6,
-    "altitude_m":38.2,
-    "light_lux":420.5,
-    "soil_percent":62,
-    "battery_voltage_v":4.02,
-    "battery_percent":88,
-    "mode":"auto",
-    "pump_on":false,
-    "light_on":false,
-    "light_pwm":0
-  }'</pre>
-  </div>
-
-  <div class="response-label">Response — HTTP 200</div>
-  <div class="code-block response-block">
-    <pre>{
-  "message": "Data uploaded successfully",
-  "timestamp": "2026-05-24T08:17:47.471989Z"
-}</pre>
-  </div>
-
-  <div class="response-label">Nếu thiếu device_id — HTTP 400</div>
-  <div class="code-block response-block error">
-    <pre>DeviceId is required</pre>
-  </div>
-
-  <div class="alert info">
-    Thiết bị <strong>tự chạy auto</strong> theo ngưỡng trong NVS — server không sinh lệnh khi nhận telemetry. Muốn đổi hành vi tự tưới/đèn, chỉnh <strong>ngưỡng</strong> ở tab <a href="#" onclick="document.querySelector('[data-target=api-thresholds]').click(); return false;">Ngưỡng auto (Config)</a>.
-  </div>
+  <h3>Object SensorData</h3>
+  <table>
+    <tr><th>Trường</th><th>Kiểu / đơn vị</th><th>Ý nghĩa</th></tr>
+    <tr><td><code>timestamp</code></td><td>datetime UTC</td><td>Thời điểm server nhận số đo.</td></tr>
+    <tr><td><code>temperature</code></td><td>°C</td><td>Nhiệt độ không khí.</td></tr>
+    <tr><td><code>humidity</code></td><td>%RH</td><td>Độ ẩm không khí.</td></tr>
+    <tr><td><code>soilPercent</code></td><td>int 0–100</td><td>Độ ẩm đất.</td></tr>
+    <tr><td><code>soilDryFlag</code></td><td>bool</td><td><code>true</code> = đất khô (theo cảm biến số).</td></tr>
+    <tr><td><code>lightLevel</code></td><td>lux</td><td>Ánh sáng.</td></tr>
+    <tr><td><code>pressure</code>, <code>altitude</code></td><td>hPa, m</td><td>Áp suất, độ cao suy từ áp suất.</td></tr>
+    <tr><td><code>temperatureBmp</code></td><td>°C</td><td>Nhiệt độ tham chiếu từ cảm biến áp suất.</td></tr>
+    <tr><td><code>batteryPercent</code></td><td>int 0–100</td><td>Pin. <code>null</code> khi đo pin lỗi.</td></tr>
+    <tr><td><code>batteryVoltageV</code>, <code>batteryCurrentMa</code>, <code>batteryPowerMw</code></td><td>V, mA, mW</td><td>Điện áp, dòng, công suất pin.</td></tr>
+    <tr><td><code>pumpOn</code></td><td>bool</td><td>Bơm đang chạy.</td></tr>
+    <tr><td><code>lightOn</code>, <code>lightPwm</code></td><td>bool, int 0–255</td><td>Đèn đang bật, độ sáng đèn.</td></tr>
+    <tr><td><code>mode</code></td><td>"auto" | "manual"</td><td>Chế độ thiết bị báo lên, có thể lệch tạm thời. Hiển thị chế độ theo <code>controlMode</code> của Device.</td></tr>
+    <tr><td><code>waterOk</code></td><td>bool | null</td><td><code>false</code> = bồn hết nước; <code>null</code> = cảm biến nước đang tắt.</td></tr>
+    <tr><td><code>lowBatt</code></td><td>bool</td><td>Pin yếu (dưới <code>batt_warn_pct</code>).</td></tr>
+    <tr><td><code>battFull</code></td><td>bool</td><td>Pin gần đầy.</td></tr>
+    <tr><td><code>battCut</code></td><td>bool</td><td>Pin cạn, thiết bị đã cắt tải: bơm và đèn không chạy.</td></tr>
+    <tr><td><code>id</code>, <code>deviceId</code>, <code>location</code></td><td></td><td>Id nội bộ, mã thiết bị. <code>location</code> luôn <code>null</code>.</td></tr>
+  </table>
+  <div class="alert info">Mọi trường đo có thể <code>null</code> khi cảm biến lỗi hoặc thiết bị không gửi.</div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/latest/{deviceId}</div>
+  <p>Số đo mới nhất. Màn hình chi tiết cây gọi lại mỗi ~10 giây.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl $API/api/sensordata/latest/$DEVICE</pre>
+    <pre>curl $API/api/sensordata/latest/$DEVICE -H "Authorization: Bearer $TOKEN"</pre>
   </div>
 
   <div class="response-label">Response — HTTP 200</div>
   <div class="code-block response-block">
     <pre>{
-  "id": "65f8a1b2c3d4e5f678901234",
+  "id": "6650c3d4e5f6a7b8c9d0e1f2",
   "deviceId": "ESP32S3_Zone1",
-  "timestamp": "2026-05-24T08:17:47.471989Z",
+  "timestamp": "2026-11-09T08:17:47.471Z",
   "temperature": 28.4,
   "humidity": 65,
   "pressure": 1008.6,
@@ -924,9 +1212,9 @@ export DEVICE=ESP32S3_Zone1</pre>
   "lightLevel": 420.5,
   "soilPercent": 62,
   "soilDryFlag": false,
-  "batteryVoltageV": 4.02,
+  "batteryVoltageV": 7.92,
   "batteryCurrentMa": 120.5,
-  "batteryPowerMw": 484.4,
+  "batteryPowerMw": 954.4,
   "batteryPercent": 88,
   "lightOn": false,
   "lightPwm": 0,
@@ -940,131 +1228,178 @@ export DEVICE=ESP32S3_Zone1</pre>
 }</pre>
   </div>
 
-  <div class="response-label">Nếu device chưa có data — HTTP 404</div>
+  <div class="response-label">Lỗi — HTTP 404 (hai trường hợp, phân biệt bằng nội dung)</div>
   <div class="code-block response-block error">
-    <pre>No data found for device ESP32S3_Zone1</pre>
+    <pre>No data found for device ESP32S3_Zone1   (device có nhưng chưa có số đo → App hiện "Chưa có dữ liệu")
+Device ESP32S3_Zone1 not found           (không tồn tại hoặc không có quyền)</pre>
   </div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/history/{deviceId}?limit=50</div>
+  <p>N số đo gần nhất, <strong>mới nhất trước</strong>. <code>limit</code> mặc định 50 và server không đặt giới hạn trên, nên App tự giới hạn (vd ≤ 500). Không có phân trang hay gộp theo giờ/ngày.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl "$API/api/sensordata/history/$DEVICE?limit=50"</pre>
+    <pre>curl "$API/api/sensordata/history/$DEVICE?limit=50" -H "Authorization: Bearer $TOKEN"</pre>
   </div>
 
-  <div class="response-label">Response — mảng SensorData, sort timestamp DESC</div>
+  <div class="response-label">Response — HTTP 200 (mảng SensorData, mới nhất trước)</div>
   <div class="code-block response-block">
     <pre>[
-  {
-    "id": "65f8a1b2...",
-    "deviceId": "ESP32S3_Zone1",
-    "timestamp": "2026-05-24T08:17:47Z",
-    "temperature": 28.4,
-    "humidity": 65,
-    "soilPercent": 62,
-    "lightLevel": 420.5,
-    "pressure": 1008.6,
-    "altitude": 38.2,
-    "batteryPercent": 88,
-    "pumpOn": false,
-    "lightOn": false,
-    "mode": "auto"
-  },
-  {
-    "id": "65f8a0a0...",
-    "deviceId": "ESP32S3_Zone1",
-    "timestamp": "2026-05-24T08:15:23Z",
-    "temperature": 28.1,
-    "soilPercent": 63,
-    "lightLevel": 415.2
-  }
+  { "deviceId": "ESP32S3_Zone1", "timestamp": "2026-11-09T08:17:47Z", "soilPercent": 62, "temperature": 28.4, "lightLevel": 420.5, ... },
+  { "deviceId": "ESP32S3_Zone1", "timestamp": "2026-11-09T08:17:37Z", "soilPercent": 62, "temperature": 28.3, "lightLevel": 418.0, ... }
 ]</pre>
   </div>
 
-  <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/range/{deviceId}</div>
+  <div class="endpoint get"><span class="badge get">GET</span> /api/sensordata/range/{deviceId}?startDate=…&amp;endDate=…</div>
+  <p>Số đo trong khoảng thời gian, <strong>cũ nhất trước</strong>. Luôn truyền cả <code>startDate</code> và <code>endDate</code> dạng ISO-8601 có <code>Z</code>.</p>
+  <div class="alert danger">
+    <strong>Giới hạn hiện tại</strong>: server chỉ lọc trong <strong>1000 số đo mới nhất</strong> (≈ 2,8 giờ nếu 10 giây/lần). Khoảng thời gian cũ hơn sẽ trả mảng rỗng hoặc thiếu dữ liệu. Biểu đồ theo ngày/tuần chưa làm được bằng endpoint này, cần backend bổ sung.
+  </div>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl "$API/api/sensordata/range/$DEVICE?startDate=2026-05-24T00:00:00Z&endDate=2026-05-25T00:00:00Z"</pre>
+    <pre>curl "$API/api/sensordata/range/$DEVICE?startDate=2026-11-09T07:00:00Z&amp;endDate=2026-11-09T08:00:00Z" \
+  -H "Authorization: Bearer $TOKEN"</pre>
+  </div>
+  <div class="response-label">Response — HTTP 200 (mảng SensorData, cũ nhất trước)</div>
+
+  <h3>Endpoint chỉ để test (App không cần)</h3>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/sensordata/upload</div>
+  <p>Nạp số đo qua HTTP, để test khi không có thiết bị. Thiết bị thật gửi qua MQTT <code>xmini/sensor_data</code>. Body dùng <strong>snake_case</strong> giống hệt payload MQTT.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/sensordata/upload \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "device_id":"ESP32S3_Zone1",
+    "temperature_c":28.4,
+    "humidity_percent":65,
+    "light_lux":420.5,
+    "soil_percent":62,
+    "battery_percent":88,
+    "mode":"auto",
+    "pump_on":false,
+    "light_on":false
+  }'</pre>
+  </div>
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "message": "Data uploaded successfully",
+  "timestamp": "2026-11-09T08:17:47.471Z"
+}</pre>
+  </div>
+  <div class="response-label">Thiếu device_id — HTTP 400</div>
+  <div class="code-block response-block error">
+    <pre>device_id is required</pre>
   </div>
 </section>
 
 <section id="api-thresholds">
   <h2>Ngưỡng auto (Device Config)</h2>
-  <p>Thiết bị <strong>TỰ chạy chế độ auto</strong> dựa trên 15 ngưỡng lưu trong NVS. Rule tưới/đèn phía server (<code>/api/rules/*</code>) đã bị <strong>gỡ bỏ</strong>. Muốn đổi hành vi auto → đọc/đặt ngưỡng qua các endpoint config dưới đây; server publish <code>{"config":{...}}</code> xuống <code>xmini/control</code>.</p>
+  <p>15 ngưỡng quyết định cách tưới và bật đèn ở chế độ auto. Giá trị thật lưu trên thiết bị; server đọc lại từ những gì thiết bị gửi lên. Đổi ngưỡng nghĩa là gửi lệnh xuống thiết bị: thiết bị kẹp giá trị về dải hợp lệ, lưu lại, rồi gửi giá trị mới lên server sau vài giây.</p>
 
-  <div class="alert info">
-    <strong>15 khoá ngưỡng (snake_case)</strong>: <code>soil_on_pct</code>, <code>soil_off_pct</code>, <code>pump_max_run_s</code>, <code>pump_cooldown_s</code>, <code>lux_on</code>, <code>lux_off</code>, <code>light_auto_pwm</code>, <code>batt_warn_pct</code>, <code>batt_recover_pct</code>, <code>soil_dry</code>, <code>soil_wet</code>, <code>batt_full_on_v</code>, <code>batt_full_off_v</code>, <code>batt_crit_v</code>, <code>batt_crit_recover_v</code>.
+  <h3>15 khoá ngưỡng</h3>
+  <table>
+    <tr><th>Khoá gửi lên (PUT)</th><th>Trường trả về (GET)</th><th>Ý nghĩa</th><th>Dải</th><th>Mặc định</th></tr>
+    <tr><td><code>soil_on_pct</code></td><td><code>soilOnPct</code></td><td>Đất dưới mức này (%) thì bắt đầu tưới</td><td>0–100</td><td>30</td></tr>
+    <tr><td><code>soil_off_pct</code></td><td><code>soilOffPct</code></td><td>Đất trên mức này (%) thì ngừng tưới</td><td>0–100</td><td>60</td></tr>
+    <tr><td><code>pump_max_run_s</code></td><td><code>pumpMaxRunS</code></td><td>Thời gian bơm chạy tối đa mỗi lượt (giây)</td><td>0–3600</td><td>20</td></tr>
+    <tr><td><code>pump_cooldown_s</code></td><td><code>pumpCooldownS</code></td><td>Thời gian nghỉ giữa 2 lượt tưới auto (giây)</td><td>0–3600</td><td>300</td></tr>
+    <tr><td><code>lux_on</code></td><td><code>luxOn</code></td><td>Ánh sáng dưới mức này (lux) thì bật đèn</td><td>0–65535</td><td>120</td></tr>
+    <tr><td><code>lux_off</code></td><td><code>luxOff</code></td><td>Ánh sáng trên mức này (lux) thì tắt đèn</td><td>0–65535</td><td>300</td></tr>
+    <tr><td><code>light_auto_pwm</code></td><td><code>lightAutoPwm</code></td><td>Độ sáng đèn khi auto bật</td><td>0–255</td><td>180</td></tr>
+    <tr><td><code>batt_warn_pct</code></td><td><code>battWarnPct</code></td><td>Báo pin yếu khi dưới mức (%)</td><td>0–100</td><td>20</td></tr>
+    <tr><td><code>batt_recover_pct</code></td><td><code>battRecoverPct</code></td><td>Hết báo pin yếu khi trên mức (%)</td><td>0–100</td><td>25</td></tr>
+    <tr><td><code>soil_dry</code></td><td><code>soilDry</code></td><td>Hiệu chuẩn cảm biến đất: giá trị thô khi khô</td><td>0–4095</td><td>2800</td></tr>
+    <tr><td><code>soil_wet</code></td><td><code>soilWet</code></td><td>Hiệu chuẩn cảm biến đất: giá trị thô khi ướt</td><td>0–4095</td><td>1200</td></tr>
+    <tr><td><code>batt_full_on_v</code></td><td><code>battFullOnV</code></td><td>Báo pin đầy khi điện áp từ mức này (V)</td><td>5–9</td><td>8.3</td></tr>
+    <tr><td><code>batt_full_off_v</code></td><td><code>battFullOffV</code></td><td>Hết báo pin đầy khi điện áp xuống mức này (V)</td><td>5–9</td><td>8.1</td></tr>
+    <tr><td><code>batt_crit_v</code></td><td><code>battCritV</code></td><td>Cắt tải khi điện áp xuống mức này (V)</td><td>5–9</td><td>6.4</td></tr>
+    <tr><td><code>batt_crit_recover_v</code></td><td><code>battCritRecoverV</code></td><td>Hết cắt tải khi điện áp lên mức này (V)</td><td>5–9</td><td>6.8</td></tr>
+  </table>
+  <div class="alert">
+    <strong>Tên trường khác nhau giữa 2 chiều</strong>: gửi lên dùng snake_case (<code>soil_on_pct</code>), GET trả về camelCase (<code>soilOnPct</code>).
   </div>
+  <div class="alert info">Màn cài đặt của App thường chỉ cần 7 khoá đầu (tưới và đèn). Các khoá hiệu chuẩn cảm biến và pin nên để người kỹ thuật chỉnh.</div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/control/{deviceId}/config</div>
-  <p>Ngưỡng auto BE nghe được từ <code>xmini/config</code>. Nếu thiết bị chưa gửi, trả về <code>{config:null, note}</code>.</p>
+  <p>Ngưỡng thiết bị gửi lên gần nhất. Trường nào thiết bị chưa gửi sẽ là <code>null</code>.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl $API/api/control/$DEVICE/config</pre>
+    <pre>curl $API/api/control/$DEVICE/config -H "Authorization: Bearer $TOKEN"</pre>
   </div>
 
-  <div class="response-label">Response — HTTP 200</div>
+  <div class="response-label">Response — HTTP 200 (đã có ngưỡng)</div>
   <div class="code-block response-block">
     <pre>{
+  "id": "6650b1c2d3e4f5a6b7c8d9e0",
   "deviceId": "ESP32S3_Zone1",
-  "config": {
-    "soil_on_pct": 30,
-    "soil_off_pct": 60,
-    "pump_max_run_s": 30,
-    "pump_cooldown_s": 300,
-    "lux_on": 50,
-    "lux_off": 200,
-    "light_auto_pwm": 180,
-    "batt_warn_pct": 20,
-    "batt_recover_pct": 30,
-    "soil_dry": 3200,
-    "soil_wet": 1400,
-    "batt_full_on_v": 4.15,
-    "batt_full_off_v": 4.05,
-    "batt_crit_v": 3.30,
-    "batt_crit_recover_v": 3.50
-  },
-  "updatedAt": "2026-05-24T08:10:00Z"
+  "soilOnPct": 30,
+  "soilOffPct": 60,
+  "pumpMaxRunS": 20,
+  "pumpCooldownS": 300,
+  "luxOn": 120,
+  "luxOff": 300,
+  "lightAutoPwm": 180,
+  "battWarnPct": 20,
+  "battRecoverPct": 25,
+  "soilDry": 2800,
+  "soilWet": 1200,
+  "battFullOnV": 8.3,
+  "battFullOffV": 8.1,
+  "battCritV": 6.4,
+  "battCritRecoverV": 6.8,
+  "updatedAt": "2026-11-09T08:10:00Z"
 }</pre>
   </div>
 
-  <div class="response-label">Nếu thiết bị chưa gửi config — HTTP 200</div>
+  <div class="response-label">Response — HTTP 200 (server chưa nhận được ngưỡng từ thiết bị)</div>
   <div class="code-block response-block">
     <pre>{
   "deviceId": "ESP32S3_Zone1",
   "config": null,
-  "note": "No config received from device yet"
+  "note": "Chưa nghe được xmini/config. Gọi POST .../config/refresh để yêu cầu thiết bị gửi lại."
 }</pre>
   </div>
+  <p>Phân biệt 2 trường hợp: response có trường <code>config</code> (giá trị <code>null</code>) nghĩa là chưa có ngưỡng. Khi đó gọi <code>config/refresh</code>, đợi vài giây rồi GET lại.</p>
 
   <div class="endpoint put"><span class="badge put">PUT</span> /api/control/{deviceId}/config</div>
-  <p>Đặt/đổi ngưỡng. Body = các khoá muốn đổi (snake_case) — <strong>chỉ gửi khoá cần đổi</strong>. Server publish <code>{"config":{...}}</code> xuống <code>xmini/control</code> (thiết bị lưu NVS, không đổi mode).</p>
+  <p>Body chỉ gồm <strong>các khoá muốn đổi</strong>, giá trị là số. Khoá lạ bị bỏ qua.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X PUT $API/api/control/$DEVICE/config \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"soil_on_pct":25,"soil_off_pct":65,"light_auto_pwm":200}'</pre>
   </div>
 
   <div class="response-label">Response — HTTP 200</div>
   <div class="code-block response-block">
     <pre>{
-  "message": "Config sent",
+  "message": "Đã gửi lệnh xuống xmini/control",
   "deviceId": "ESP32S3_Zone1",
   "published": { "config": { "soil_on_pct": 25, "soil_off_pct": 65, "light_auto_pwm": 200 } }
 }</pre>
   </div>
+  <p>Giá trị mới chỉ hiện ở GET sau khi thiết bị gửi lại (vài giây), và có thể đã bị kẹp về dải hợp lệ. Nếu thiết bị đang offline, lệnh mất và GET vẫn ra giá trị cũ.</p>
+
+  <div class="response-label">Lỗi — HTTP 400 / 503</div>
+  <div class="code-block response-block error">
+    <pre>400  Ngưỡng 'soil_on_pct' phải là số.
+400  Không có khoá ngưỡng hợp lệ. Khoá cho phép: soil_on_pct, soil_off_pct, ...
+503  MQTT publisher chưa kết nối broker — không gửi được lệnh.</pre>
+  </div>
 
   <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}/config/refresh</div>
-  <p>Yêu cầu thiết bị gửi lại cấu hình hiện tại — server publish <code>{"config":{}}</code> xuống <code>xmini/control</code>.</p>
+  <p>Yêu cầu thiết bị gửi lại toàn bộ ngưỡng hiện tại. Không cần body.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/$DEVICE/config/refresh</pre>
+    <pre>curl -X POST $API/api/control/$DEVICE/config/refresh -H "Authorization: Bearer $TOKEN"</pre>
   </div>
 
   <div class="response-label">Response — HTTP 200</div>
   <div class="code-block response-block">
     <pre>{
-  "message": "Config refresh requested",
+  "message": "Đã gửi lệnh xuống xmini/control",
   "deviceId": "ESP32S3_Zone1",
   "published": { "config": {} }
 }</pre>
@@ -1072,86 +1407,205 @@ export DEVICE=ESP32S3_Zone1</pre>
 </section>
 
 <section id="api-control">
-  <h2>Control — Điều khiển thủ công</h2>
-  <p>Gửi lệnh THỦ CÔNG dạng <strong>object phẳng</strong>. Server publish nguyên khoá phẳng xuống <code>xmini/control</code> (QoS 0). Có thể gộp nhiều khoá trong 1 body. Lệnh chấp hành (<code>pump</code>/<code>light</code>/<code>light_pwm</code>) sẽ ép thiết bị sang MANUAL.</p>
+  <h2>Control — Điều khiển</h2>
+  <p>Server gửi lệnh xuống thiết bị qua MQTT ngay khi nhận request. App nên dùng 3 endpoint gọn <code>/water</code>, <code>/light</code>, <code>/auto</code>. Endpoint tổng quát <code>POST /api/control/{deviceId}</code> dùng để chuyển manual, hiện tin nhắn trên màn hình thiết bị, hoặc gộp nhiều lệnh. Mọi endpoint cần <code>Authorization: Bearer $TOKEN</code>.</p>
 
-  <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}</div>
-  <p>Khoá cho phép: <code>pump</code>(bool), <code>light</code>(bool), <code>light_pwm</code>(int 0–255), <code>mode</code>("auto"|"manual"), <code>auto</code>(bool), <code>message</code>(str), <code>message_secs</code>(int), <code>config</code>(object 15 ngưỡng, hoặc <code>{}</code> để yêu cầu gửi lại).</p>
-
-  <h4>Bật máy bơm (ép MANUAL)</h4>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/$DEVICE \
-  -H "Content-Type: application/json" \
-  -d '{"pump":true}'</pre>
+  <div class="alert info">
+    Lệnh tưới/đèn <strong>không đổi chế độ</strong> auto/manual: server tự gộp chế độ hiện tại vào lệnh, nên <code>published</code> có thêm <code>mode</code>. Ở chế độ auto, lệnh tay có thể bị server ghi đè. Chi tiết ở tab <a href="#" onclick="document.querySelector('[data-target=api-app-start]').click(); return false;">Bắt đầu cho App</a>, mục "Chế độ auto / manual".
   </div>
 
-  <div class="response-label">Response — HTTP 200</div>
+  <h3>Response chung của mọi lệnh</h3>
+  <div class="response-label">HTTP 200</div>
   <div class="code-block response-block">
     <pre>{
-  "message": "Command published",
+  "message": "Đã gửi lệnh xuống xmini/control",
   "deviceId": "ESP32S3_Zone1",
-  "published": { "pump": true }
+  "published": { "pump": true, "mode": "auto" }
 }</pre>
   </div>
+  <p><code>published</code> là đúng payload đã gửi xuống thiết bị. Lỗi chung: <code>404</code> khi device không tồn tại hoặc không có quyền; <code>503 MQTT publisher chưa kết nối broker — không gửi được lệnh.</code></p>
 
-  <h4>Tắt máy bơm</h4>
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}/water</div>
+  <p>Bật hoặc tắt bơm: <code>{"on":true}</code> / <code>{"on":false}</code>. Bắt buộc có body; gửi <code>{}</code> sẽ bị hiểu là tắt bơm.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/$DEVICE \
-  -H "Content-Type: application/json" \
-  -d '{"pump":false}'</pre>
+    <pre>curl -X POST $API/api/control/$DEVICE/water \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"on":true}'</pre>
+  </div>
+  <div class="response-label"><code>published</code></div>
+  <div class="code-block response-block">
+    <pre>{ "pump": true, "mode": "auto" }</pre>
   </div>
 
-  <h4>Bật / tắt đèn, đặt độ sáng PWM</h4>
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}/light</div>
+  <p>Bật/tắt đèn bằng <code>{"on":true|false}</code>, hoặc đặt độ sáng bằng <code>{"pwm":0–255}</code>. Gửi cả hai thì <code>pwm</code> được ưu tiên; giá trị ngoài 0–255 bị kẹp lại.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"light":true}'
-curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"light":false}'
-curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"light_pwm":180}'</pre>
+    <pre>curl -X POST $API/api/control/$DEVICE/light \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"on":true}'
+curl -X POST $API/api/control/$DEVICE/light \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"pwm":180}'</pre>
+  </div>
+  <div class="response-label"><code>published</code></div>
+  <div class="code-block response-block">
+    <pre>{ "light": true, "mode": "auto" }
+{ "light_pwm": 180 }</pre>
+  </div>
+  <div class="response-label">Thiếu cả on và pwm — HTTP 400</div>
+  <div class="code-block response-block error">
+    <pre>Cần truyền 'on' (bool) hoặc 'pwm' (0–255).</pre>
   </div>
 
-  <h4>Đổi chế độ (auto / manual)</h4>
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}/auto</div>
+  <p>Trả device về chế độ auto. Không cần body.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"mode":"auto"}'
-curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"mode":"manual"}'</pre>
+    <pre>curl -X POST $API/api/control/$DEVICE/auto -H "Authorization: Bearer $TOKEN"</pre>
+  </div>
+  <div class="response-label"><code>published</code></div>
+  <div class="code-block response-block">
+    <pre>{ "mode": "auto" }</pre>
   </div>
 
-  <h4>Hiển thị tin nhắn lên màn hình TFT (ASCII, "" để xoá)</h4>
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}</div>
+  <p>Lệnh tổng quát. Body là object phẳng, gộp được nhiều khoá trong 1 lần gửi. Khoá lạ bị bỏ qua; không có khoá hợp lệ nào thì trả <code>400</code>.</p>
+  <table>
+    <tr><th>Khoá</th><th>Kiểu</th><th>Ý nghĩa</th></tr>
+    <tr><td><code>pump</code></td><td>bool</td><td>Bật/tắt bơm (giống <code>/water</code>).</td></tr>
+    <tr><td><code>light</code></td><td>bool</td><td>Bật/tắt đèn.</td></tr>
+    <tr><td><code>light_pwm</code></td><td>int 0–255</td><td>Độ sáng đèn, ngoài dải bị kẹp.</td></tr>
+    <tr><td><code>mode</code></td><td>"auto" | "manual"</td><td>Đổi chế độ. Chỉ gửi đúng 2 giá trị này: server chưa kiểm tra giá trị khác.</td></tr>
+    <tr><td><code>auto</code></td><td>bool</td><td><code>true</code> = auto, <code>false</code> = manual (cách viết khác của <code>mode</code>).</td></tr>
+    <tr><td><code>message</code></td><td>string</td><td>Chữ hiện trên màn hình thiết bị, chỉ ASCII (không dấu). <code>""</code> để xoá.</td></tr>
+    <tr><td><code>message_secs</code></td><td>int ≥ 0</td><td>Số giây hiển thị tin nhắn.</td></tr>
+    <tr><td><code>config</code></td><td>object</td><td>Ngưỡng, giống <code>PUT .../config</code>; <code>{}</code> = yêu cầu gửi lại ngưỡng.</td></tr>
+  </table>
+
+  <h4>Chuyển sang manual / về auto</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/$DEVICE \
-  -H "Content-Type: application/json" \
-  -d '{"message":"Tuoi cho toi nhe","message_secs":15}'</pre>
+    <pre>curl -X POST $API/api/control/$DEVICE -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"mode":"manual"}'
+curl -X POST $API/api/control/$DEVICE -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"mode":"auto"}'</pre>
   </div>
 
-  <div class="endpoint get"><span class="badge get">GET</span> /api/control/commands/{deviceId}?limit=N</div>
-  <p>Nhật ký lệnh đã publish (không phải hàng đợi polling — thiết bị nhận lệnh realtime qua MQTT).</p>
+  <h4>Hiện tin nhắn trên màn hình thiết bị</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
-    <pre>curl "$API/api/control/commands/$DEVICE?limit=20"</pre>
+    <pre>curl -X POST $API/api/control/$DEVICE -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"message":"Tuoi cho toi nhe","message_secs":15}'</pre>
+  </div>
+
+  <h4>Gộp nhiều lệnh: chuyển manual và bật bơm</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/control/$DEVICE -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"mode":"manual","pump":true}'</pre>
+  </div>
+
+  <div class="response-label">Lỗi kiểu dữ liệu — HTTP 400 (ví dụ)</div>
+  <div class="code-block response-block error">
+    <pre>'pump' phải là boolean.
+'light_pwm' phải là số nguyên 0–255.
+'mode' phải là chuỗi "auto" hoặc "manual".
+Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode, auto, message, message_secs, config.</pre>
+  </div>
+
+  <div class="endpoint get"><span class="badge get">GET</span> /api/control/commands/{deviceId}?limit=50</div>
+  <p>Nhật ký lệnh đã gửi xuống thiết bị, <strong>mới nhất trước</strong>. Gồm cả lệnh của người dùng (App, trợ lý AI) lẫn lệnh tự động của server; chưa có trường cho biết nguồn lệnh. <code>limit</code> mặc định 50.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl "$API/api/control/commands/$DEVICE?limit=20" -H "Authorization: Bearer $TOKEN"</pre>
   </div>
 
   <div class="response-label">Response — HTTP 200 (mảng, mới nhất trước)</div>
   <div class="code-block response-block">
     <pre>[
   {
+    "id": "6650d4e5f6a7b8c9d0e1f2a3",
     "deviceId": "ESP32S3_Zone1",
-    "payload": { "pump": true },
-    "createdAt": "2026-05-24T08:30:00Z"
+    "payload": { "pump": true, "mode": "auto" },
+    "createdAt": "2026-11-09T08:30:00Z"
   },
   {
+    "id": "6650d4e5f6a7b8c9d0e1f2a2",
     "deviceId": "ESP32S3_Zone1",
     "payload": { "message": "Tuoi cho toi nhe", "message_secs": 15 },
-    "createdAt": "2026-05-24T08:28:12Z"
+    "createdAt": "2026-11-09T08:28:12Z"
   }
 ]</pre>
   </div>
+</section>
 
-  <div class="alert info">
-    Ngưỡng auto (<code>config</code>) có endpoint riêng — xem tab <a href="#" onclick="document.querySelector('[data-target=api-thresholds]').click(); return false;">Ngưỡng auto (Config)</a>.
+<section id="api-assistant">
+  <h2>Trợ lý AI — Chat API</h2>
+  <p>Người dùng chat bằng ngôn ngữ tự nhiên: hỏi tình trạng cây, xin lời khuyên, hoặc ra lệnh ("tưới cây Zone 1"). Endpoint theo chuẩn <strong>OpenAI Chat Completions</strong>. Muốn dùng thư viện OpenAI có sẵn: đặt base URL = <code>$API/api/assistant/v1</code> và API key = JWT của người dùng (thư viện tự gửi <code>Authorization: Bearer</code>).</p>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/assistant/v1/chat/completions</div>
+  <ul>
+    <li><strong>Server không lưu hội thoại.</strong> App giữ toàn bộ <code>messages[]</code>, thêm câu trả lời của trợ lý vào mảng, và gửi lại cả mảng ở mỗi lượt.</li>
+    <li>Server tự gán người dùng theo token (App không cần gửi <code>user</code>), luôn tắt streaming (<code>stream</code> bị ép <code>false</code>), và dùng <code>model</code> mặc định <code>plant-assistant</code> nếu App không gửi.</li>
+    <li>Trả lời có thể mất vài chục giây (server chờ AI tối đa 120 giây), nên đặt timeout request của App ≥ 120 giây.</li>
+  </ul>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/assistant/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Độ ẩm đất của ESP32S3_Zone1 bao nhiêu?"}]}'</pre>
   </div>
+
+  <div class="response-label">Response — HTTP 200 (giữ nguyên từ AI server, chuẩn OpenAI)</div>
+  <div class="code-block response-block">
+    <pre>{
+  "choices": [
+    {
+      "index": 0,
+      "message": { "role": "assistant", "content": "Độ ẩm đất của Zone 1 đang là 62%, chưa cần tưới." },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": { ... }
+}</pre>
+  </div>
+  <p>Hiển thị <code>choices[0].message.content</code>.</p>
+
+  <h3>Xác nhận lệnh điều khiển</h3>
+  <p>Khi người dùng yêu cầu điều khiển, trợ lý chưa làm ngay mà hỏi lại. Lúc đó <code>choices[0].message</code> có <code>content</code> là câu hỏi "(Có/Không)" và kèm <code>tool_calls</code> (nội dung do AI server sinh):</p>
+  <div class="code-block response-block">
+    <pre>{
+  "role": "assistant",
+  "content": "Bạn xác nhận bật bơm tưới cho ESP32S3_Zone1? (Có/Không)",
+  "tool_calls": [ { "id": "call_1", "type": "function", "function": { "name": "...", "arguments": "..." } } ]
+}</pre>
+  </div>
+  <ol>
+    <li>Thêm <strong>nguyên</strong> message đó (giữ <code>tool_calls</code>) vào <code>messages[]</code>. App có thể hiện 2 nút Có / Không khi thấy <code>tool_calls</code>.</li>
+    <li>Thêm câu trả lời của người dùng: <code>{"role":"user","content":"có"}</code> hoặc <code>"không"</code>.</li>
+    <li>Gửi lại toàn bộ <code>messages[]</code>. Trợ lý thực thi hoặc huỷ lệnh.</li>
+  </ol>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>{
+  "messages": [
+    { "role": "user", "content": "Tưới nước cho ESP32S3_Zone1 giúp mình" },
+    { "role": "assistant", "content": "Bạn xác nhận bật bơm tưới cho ESP32S3_Zone1? (Có/Không)", "tool_calls": [ ... ] },
+    { "role": "user", "content": "có" }
+  ]
+}</pre>
+  </div>
+  <div class="alert">Nếu App bỏ <code>tool_calls</code> khỏi lịch sử, câu "có" bị coi là yêu cầu mới và không lệnh nào được thực thi.</div>
+
+  <div class="response-label">Lỗi</div>
+  <div class="code-block response-block error">
+    <pre>400  Body phải là JSON object OpenAI-compatible ({ messages: [...] }).
+400  'messages' là bắt buộc và không được rỗng.
+401  (thiếu hoặc hết hạn token)
+502  AI server trả lỗi
+503  AI server chưa chạy hoặc không kết nối được</pre>
+  </div>
+  <p>Thử chat trực tiếp ở tab <a href="#" onclick="document.querySelector('[data-target=try-assistant]').click(); return false;">🤖 Trợ lý AI (chat)</a>.</p>
 </section>
 
 <section id="try-config">
@@ -1210,6 +1664,14 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
     <div class="status-line"><span class="status-pill"></span><span class="ms"></span></div>
     <div class="code-block response-block"><pre></pre></div>
   </div>
+
+  <h3>Kiểm tra token</h3>
+  <p>Gọi <code>GET /api/auth/me</code> — trả thông tin user nếu token còn hạn, <code>401</code> nếu chưa đăng nhập / hết hạn.</p>
+  <button class="run-btn" id="run-me">Tôi là ai?</button>
+  <div class="try-result" id="r-me">
+    <div class="status-line"><span class="status-pill"></span><span class="ms"></span></div>
+    <div class="code-block response-block"><pre></pre></div>
+  </div>
 </section>
 
 <section id="try-devices">
@@ -1257,7 +1719,7 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
   <div class="try-card">
     <div class="try-head"><span class="badge delete">DELETE</span><span class="path">/api/devices/{deviceId}</span><span class="title">Xoá device (dùng Device ID)</span></div>
     <div class="try-body">
-      <p style="font-size:13px;color:#f87171;margin-bottom:10px">⚠️ Xoá device đang chọn ở tab Kết nối — kèm sensor/rule/command của nó. Không hoàn tác được. Chỉ chủ sở hữu xoá được.</p>
+      <p style="font-size:13px;color:#f87171;margin-bottom:10px">⚠️ Xoá device đang chọn ở tab Kết nối — kèm sensor/config/command của nó. Không hoàn tác được. Chỉ chủ sở hữu xoá được.</p>
       <button class="run-btn" id="run-d-del" style="background:#7f1d1d">Xoá device</button>
       <div class="try-result" id="r-d-del"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
@@ -1280,6 +1742,27 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
     <div class="try-body">
       <button class="run-btn" id="run-d-members">Execute</button>
       <div class="try-result" id="r-d-members"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge delete">DELETE</span><span class="path">/api/devices/{deviceId}/share/{memberId}</span><span class="title">Thu hồi chia sẻ (chỉ owner)</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:10px"><code>memberId</code> là <code>members[].id</code> trong kết quả <b>Xem owner + người được chia sẻ</b> ở trên (không phải email).</p>
+      <div class="try-grid">
+        <div class="try-field full"><label>memberId</label><input id="d-unshare-member" placeholder="6650a0c1e2f3a4b5c6d7e8fa"></div>
+      </div>
+      <button class="run-btn" id="run-d-unshare" style="background:#7f1d1d">Thu hồi</button>
+      <div class="try-result" id="r-d-unshare"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/devices/{deviceId}/claim</span><span class="title">Nhận device chưa có chủ</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:10px">Chỉ áp dụng cho device cũ có <code>ownerId</code> = <code>null</code>. Device đã có chủ trả <code>409</code>.</p>
+      <button class="run-btn" id="run-d-claim">Execute</button>
+      <div class="try-result" id="r-d-claim"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
   </div>
 </section>
@@ -1322,6 +1805,19 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
       <div class="try-result" id="r-s-history"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
   </div>
+
+  <div class="try-card">
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/sensordata/range/{deviceId}</span><span class="title">Theo khoảng thời gian</span></div>
+    <div class="try-body">
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Giờ theo máy bạn, trang tự đổi sang UTC. Để trống = 1 giờ gần nhất. Server chỉ lọc trong 1000 bản đo mới nhất (~2,8 giờ).</p>
+      <div class="try-grid">
+        <div class="try-field"><label>startDate</label><input id="s-range-start" type="datetime-local"></div>
+        <div class="try-field"><label>endDate</label><input id="s-range-end" type="datetime-local"></div>
+      </div>
+      <button class="run-btn" id="run-s-range">Execute</button>
+      <div class="try-result" id="r-s-range"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
+    </div>
+  </div>
 </section>
 
 <section id="try-rules">
@@ -1329,7 +1825,7 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
   <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
 
   <div class="alert info">
-    Thiết bị tự chạy auto theo 15 ngưỡng lưu trong NVS. Bấm <b>Tải cấu hình</b> để GET ngưỡng hiện tại, sửa ô cần đổi rồi <b>Lưu</b> (PUT — chỉ gửi khoá đã đổi). Nếu BE chưa nghe được config, bấm <b>Yêu cầu gửi lại</b>.
+    Chế độ auto chạy theo 15 ngưỡng của thiết bị (lưu trong NVS). Bấm <b>Tải cấu hình</b> để GET ngưỡng hiện tại, sửa ô cần đổi rồi <b>Lưu</b> (PUT — chỉ gửi khoá đã đổi). Nếu BE chưa nghe được config, bấm <b>Yêu cầu gửi lại</b>.
   </div>
 
   <div class="try-card">
@@ -1383,7 +1879,7 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
   <div class="try-card" style="border-color:#3b82f6">
     <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}/water · /light · /auto</span><span class="title">App — điều khiển nhanh (endpoint chuyên dụng)</span></div>
     <div class="try-body">
-      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Endpoint gọn cho App. Lệnh <strong>Tưới</strong>/<strong>Đèn</strong> ép thiết bị sang <strong>MANUAL</strong> (ưu tiên hơn auto); bấm <strong>Về Auto</strong> để trả quyền lại cho chế độ tự động.</p>
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Endpoint gọn cho App. Lệnh <strong>Tưới</strong>/<strong>Đèn</strong> <strong>không đổi chế độ</strong> (server gộp chế độ hiện tại vào lệnh — xem <code>published</code>); đang auto thì server có thể ghi đè ở lần telemetry sau. <strong>Về Auto</strong> chuyển thiết bị về chế độ tự động.</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <button class="run-btn" id="run-c-water-on">💧 Tưới BẬT — /water {"on":true}</button>
         <button class="run-btn" id="run-c-water-off" style="background:#334155;color:#e2e8f0">Tưới TẮT — /water {"on":false}</button>
@@ -1404,7 +1900,7 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
   </div>
 
   <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Máy bơm (ép MANUAL)</span></div>
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Máy bơm (giữ nguyên chế độ)</span></div>
     <div class="try-body">
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="run-btn" id="run-c-pump-on">Bật bơm — {"pump":true}</button>
@@ -1415,7 +1911,7 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" -d '{"
   </div>
 
   <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Đèn + PWM (ép MANUAL)</span></div>
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Đèn + PWM (giữ nguyên chế độ)</span></div>
     <div class="try-body">
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <button class="run-btn" id="run-c-light-on">Bật đèn — {"light":true}</button>
@@ -2778,6 +3274,7 @@ node --test "tests-js/*.test.mjs"</pre>
 
     // --- Config ---
     on('run-ping', () => run('r-ping', 'GET', '/api/devices'));
+    on('run-me', () => run('r-me', 'GET', '/api/auth/me'));
 
     // --- Devices ---
     on('run-d-reg', () => {
@@ -2799,6 +3296,11 @@ node --test "tests-js/*.test.mjs"</pre>
       run('r-d-share', 'POST', `/api/devices/${encodeURIComponent(d)}/share`, { email: val('d-share-email') });
     });
     on('run-d-members', () => { const d = requireDevice('r-d-members'); if (d) run('r-d-members', 'GET', `/api/devices/${encodeURIComponent(d)}/members`); });
+    on('run-d-unshare', () => {
+      const d = requireDevice('r-d-unshare'); if (!d) return;
+      run('r-d-unshare', 'DELETE', `/api/devices/${encodeURIComponent(d)}/share/${encodeURIComponent(val('d-unshare-member'))}`);
+    });
+    on('run-d-claim', () => { const d = requireDevice('r-d-claim'); if (d) run('r-d-claim', 'POST', `/api/devices/${encodeURIComponent(d)}/claim`); });
 
     // --- Sensors ---
     on('run-s-upload', () => {
@@ -2810,6 +3312,13 @@ node --test "tests-js/*.test.mjs"</pre>
     });
     on('run-s-latest', () => { const d = requireDevice('r-s-latest'); if (d) run('r-s-latest', 'GET', `/api/sensordata/latest/${encodeURIComponent(d)}`); });
     on('run-s-history', () => { const d = requireDevice('r-s-history'); if (d) run('r-s-history', 'GET', `/api/sensordata/history/${encodeURIComponent(d)}?limit=${num('s-history-limit') || 50}`); });
+    on('run-s-range', () => {
+      const d = requireDevice('r-s-range'); if (!d) return;
+      // datetime-local là giờ máy -> new Date() hiểu theo giờ máy, toISOString() ra UTC có 'Z'. Trống = 1 giờ gần nhất.
+      const end = val('s-range-end') ? new Date(val('s-range-end')) : new Date();
+      const start = val('s-range-start') ? new Date(val('s-range-start')) : new Date(end.getTime() - 3600e3);
+      run('r-s-range', 'GET', `/api/sensordata/range/${encodeURIComponent(d)}?startDate=${encodeURIComponent(start.toISOString())}&endDate=${encodeURIComponent(end.toISOString())}`);
+    });
 
     // --- Device Config (ngưỡng auto) ---
     const CFG_KEYS = [
@@ -2838,7 +3347,12 @@ node --test "tests-js/*.test.mjs"</pre>
         pill.textContent = (res.ok ? '✓ ' : '✗ ') + res.status + ' ' + res.statusText;
         ms.textContent = dur + ' ms';
         pre.textContent = out || '(empty body)';
-        cfgLoaded = (data && data.config) ? data.config : {};
+        // GET trả object phẳng camelCase (soilOnPct...), hoặc {config:null, note} khi chưa có -> đổi về khoá snake_case của form/PUT
+        const toCamel = k => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+        cfgLoaded = {};
+        if (data && !('config' in data)) {
+          CFG_KEYS.forEach(k => { const v = data[toCamel(k)]; if (v !== undefined && v !== null) cfgLoaded[k] = v; });
+        }
         CFG_KEYS.forEach(k => {
           const el = document.getElementById('cfg-' + k);
           if (el) el.value = (cfgLoaded[k] !== undefined && cfgLoaded[k] !== null) ? cfgLoaded[k] : '';
