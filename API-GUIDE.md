@@ -11,8 +11,8 @@ IoT Device (xmini) — TỰ chạy AUTO theo ngưỡng lưu trong NVS
   │
   └─ Lệnh thủ công / đổi ngưỡng ◄── MQTT: xmini/control ◄─ Server (publish object JSON phẳng)
 
-Thiết bị TỰ quyết định tưới / chiếu sáng dựa trên ngưỡng NVS.
-Backend KHÔNG chạy rule tự tưới (WATER_ON/LIGHT_ON đã bị gỡ bỏ).
+SERVER quyết định tự tưới (AutoWateringDecider) và tự bật/tắt đèn (AutoLightDecider) theo ngưỡng DeviceConfig, rồi publish lệnh phẳng kèm "mode":"auto".
+(WATER_ON/LIGHT_ON kiểu cũ đã bị gỡ bỏ.)
 Muốn đổi hành vi auto → ghi NGƯỠNG qua {"config":{...}}; hoặc gửi lệnh thủ công pump/light/mode/message.
 ```
 
@@ -72,6 +72,21 @@ Chỉ **3 topic**, đều dùng chung tiền tố `xmini/`. **QoS 0**, **không 
 | `xmini/control` | Server → Device | Server | Lệnh điều khiển — **1 object JSON phẳng** (pump / light / light_pwm / mode / config / message) |
 
 > Không còn topic `planttree/{deviceId}/sensors` hay `planttree/{deviceId}/commands`.
+
+### Thiết bị ảo (namespace `xmini-sim/`)
+
+Thiết bị ảo (tab **📟 Thiết bị ảo** trên `demo-dashboard.html`) dùng topic **riêng theo từng thiết bị**, payload y hệt 3 topic trên. Id bắt buộc tiền tố `SIM_` (vd `SIM_Zone1`).
+
+| Topic | Direction | Payload |
+|-------|-----------|---------|
+| `xmini-sim/{deviceId}/sensor_data` | Thiết bị ảo → Server | Như `xmini/sensor_data` |
+| `xmini-sim/{deviceId}/config` | Thiết bị ảo → Server | Như `xmini/config` |
+| `xmini-sim/{deviceId}/control` | Server → Thiết bị ảo | Như `xmini/control` |
+
+- Lệnh cho id `SIM_*` đi `xmini-sim/{id}/control` (`SimTopics.ControlTopicFor`), **không bao giờ** lên `xmini/control` — ESP32 thật không nhận.
+- Server chỉ nhận telemetry/config ảo khi `device_id` khớp topic và thiết bị **đã đăng ký trên chính server đó**; telemetry ảo đi cùng pipeline với thiết bị thật (lưu, Notify, tự tưới).
+- Trang giả lập dùng credential HiveMQ riêng (vd `planttree-sim`), nhập trên trang và chỉ lưu localStorage.
+- **Thông báo giả lập:** sự kiện Notify của `SIM_*` (`water.empty`, `battery.low`, `battery.cut`, `device.offline`) được server publish lên `xmini-sim/{deviceId}/notify` (payload y hệt payload gửi team Notify) cho khung "🔔 Thông báo"; mặc định **không** gửi webhook Notify thật. Bật/tắt gửi cả sang Notify thật: `PUT /api/devices/{deviceId}/sim-notify` body `{"forwardToNotify": true}` (chỉ id `SIM_*`, trả `{deviceId, forwardToNotify, notifyConfigured}`).
 
 ---
 
@@ -316,8 +331,10 @@ curl -X POST http://localhost:8000/api/assistant/v1/chat/completions \
 
 ### Ai quyết định tưới / chiếu sáng?
 
-- **THIẾT BỊ tự quyết định**, dựa trên các ngưỡng NVS (`soil_on_pct`/`soil_off_pct`, `lux_on`/`lux_off`, ...).
-- **Backend KHÔNG chạy rule tự tưới.** Muốn đổi hành vi auto → ghi ngưỡng qua `PUT /api/control/{deviceId}/config` (`{"config":{...}}`).
+- **SERVER quyết định** khi mode server giữ là `auto` (`DeviceModeStore`), theo ngưỡng thiết bị báo lên (`xmini/config` → DeviceConfig; thiếu thì mặc định):
+  - Tưới: `soil_percent` < `soil_on_pct` → `{"pump":true,"mode":"auto"}`; > `soil_off_pct` → tắt; có cooldown `pump_cooldown_s` sau mỗi lượt bơm CÓ nước. Bồn cạn (`water_ok=false`) → không bật, đang bơm thì tắt (tránh chạy khô); đổ nước lại → xoá cooldown, đất khô được tưới ngay. Pin cạn (`batt_cut`) → không bật.
+  - Đèn: lux xuống dưới `lux_on` → `{"light":true,"light_pwm":<light_auto_pwm>,"mode":"auto"}`; lên trên `lux_off` → `{"light":false,"mode":"auto"}`. Chỉ ra lệnh lúc VƯỢT ngưỡng (lệnh tắt tay ban đêm được giữ); xét lại theo mức lux khi chuyển sang auto, hết `batt_cut`, đổi ngưỡng lux. Đang `batt_cut` thì không gửi.
+- Muốn đổi hành vi auto → ghi ngưỡng qua `PUT /api/control/{deviceId}/config` (`{"config":{...}}`).
 - Có thể can thiệp **thủ công** (ép MANUAL): `pump` / `light` / `light_pwm` / `mode` / `message` qua `POST /api/control/{deviceId}`.
 
 ---

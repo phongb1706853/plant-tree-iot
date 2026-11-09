@@ -49,3 +49,8 @@
 
 # Backups
 **/backups/
+# Mockup brainstorming (superpowers visual companion)
+.superpowers/
+
+# Profile demo/test that cua demo-dashboard (co mat khau) — chi commit demo-profiles.example.js
+demo-profiles.local.js

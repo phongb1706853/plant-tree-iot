@@ -125,4 +125,70 @@ public class AutoWateringDeciderTests
 
         Assert.Equal(PumpAction.None, action);
     }
+
+    // ---- Bồn cạn / pin cạn (bug: hết nước -> đất khô -> đổ nước mà không tưới nữa) ----
+    // Trước đây server vẫn bật bơm khi bồn cạn -> bơm chạy khô 20s -> tắt -> mở cooldown 300s -> đổ nước xong vẫn
+    // phải chờ 5 phút. Giờ: bồn cạn thì không bật (đang chạy thì tắt), đổ nước lại thì xoá cooldown.
+
+    [Fact]
+    public void Empty_tank_never_turns_the_pump_on()
+    {
+        var action = AutoWateringDecider.Decide(
+            mode: "auto", soilPercent: 10, pumpOn: false,
+            soilOnPct: OnPct, soilOffPct: OffPct, cooldownActive: false, waterOk: false);
+
+        Assert.Equal(PumpAction.None, action);
+    }
+
+    [Fact]
+    public void Empty_tank_while_pumping_turns_the_pump_off()
+    {
+        var action = AutoWateringDecider.Decide(
+            mode: "auto", soilPercent: 10, pumpOn: true,
+            soilOnPct: OnPct, soilOffPct: OffPct, cooldownActive: false, waterOk: false);
+
+        Assert.Equal(PumpAction.TurnOff, action);
+    }
+
+    [Fact]
+    public void Battery_cut_never_turns_the_pump_on()
+    {
+        var action = AutoWateringDecider.Decide(
+            mode: "auto", soilPercent: 10, pumpOn: false,
+            soilOnPct: OnPct, soilOffPct: OffPct, cooldownActive: false, battCut: true);
+
+        Assert.Equal(PumpAction.None, action);
+    }
+
+    [Fact]
+    public void Water_sensor_off_null_still_waters()
+    {
+        // water_ok null = cảm biến nước đang tắt -> không đủ căn cứ để chặn
+        var action = AutoWateringDecider.Decide(
+            mode: "auto", soilPercent: 10, pumpOn: false,
+            soilOnPct: OnPct, soilOffPct: OffPct, cooldownActive: false, waterOk: null);
+
+        Assert.Equal(PumpAction.TurnOn, action);
+    }
+
+    [Theory]
+    [InlineData(false, true, true)]   // vừa đổ nước lại -> xoá cooldown
+    [InlineData(true, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(null, true, false)]   // lần đầu thấy thiết bị: không coi là đổ nước
+    [InlineData(false, null, false)]
+    public void Refilling_the_tank_clears_the_cooldown(bool? prevWaterOk, bool? waterOk, bool expected)
+        => Assert.Equal(expected, AutoWateringDecider.ShouldClearCooldown(prevWaterOk, waterOk));
+
+    [Theory]
+    [InlineData(true, false, true, true, true)]     // tưới bình thường xong -> mở cooldown
+    [InlineData(true, false, null, null, true)]     // cảm biến nước tắt -> như bình thường
+    [InlineData(true, false, false, false, false)]  // chạy khô cả lượt -> không tính là đã tưới
+    [InlineData(true, false, true, false, false)]   // hết nước giữa chừng
+    [InlineData(true, false, false, true, false)]   // vừa đổ nước đúng lúc bơm tắt (lượt đó vẫn khô)
+    [InlineData(false, false, true, true, false)]   // không có chuyển BẬT -> TẮT
+    [InlineData(null, false, true, true, false)]    // lần đầu thấy thiết bị
+    public void Only_a_wet_pump_run_starts_the_cooldown(
+        bool? prevPumpOn, bool? pumpOn, bool? prevWaterOk, bool? waterOk, bool expected)
+        => Assert.Equal(expected, AutoWateringDecider.ShouldStartCooldown(prevPumpOn, pumpOn, prevWaterOk, waterOk));
 }

@@ -150,6 +150,11 @@ public class MongoDbService
         => await Devices.UpdateOneAsync(d => d.DeviceId == deviceId,
             Builders<Device>.Update.Set(d => d.ControlMode, mode));
 
+    /// <summary>Thiết bị ảo: bật/tắt gửi CẢ sang Notify thật (xem Device.SimNotifyForward).</summary>
+    public async Task SetSimNotifyForwardAsync(string deviceId, bool forward)
+        => await Devices.UpdateOneAsync(d => d.DeviceId == deviceId,
+            Builders<Device>.Update.Set(d => d.SimNotifyForward, forward));
+
     // Device Config (ngưỡng auto) Operations
     public async Task<DeviceConfig?> GetDeviceConfigAsync(string deviceId)
         => await DeviceConfigs.Find(c => c.DeviceId == deviceId).FirstOrDefaultAsync();

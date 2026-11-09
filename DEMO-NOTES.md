@@ -374,3 +374,26 @@ curl -X POST $API/api/control/$DEVICE -H "Content-Type: application/json" \
 # 5. Xem nhật ký lệnh đã gửi
 curl "$API/api/control/commands/$DEVICE?limit=20"
 ```
+
+---
+
+## 10. Demo bằng thiết bị ảo (không cần ESP32)
+
+Dùng khi không có phần cứng hoặc Mac tắt. Thiết bị ảo chạy trong trình duyệt và đi qua HiveMQ thật (xem bằng MQTTx được).
+
+> **Hướng dẫn đầy đủ** (lệnh chạy server, chuẩn bị, checklist test 11 bước, sự cố thường gặp) nằm ngay trong `demo-dashboard.html` → tab **📟 Thiết bị ảo** → khung **📋 Hướng dẫn**.
+>
+> **Profile:** copy `demo-profiles.example.js` thành `demo-profiles.local.js` (cạnh dashboard, đã `.gitignore`, có mật khẩu — không commit), điền profile "Test local" / "Demo thật". Lúc demo: tab Kết nối → chọn Profile → Đăng nhập → tab Thiết bị ảo → Start.
+
+> **Điều kiện trước (1 lần, HiveMQ Cloud → Access Management):** credential **của server** (`MQTT_USERNAME`) phải có quyền publish + subscribe trên `xmini-sim/#`. Thiếu quyền thì HiveMQ ngắt publisher của server ngay khi gửi lệnh cho thiết bị ảo — server tự nối lại ở lệnh kế tiếp, nhưng lệnh vừa gửi bị mất và thiết bị ảo không nhận được telemetry nào. Credential `planttree-sim` cho trang chỉ cần quyền trên `xmini-sim/#`.
+
+1. Chạy server: Mac (`https://api.windy-dev.site`, cần image có tính năng này) **hoặc** local `dotnet run --project PlantTreeIoTServer --launch-profile http` (+ MongoDB local).
+2. Mở `demo-dashboard.html` → tab **Kết nối**: host/port của server, đăng nhập.
+3. Tab **📟 Thiết bị ảo** → ⚙️ MQTT: nhập credential `planttree-sim` (1 lần) → **Start** (`SIM_Zone1`).
+4. (Tuỳ chọn) MQTTx subscribe `xmini-sim/#` để người xem thấy message thật.
+5. Kịch bản gợi ý: 🏜 Đất khô → server tự tưới (↓ `{"pump":true,"mode":"auto"}`) → giọt nước, đất tăng, bơm tự tắt sau 20s · 🌙 Ban đêm → server gửi ↓ `{"light":true,…}` → đèn bật · 🚱 Hết nước / 🪫 Pin yếu → Notify · hàng nút "Điều khiển như App".
+6. Khung **🤖 Chế độ auto & ngưỡng**: đổi ngưỡng (vd tưới khi đất < 40%) → 💾 Lưu → log hiện ↓ `{"config":…}` rồi ↑ config echo; server tự tưới theo ngưỡng mới. Log có màu theo nguồn: ⏱ tự gửi 10s · 🧪 kịch bản · ⚠ lệnh bị bỏ qua (vd đang 🔌 Pin cạn — bấm 🔋 Sạc đầy để dùng lại bơm/đèn).
+7. Khung **🔔 Thông báo** (cột phải, bấm **Bật**): hiện thông báo server gửi cho thiết bị ảo — 🪫 Pin yếu, 🚱 Hết nước, 🔌 Pin cạn ngay khi bấm kịch bản; 📴 Mất kết nối sau ~240s kể từ khi bấm Mất kết nối/Stop. Mặc định không gửi sang Notify thật; tick **📤 Gửi cả sang Notify thật** nếu muốn người dùng thật nhận (server phải có `NOTIFY_URL`/`NOTIFY_API_KEY`).
+8. AI chat / MCP: chia sẻ thiết bị cho service-account MCP — `POST /api/devices/SIM_Zone1/share` body `{"email":"mcp@plant-tree.local"}`.
+
+> Giữ tab hiển thị khi demo (tab ẩn bị trình duyệt giãn nhịp gửi). Thiết bị ảo không bao giờ gửi lên `xmini/control` nên ESP32 thật an toàn.

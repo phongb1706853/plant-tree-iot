@@ -48,7 +48,11 @@ docker compose -f docker-compose.deploy.yml up -d
 
 ## Cấu hình
 
-`JWT_SECRET` là **BẮT BUỘC** — auth đã có sẵn trong `main` và compose fail-closed: thiếu `JWT_SECRET` thì `up` báo lỗi ngay, server không khởi động. Config MQTT (HiveMQ) đã nhúng default trong compose, chỉ ghi đè khi cần. File `.env` cùng thư mục với compose:
+`JWT_SECRET` là **BẮT BUỘC** — auth đã có sẵn trong `main` và compose fail-closed: thiếu `JWT_SECRET` thì `up` báo lỗi ngay, server không khởi động. Config MQTT (HiveMQ) đã nhúng default trong compose, chỉ ghi đè khi cần.
+
+> **Quyền MQTT cho thiết bị ảo:** credential MQTT của server phải được publish + subscribe cả `xmini/#` **và** `xmini-sim/#` (HiveMQ Cloud → Access Management). Thiếu `xmini-sim/#` thì HiveMQ ngắt publisher mỗi khi có lệnh cho thiết bị ảo `SIM_*` (xem DEMO-NOTES mục 10).
+
+File `.env` cùng thư mục với compose:
 
 ```dotenv
 # BẮT BUỘC — chuỗi ngẫu nhiên >= 32 ký tự:  openssl rand -base64 48
