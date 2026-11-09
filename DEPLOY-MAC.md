@@ -12,6 +12,8 @@ ghcr.io/phongb1706853/plant-tree-iot:latest
 
 Trên Mac chỉ việc **pull image mới nhất rồi run**. MongoDB chạy kèm trong stack (dữ liệu lưu ở volume `mongodb_data`).
 
+MCP server cũng nằm trong stack (service `mcp`, image `ghcr.io/phongb1706853/plant-tree-iot:mcp`, do workflow [`.github/workflows/mcp-docker-publish.yml`](.github/workflows/mcp-docker-publish.yml) build khi `mcp-server/**` đổi) — **1 lệnh `up -d` chạy cả server + MongoDB + MCP**, không cần venv/`python server.py` nữa.
+
 ## Chuẩn bị 1 lần
 
 1. **Cho phép pull image không cần login** — mở https://github.com/phongb1706853/plant-tree-iot → tab **Packages** → chọn package `plant-tree-iot` → **Package settings** → **Change visibility → Public**.
@@ -30,10 +32,13 @@ cd ~/planttree
 docker compose -f docker-compose.deploy.yml up -d
 ```
 
-- Lần đầu tự pull image server + `mongo:7.0`.
+- Lần đầu tự pull image server + MCP + `mongo:7.0`.
 - API: **http://localhost:8080**
+- MCP: **http://localhost:8100/mcp** (AI server ở stack khác dùng `http://host.docker.internal:8100/mcp`)
 - Xem log: `docker compose -f docker-compose.deploy.yml logs -f server`
   → thấy `MQTT Publisher connected...` và `Connected to MQTT broker...` là OK.
+- Log MCP: `docker compose -f docker-compose.deploy.yml logs -f mcp` → thấy `Uvicorn running on http://0.0.0.0:8100` là OK.
+- Đang chạy MCP tay (`python server.py`) ở cổng 8100 thì tắt nó (Ctrl+C) trước, không thì `up` báo trùng cổng.
 
 ### Trong Docker Desktop (giao diện)
 
@@ -57,6 +62,10 @@ File `.env` cùng thư mục với compose:
 ```dotenv
 # BẮT BUỘC — chuỗi ngẫu nhiên >= 32 ký tự:  openssl rand -base64 48
 JWT_SECRET=...
+
+# Cần cho MCP — mật khẩu service-account (tạo bằng POST /api/auth/register).
+# Thiếu -> MCP vẫn chạy nhưng tool nào cũng lỗi 401.
+PLANT_MCP_PASSWORD=...
 
 # Tùy chọn — ghi đè MQTT (HiveMQ) nếu cần
 MQTT_BROKER=...
