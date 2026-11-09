@@ -17,7 +17,7 @@ curl/App ──(JWT)──► .NET API (8080) ──► AI server (8787) ──�
 |---|---|---|
 | .NET API | host **8080** → container 8000 | `ghcr.io/phongb1706853/plant-tree-iot:latest` (docker-compose.deploy.yml) |
 | AI server | **8787** | `ghcr.io/phantranthelinh/tree-grow-helper:latest` (repo tree-grow-helper) |
-| MCP | **8100** | Python `mcp-server/server.py`, `MCP_TRANSPORT=streamable-http` |
+| MCP | **8100** | `ghcr.io/phongb1706853/plant-tree-iot:mcp` (service `mcp` trong docker-compose.deploy.yml) |
 | LLM | 1234 (LM Studio) / 11434 (Ollama) | chạy trên host |
 | MQTT | 8883 | HiveMQ Cloud (managed) |
 
@@ -43,7 +43,15 @@ docker compose -f docker-compose.deploy.yml up -d
 curl -i http://localhost:8080/api/devices     # 401 = server sống (cần token)
 ```
 
-## Bước 3 — Chạy MCP ở chế độ streamable-http (port 8100)
+## Bước 3 — MCP (port 8100)
+
+MCP **đã chạy cùng stack ở Bước 2** (service `mcp`). Chỉ cần `.env` có `PLANT_MCP_PASSWORD` khớp service-account ở Bước 4 (đổi `.env` thì chạy lại `up -d`).
+
+```bash
+docker compose -f docker-compose.deploy.yml logs -f mcp    # thấy "Uvicorn running on http://0.0.0.0:8100" là OK
+```
+
+Chạy tay thay cho container (dev / sửa code MCP) — nhớ `docker compose -f docker-compose.deploy.yml stop mcp` trước để nhả cổng 8100:
 
 ```bash
 cd plant-tree-iot/mcp-server
@@ -139,7 +147,7 @@ curl -s "http://localhost:8080/api/control/commands/ESP32S3_Zone1?limit=5" \
 | **503** "AI server chưa cấu hình" | Chưa `/setup` LLM trên AI server → vào `http://localhost:8787/setup`. |
 | Trợ lý báo không điều khiển được / tool trả **404 device** | Service-account MCP không sở hữu device → làm lại **Bước 4** (register/share device cho `PLANT_MCP_EMAIL`). |
 | AI server không thấy tool / không gọi được MCP | MCP chưa chạy `streamable-http`, sai `MCP_URL`, hoặc sai cổng 8100. Kiểm tra `curl http://localhost:8100/mcp` sống, và `MCP_URL=http://host.docker.internal:8100/mcp` trong /setup. |
-| MCP lỗi khi gọi ngược .NET | `PLANT_API_URL` sai. MCP chạy trên host → `http://localhost:8080`; MCP trong container → `http://host.docker.internal:8080`. |
+| MCP lỗi khi gọi ngược .NET | `PLANT_API_URL` sai. MCP trong stack compose → `http://server:8000` (đã set sẵn); MCP chạy tay trên host → `http://localhost:8080`. Lỗi **401** → `PLANT_MCP_PASSWORD` trong `.env` không khớp service-account. |
 | Tool chạy nhưng thiết bị không phản ứng | MQTT/thiết bị offline. Xem `GET /api/control/commands/{id}` để chắc đã publish; `GET /api/sensordata/latest/{id}` xem `mode` (auto/manual). |
 | Muốn trả thiết bị về tự động sau khi tưới tay | `POST /api/control/{id}/auto` hoặc nhờ trợ lý "chuyển về chế độ auto". |
 

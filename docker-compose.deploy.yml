@@ -1,11 +1,12 @@
 # Deploy stack cho máy Mac — CHỈ CẦN FILE NÀY, không cần source code.
-# Image server được pull sẵn từ GHCR; MongoDB chạy kèm trong stack.
+# Image server + MCP được pull sẵn từ GHCR; MongoDB chạy kèm trong stack.
 #
 #   docker compose -f docker-compose.deploy.yml up -d      # chạy (tự pull image)
 #   docker compose -f docker-compose.deploy.yml pull       # lấy bản mới nhất
 #   docker compose -f docker-compose.deploy.yml down        # dừng
 #
 # Truy cập API:  http://localhost:8080
+# MCP (cho AI server):  http://localhost:8100/mcp
 name: planttree-iot
 
 services:
@@ -45,6 +46,22 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - mongodb
+    restart: unless-stopped
+
+  mcp:
+    image: ghcr.io/phongb1706853/plant-tree-iot:mcp
+    pull_policy: always
+    ports:
+      - "8100:8100" # AI server (stack tree-grow-helper) gọi http://host.docker.internal:8100/mcp
+    environment:
+      # Gọi ngược .NET trong cùng network (container port 8000, KHÔNG phải 8080)
+      PLANT_API_URL: http://server:8000
+      # Service-account MCP — tạo trước bằng POST /api/auth/register, mật khẩu đặt trong .env.
+      # Thiếu mật khẩu -> MCP vẫn chạy nhưng tool nào cũng lỗi 401 khi gọi .NET.
+      PLANT_MCP_EMAIL: ${PLANT_MCP_EMAIL:-mcp@plant-tree.local}
+      PLANT_MCP_PASSWORD: ${PLANT_MCP_PASSWORD:-}
+    depends_on:
+      - server
     restart: unless-stopped
 
   mongodb:

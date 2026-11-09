@@ -43,12 +43,13 @@ Thiết bị **tự chạy auto tưới/chiếu sáng** theo ngưỡng lưu tron
 Luồng chuẩn: GitHub Actions build image → GHCR → Mac pull về chạy. **Trên Mac không cần source code**, chỉ cần Docker Desktop + file `docker-compose.deploy.yml`.
 
 ```bash
-docker compose -f docker-compose.deploy.yml up -d     # chạy (tự pull image + mongo:7.0)
+docker compose -f docker-compose.deploy.yml up -d     # chạy (tự pull image server + MCP + mongo:7.0)
 docker compose -f docker-compose.deploy.yml pull      # lấy bản mới nhất
 docker compose -f docker-compose.deploy.yml logs -f server   # thấy "Connected to MQTT broker..." là OK
 ```
 
 - API: **http://localhost:8080** (host `8080` → container `8000`).
+- MCP: **http://localhost:8100/mcp** (service `mcp`, image `ghcr.io/phongb1706853/plant-tree-iot:mcp`) — cần `PLANT_MCP_PASSWORD` trong `.env`.
 - Chi tiết & chuẩn bị GHCR: xem [DEPLOY-MAC.md](DEPLOY-MAC.md).
 
 ### Truy cập từ xa qua Cloudflare Tunnel
