@@ -1,6 +1,71 @@
 @PlantTreeIoTServer_HostAddress = http://localhost:8000
+@device = ESP32S3_Zone1
+# Lấy token: chạy request "dev-token" (chỉ Development) rồi dán vào đây.
+@token = <paste-token>
 
+### Dev token (Development only)
+POST {{PlantTreeIoTServer_HostAddress}}/api/auth/dev-token
+
+### Devices
 GET {{PlantTreeIoTServer_HostAddress}}/api/devices
+Authorization: Bearer {{token}}
 Accept: application/json
 
-###
+### Device connection + health (xmini/status)
+GET {{PlantTreeIoTServer_HostAddress}}/api/devices/{{device}}/status
+Authorization: Bearer {{token}}
+
+### Latest telemetry
+GET {{PlantTreeIoTServer_HostAddress}}/api/sensordata/latest/{{device}}
+Authorization: Bearer {{token}}
+
+### Water: exactly 1 dose (device -> MANUAL)
+POST {{PlantTreeIoTServer_HostAddress}}/api/control/{{device}}/water
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "on": true }
+
+### Light brightness (device -> MANUAL)
+POST {{PlantTreeIoTServer_HostAddress}}/api/control/{{device}}/light
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "pwm": 180 }
+
+### Back to AUTO
+POST {{PlantTreeIoTServer_HostAddress}}/api/control/{{device}}/auto
+Authorization: Bearer {{token}}
+
+### Show setup QR for 2 minutes
+POST {{PlantTreeIoTServer_HostAddress}}/api/control/{{device}}/show-qr
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "seconds": 120 }
+
+### Generic command (message is folded to ASCII by the server)
+POST {{PlantTreeIoTServer_HostAddress}}/api/control/{{device}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "message": "Cảm ơn bạn đã tưới!", "message_secs": 30 }
+
+### Read config (25 keys + rejected)
+GET {{PlantTreeIoTServer_HostAddress}}/api/control/{{device}}/config
+Authorization: Bearer {{token}}
+
+### Change config (send both keys of a pair together)
+PUT {{PlantTreeIoTServer_HostAddress}}/api/control/{{device}}/config
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "soil_on_pct": 35, "soil_off_pct": 65, "pump_dose_ms": 2500 }
+
+### Ask the device to publish its config again
+POST {{PlantTreeIoTServer_HostAddress}}/api/control/{{device}}/config/refresh
+Authorization: Bearer {{token}}
+
+### Command log
+GET {{PlantTreeIoTServer_HostAddress}}/api/control/commands/{{device}}?limit=20
+Authorization: Bearer {{token}}

@@ -1,7 +1,7 @@
 import json
 import respx
 import httpx
-from tools.control import set_pump, set_light, set_mode, show_message, get_recent_commands
+from tools.control import set_pump, set_light, set_mode, show_message, show_qr, stay_awake, get_recent_commands
 
 BASE = "http://localhost:5000"
 
@@ -63,3 +63,21 @@ def test_get_recent_commands():
     )
     result = get_recent_commands("dev1")
     assert result[0]["payload"] == {"pump": True}
+
+
+@respx.mock
+def test_show_qr_calls_dedicated_endpoint():
+    route = respx.post(f"{BASE}/api/control/dev1/show-qr").mock(
+        return_value=httpx.Response(200, json={"published": {"id": "c-1-1", "show_qr": 120}})
+    )
+    show_qr("dev1", 120)
+    assert json.loads(route.calls.last.request.content) == {"seconds": 120}
+
+
+@respx.mock
+def test_stay_awake_sends_flat_key():
+    route = respx.post(f"{BASE}/api/control/dev1").mock(
+        return_value=httpx.Response(200, json={"published": {"id": "c-1-2", "stay_awake_s": 600}})
+    )
+    stay_awake("dev1", 600)
+    assert json.loads(route.calls.last.request.content) == {"stay_awake_s": 600}

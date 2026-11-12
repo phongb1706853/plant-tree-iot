@@ -41,3 +41,23 @@ def test_refresh_device_config():
     result = refresh_device_config("dev1")
     assert route.calls.call_count == 1
     assert result["published"]["config"] == {}
+
+
+@respx.mock
+def test_set_device_config_sends_new_firmware_keys():
+    route = respx.put(f"{BASE}/api/control/dev1/config").mock(
+        return_value=httpx.Response(200, json={"published": {"config": {}}})
+    )
+    set_device_config("dev1", pump_dose_ms=2500, soak_s=900, light_auto=True, power_mode="always_on")
+    assert json.loads(route.calls.last.request.content) == {
+        "pump_dose_ms": 2500, "soak_s": 900, "light_auto": True, "power_mode": "always_on"
+    }
+
+
+def test_set_device_config_has_no_removed_keys():
+    # Firmware 2.x bỏ pump_max_run_s / pump_cooldown_s: tool không còn nhận 2 khoá này.
+    import inspect
+    params = inspect.signature(set_device_config).parameters
+    assert "pump_max_run_s" not in params
+    assert "pump_cooldown_s" not in params
+    assert len(params) == 26  # device_id + 25 khoá

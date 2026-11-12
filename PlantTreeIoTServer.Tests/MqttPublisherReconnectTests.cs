@@ -24,6 +24,7 @@ public class MqttPublisherReconnectTests : IAsyncLifetime
 
     private readonly Dictionary<string, string?> _savedEnv = new();
     private readonly List<string> _deliveredTopics = new();
+    private readonly List<(string Topic, MqttQualityOfServiceLevel Qos, bool Retain, string Payload)> _delivered = new();
     private MqttServer _server = null!;
     private int _port;
 
@@ -50,7 +51,13 @@ public class MqttPublisherReconnectTests : IAsyncLifetime
             }
             else
             {
-                lock (_deliveredTopics) _deliveredTopics.Add(topic);
+                var msg = e.ApplicationMessage;
+                lock (_deliveredTopics)
+                {
+                    _deliveredTopics.Add(topic);
+                    _delivered.Add((topic, msg.QualityOfServiceLevel, msg.Retain,
+                        System.Text.Encoding.UTF8.GetString(msg.PayloadSegment)));
+                }
             }
             return Task.CompletedTask;
         };
@@ -77,6 +84,37 @@ public class MqttPublisherReconnectTests : IAsyncLifetime
 
         Assert.True(ok);
         await WaitUntilAsync(() => { lock (_deliveredTopics) return _deliveredTopics.Contains(SimTopics.RealControlTopic); });
+    }
+
+    [Fact]
+    public async Task Control_goes_out_with_qos1_not_retained_and_an_id()
+    {
+        // Firmware 2.1.0: thiết bị subscribe QoS 1 + persistent session; QoS 0 lúc thiết bị ngủ sẽ mất, lệnh retained
+        // bị giao lại mỗi lần nối, và mỗi lệnh cần "id" để chống giao lặp (backend-api.md mục 5.1, 5.4).
+        var publisher = await CreatePublisherAsync();
+        var flat = new Dictionary<string, object?> { ["pump"] = true };
+
+        Assert.True(await publisher.PublishControlAsync("ESP32S3_Zone1", flat));
+
+        await WaitUntilAsync(() => { lock (_deliveredTopics) return _delivered.Count > 0; });
+        var (topic, qos, retain, payload) = _delivered[0];
+        Assert.Equal(SimTopics.RealControlTopic, topic);
+        Assert.Equal(MqttQualityOfServiceLevel.AtLeastOnce, qos);
+        Assert.False(retain);
+        Assert.Contains("\"id\":\"c-", payload);
+        Assert.StartsWith("c-", (string)flat["id"]!); // id được ghi lại vào dict để caller log
+    }
+
+    [Fact]
+    public async Task Existing_id_is_kept()
+    {
+        var publisher = await CreatePublisherAsync();
+        var flat = new Dictionary<string, object?> { ["id"] = "c-1-1", ["light"] = false };
+
+        Assert.True(await publisher.PublishControlAsync("ESP32S3_Zone1", flat));
+
+        await WaitUntilAsync(() => { lock (_deliveredTopics) return _delivered.Count > 0; });
+        Assert.Contains("\"id\":\"c-1-1\"", _delivered[0].Payload);
     }
 
     [Fact]

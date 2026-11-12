@@ -1,9 +1,9 @@
 import os
 from mcp.server.fastmcp import FastMCP
 from config import MCP_SERVER_NAME
-from tools.devices import list_devices, get_device_info
+from tools.devices import list_devices, get_device_info, get_device_status
 from tools.sensors import get_latest_sensor, get_sensor_history
-from tools.control import set_pump, set_light, set_mode, show_message, get_recent_commands
+from tools.control import set_pump, set_light, set_mode, show_message, show_qr, stay_awake, get_recent_commands
 from tools.device_config import get_device_config, set_device_config, refresh_device_config
 
 # Transport:
@@ -20,17 +20,20 @@ mcp = FastMCP(MCP_SERVER_NAME, host=MCP_HOST, port=MCP_PORT)
 # Devices + telemetry
 mcp.tool()(list_devices)
 mcp.tool()(get_device_info)
+mcp.tool()(get_device_status)
 mcp.tool()(get_latest_sensor)
 mcp.tool()(get_sensor_history)
 
-# Điều khiển thiết bị (khoá phẳng xmini/control) — thay cho send_command/auto_water/auto_light cũ
+# Điều khiển thiết bị (khoá phẳng xmini/control, QoS 1) — thay cho send_command/auto_water/auto_light cũ
 mcp.tool()(set_pump)
 mcp.tool()(set_light)
 mcp.tool()(set_mode)
 mcp.tool()(show_message)
+mcp.tool()(show_qr)
+mcp.tool()(stay_awake)
 mcp.tool()(get_recent_commands)
 
-# Ngưỡng auto của thiết bị (xmini/config) — thay cho moisture/light rule cũ
+# Cấu hình thiết bị (xmini/config, 25 khoá) — thay cho moisture/light rule cũ
 mcp.tool()(get_device_config)
 mcp.tool()(set_device_config)
 mcp.tool()(refresh_device_config)

@@ -29,4 +29,21 @@ public class OfflineMonitorTests
         var lastSeen = Now.AddSeconds(-600);
         Assert.False(OfflineMonitor.ShouldFireOffline(lastSeen, Now, alreadyOffline: true, thresholdSeconds: 240));
     }
+
+    [Fact]
+    public void Planned_sleep_window_holds_the_alarm()
+    {
+        // Bản pin báo "sleeping": im lặng dài hơn ngưỡng nhưng vẫn trong cửa sổ ngủ có kế hoạch -> chưa báo.
+        var lastSeen = Now.AddSeconds(-600);
+        Assert.False(OfflineMonitor.ShouldFireOffline(lastSeen, Now, alreadyOffline: false, thresholdSeconds: 240,
+            quietUntilUtc: Now.AddSeconds(30)));
+    }
+
+    [Fact]
+    public void Alarm_fires_after_the_sleep_window()
+    {
+        var lastSeen = Now.AddSeconds(-1200);
+        Assert.True(OfflineMonitor.ShouldFireOffline(lastSeen, Now, alreadyOffline: false, thresholdSeconds: 240,
+            quietUntilUtc: Now.AddSeconds(-1)));
+    }
 }

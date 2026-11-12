@@ -475,7 +475,7 @@
     <button class="nav-btn" data-target="api-auth">Auth</button>
     <button class="nav-btn" data-target="api-devices">Devices</button>
     <button class="nav-btn" data-target="api-sensors">Sensor Data</button>
-    <button class="nav-btn" data-target="api-thresholds">Ngưỡng auto (Config)</button>
+    <button class="nav-btn" data-target="api-thresholds">Cấu hình (Config)</button>
     <button class="nav-btn" data-target="api-control">Control</button>
     <button class="nav-btn" data-target="api-assistant">Trợ lý AI (Chat)</button>
 
@@ -534,7 +534,7 @@
     <div class="stack-card">
       <h4>MCP Server</h4>
       <div class="port">stdio</div>
-      <div class="desc">12 tools cho Ollama AI tự gọi (devices, sensors, control, device config)</div>
+      <div class="desc">15 tools cho Ollama AI tự gọi (devices, sensors, control, device config)</div>
     </div>
     <div class="stack-card">
       <h4>Cloudflare Tunnel</h4>
@@ -595,26 +595,28 @@
     <li>Lấy sensor mới nhất, history, theo khoảng thời gian</li>
   </ul>
 
-  <h3>Chế độ auto (server quyết định)</h3>
+  <h3>Chế độ auto (thiết bị thật tự làm — firmware 2.1.0)</h3>
   <ul>
-    <li>Server giữ chế độ auto/manual của từng thiết bị (<code>controlMode</code>). Ở chế độ auto, mỗi khi telemetry về, server tự tưới theo <code>soil_on_pct</code>/<code>soil_off_pct</code> và tự bật/tắt đèn theo <code>lux_on</code>/<code>lux_off</code></li>
-    <li>Muốn đổi hành vi auto → chỉnh <strong>ngưỡng (config)</strong>: <code>GET/PUT /api/control/{deviceId}/config</code></li>
-    <li>Thiết bị publish cấu hình hiện tại lên <code>xmini/config</code> khi kết nối và sau mỗi lần đổi</li>
+    <li>Thiết bị <strong>tự</strong> tưới theo liều (dose-and-soak: <code>soil_on_pct</code> / <code>soil_off_pct</code>, <code>pump_dose_ms</code>, <code>soak_s</code>, hạn mức liều) và tự bật đèn (chỉ khi <code>light_auto=true</code>, theo <code>lux_on</code> / <code>lux_off</code>). Server <strong>không</strong> gửi lệnh auto cho thiết bị thật</li>
+    <li>Muốn đổi hành vi auto → chỉnh <strong>cấu hình (25 khoá)</strong>: <code>GET/PUT /api/control/{deviceId}/config</code></li>
+    <li>Thiết bị publish cấu hình hiện tại lên <code>xmini/config</code> (retained) khi nối lần đầu và sau mỗi lệnh config; khoá sai bị từ chối và báo trong <code>rejected</code></li>
+    <li>Thiết bị ảo <code>SIM_*</code> giữ luật cũ: server tự tưới / tự bật đèn</li>
   </ul>
 
   <h3>Control</h3>
   <ul>
-    <li>Gửi lệnh <strong>thủ công</strong>: bơm <code>{"pump":true}</code>, đèn <code>{"light":true}</code>, PWM đèn <code>{"light_pwm":180}</code>. Lệnh bơm/đèn <strong>không đổi chế độ</strong>: server tự gộp chế độ hiện tại vào lệnh</li>
-    <li>Đổi chế độ <code>{"mode":"auto"|"manual"}</code> và hiển thị màn hình TFT <code>{"message":"...","message_secs":N}</code></li>
-    <li>Server publish khoá phẳng xuống <code>xmini/control</code>; xem nhật ký lệnh đã gửi qua <code>GET /api/control/commands/{deviceId}</code></li>
+    <li>Gửi lệnh <strong>thủ công</strong>: bơm <code>{"pump":true}</code> (= <strong>đúng 1 liều</strong>), đèn <code>{"light":true}</code>, PWM đèn <code>{"light_pwm":180}</code>. Các lệnh này đưa thiết bị về <strong>MANUAL</strong> — gọi <code>/auto</code> để trả lại</li>
+    <li>Đổi chế độ <code>{"mode":"auto"|"manual"}</code>, màn hình TFT <code>{"message":"...","message_secs":N}</code> (server tự bỏ dấu), hiện QR cài đặt <code>{"show_qr":true}</code></li>
+    <li>Server publish khoá phẳng xuống <code>xmini/control</code> với <strong>QoS 1</strong> và <code>id</code> duy nhất; xem nhật ký lệnh qua <code>GET /api/control/commands/{deviceId}</code></li>
+    <li>Trạng thái kết nối (online / sleeping / late / offline) từ topic <code>xmini/status</code>: <code>GET /api/devices/{deviceId}/status</code></li>
   </ul>
 
-  <h3>MCP Tools cho AI (12 tools)</h3>
+  <h3>MCP Tools cho AI (15 tools)</h3>
   <table>
     <tr><th>Group</th><th>Tools</th></tr>
-    <tr><td>Devices</td><td><code>list_devices</code>, <code>get_device_info</code></td></tr>
+    <tr><td>Devices</td><td><code>list_devices</code>, <code>get_device_info</code>, <code>get_device_status</code></td></tr>
     <tr><td>Sensors</td><td><code>get_latest_sensor</code>, <code>get_sensor_history</code></td></tr>
-    <tr><td>Control</td><td><code>set_pump</code>, <code>set_light</code>, <code>set_mode</code>, <code>show_message</code>, <code>get_recent_commands</code></td></tr>
+    <tr><td>Control</td><td><code>set_pump</code>, <code>set_light</code>, <code>set_mode</code>, <code>show_message</code>, <code>show_qr</code>, <code>stay_awake</code>, <code>get_recent_commands</code></td></tr>
     <tr><td>Device Config</td><td><code>get_device_config</code>, <code>set_device_config</code>, <code>refresh_device_config</code></td></tr>
   </table>
 </section>
@@ -743,7 +745,7 @@ curl $API/api/control/commands/$DEVICE</pre>
     <tr><td>Base URL</td><td>URL server/tunnel (xem tab <a href="#" onclick="document.querySelector('[data-target=api-config]').click(); return false;">URL Config &amp; Token</a>). Mọi path bắt đầu bằng <code>/api/</code>.</td></tr>
     <tr><td>Xác thực</td><td>Gửi header <code>Authorization: Bearer &lt;token&gt;</code> ở <strong>mọi</strong> request, trừ <code>POST /api/auth/register</code> và <code>POST /api/auth/login</code>. Token hết hạn sau <strong>24 giờ</strong> và <strong>không có refresh token</strong>: gặp <code>401</code> thì đưa người dùng về màn đăng nhập.</td></tr>
     <tr><td>Request body</td><td>JSON, header <code>Content-Type: application/json</code>.</td></tr>
-    <tr><td>Tên trường</td><td>Response dùng <strong>camelCase</strong> (<code>deviceId</code>, <code>soilPercent</code>). Hai chỗ dùng <strong>snake_case</strong>: body ngưỡng và lệnh gửi lên (<code>soil_on_pct</code>, <code>light_pwm</code>), và object <code>published</code> / <code>payload</code> trong response lệnh.</td></tr>
+    <tr><td>Tên trường</td><td>Response dùng <strong>camelCase</strong> (<code>deviceId</code>, <code>soilPercent</code>). Hai chỗ dùng <strong>snake_case</strong>: body cấu hình và lệnh gửi lên (<code>soil_on_pct</code>, <code>light_pwm</code>), và object <code>published</code> / <code>payload</code> trong response lệnh.</td></tr>
     <tr><td>Thời gian</td><td>ISO-8601 UTC, vd <code>2026-11-09T08:17:47.471Z</code>. App tự đổi sang giờ địa phương. Khi gửi thời gian lên (<code>range</code>) luôn kèm <code>Z</code>.</td></tr>
     <tr><td>Giá trị null</td><td>Trường đo có thể <code>null</code> khi cảm biến lỗi. App phải xử lý null cho mọi trường số.</td></tr>
   </table>
@@ -751,7 +753,7 @@ curl $API/api/control/commands/$DEVICE</pre>
   <h3>Mã lỗi</h3>
   <table>
     <tr><th>HTTP</th><th>Khi nào</th></tr>
-    <tr><td><code>400</code></td><td>Thiếu trường, sai kiểu hoặc sai giá trị.</td></tr>
+    <tr><td><code>400</code></td><td>Thiếu trường, sai kiểu hoặc sai giá trị. Cấu hình sai (ngoài miền, phá ràng buộc cặp, khoá đã bỏ) trả JSON <code>{"error":"...","errors":["..."]}</code> và lệnh <strong>không</strong> được gửi.</td></tr>
     <tr><td><code>401</code></td><td>Thiếu token, token sai hoặc hết hạn (body rỗng). Login sai email/password cũng trả <code>401</code>.</td></tr>
     <tr><td><code>404</code></td><td>Device không tồn tại <strong>hoặc</strong> user không có quyền với device đó. Server không dùng <code>403</code>.</td></tr>
     <tr><td><code>409</code></td><td>Trùng: email đã đăng ký, <code>deviceId</code> đã tồn tại, claim device đã có chủ.</td></tr>
@@ -759,7 +761,7 @@ curl $API/api/control/commands/$DEVICE</pre>
     <tr><td><code>500</code></td><td>Lỗi server, body <code>Internal server error</code>.</td></tr>
   </table>
   <div class="alert info">
-    <strong>Body lỗi là chuỗi text, không phải JSON object</strong>, vd <code>Device ESP32S3_Zone1 not found</code>. App nên đọc body dạng text rồi mới thử parse JSON. Riêng lỗi body không đúng JSON hoặc sai kiểu dữ liệu (vd <code>{"on":"yes"}</code>) trả <code>application/problem+json</code> có trường <code>errors</code>. Nếu App gửi header <code>Accept: application/json</code>, chuỗi lỗi được trả dưới dạng chuỗi JSON (có dấu nháy kép).
+    <strong>Body lỗi thường là chuỗi text, không phải JSON object</strong>, vd <code>Device ESP32S3_Zone1 not found</code> (trừ lỗi cấu hình ở trên). App nên đọc body dạng text rồi mới thử parse JSON. Riêng lỗi body không đúng JSON hoặc sai kiểu dữ liệu (vd <code>{"on":"yes"}</code>) trả <code>application/problem+json</code> có trường <code>errors</code>. Nếu App gửi header <code>Accept: application/json</code>, chuỗi lỗi được trả dưới dạng chuỗi JSON (có dấu nháy kép).
   </div>
 
   <h3>Quyền: owner và member</h3>
@@ -774,30 +776,30 @@ curl $API/api/control/commands/$DEVICE</pre>
 
   <h3>Chế độ auto / manual</h3>
   <ul>
-    <li>Server giữ chế độ của từng device ở trường <code>controlMode</code> trong <code>GET /api/devices/{deviceId}</code>: <code>"auto"</code> hoặc <code>"manual"</code>, <code>null</code> nghĩa là <code>"auto"</code>. App hiển thị chế độ theo trường này.</li>
-    <li><strong>Auto</strong>: mỗi khi có số đo mới, server tự tưới theo <code>soil_on_pct</code> / <code>soil_off_pct</code> (có thời gian nghỉ <code>pump_cooldown_s</code>) và tự bật/tắt đèn theo <code>lux_on</code> / <code>lux_off</code>. Server không tưới khi bồn hết nước (<code>waterOk=false</code>) hoặc pin đã bị cắt (<code>battCut=true</code>).</li>
-    <li>Lệnh tưới/đèn từ App <strong>không đổi chế độ</strong>. Khi đang auto, lệnh tay có thể bị server ghi đè: bơm bật tay khi đất đã đủ ẩm (<code>soilPercent &gt; soil_off_pct</code>) sẽ bị tắt ở lần đo sau; đèn bật/tắt tay được giữ tới lần ánh sáng vượt ngưỡng kế tiếp.</li>
-    <li>Muốn người dùng điều khiển hoàn toàn bằng tay: chuyển manual trước (<code>POST /api/control/{deviceId}</code> body <code>{"mode":"manual"}</code>), xong thì về auto bằng <code>POST /api/control/{deviceId}/auto</code>.</li>
-    <li>Lệnh trả <code>200</code> nghĩa là server <strong>đã gửi</strong> lệnh xuống MQTT, chưa chắc thiết bị đã làm. Lệnh gửi lúc thiết bị offline sẽ <strong>mất</strong> (không xếp hàng). Xác nhận bằng số đo kế tiếp (<code>pumpOn</code>, <code>lightOn</code>, <code>lightPwm</code>) qua <code>GET /api/sensordata/latest/{deviceId}</code>.</li>
+    <li><strong>Thiết bị làm chủ chế độ</strong> (firmware 2.1.0). Trường <code>mode</code> của số đo mới nhất (<code>GET /api/sensordata/latest/{deviceId}</code>) là sự thật; server chép nó vào <code>controlMode</code> của device (<code>null</code> = <code>"auto"</code>). <code>GET /api/devices/{deviceId}/status</code> cũng trả <code>mode</code>.</li>
+    <li><strong>Auto</strong>: thiết bị tự tưới theo liều (mở đợt khi đất &lt; <code>soil_on_pct</code>, mỗi liều <code>pump_dose_ms</code>, chờ <code>soak_s</code>, tối đa <code>max_doses_per_cycle</code> / đợt và <code>max_doses_per_day</code> / 24 h, đóng khi đất ≥ <code>soil_off_pct</code>) và tự bật đèn chỉ khi <code>light_auto=true</code>. Tự tưới bị chặn khi <code>soilOk=false</code>, <code>soilFault=true</code> hoặc <code>safeMode=true</code>.</li>
+    <li><strong>Mọi lệnh tưới / đèn từ App đưa thiết bị về MANUAL</strong> (kể cả khi lệnh bơm bị bỏ qua). Ở MANUAL thiết bị <strong>không tự làm gì</strong> và không có gì tự tắt đèn. App nên hiện rõ chế độ manual và có nút <strong>"Trả về tự động"</strong> (<code>POST /api/control/{deviceId}/auto</code>). Reboot cũng đưa thiết bị về auto.</li>
+    <li>Response lệnh có <code>expectedMode</code> = chế độ thiết bị <strong>sẽ</strong> ở sau lệnh, để App cập nhật ngay.</li>
+    <li>Lệnh trả <code>200</code> nghĩa là server <strong>đã gửi</strong> lệnh (QoS 1, broker đã nhận), chưa chắc thiết bị đã làm. Không có ACK. Xác nhận bằng số đo kế tiếp: bơm → <code>dosesToday</code> tăng; đèn → <code>lightOn</code>, <code>lightPwm</code>; chế độ → <code>mode</code>.</li>
   </ul>
 
   <h3>Online / offline</h3>
-  <p><code>lastSeen</code> của device được cập nhật mỗi lần có số đo (~10 giây). Gợi ý: coi device <strong>offline</strong> khi <code>now − lastSeen &gt; 240 giây</code>, cùng ngưỡng server dùng để gửi thông báo mất kết nối. Đừng dùng <code>isActive</code> (luôn <code>true</code>).</p>
+  <p>Dùng <code>GET /api/devices/{deviceId}/status</code>: trường <code>connection</code> = <code>online</code> (nghe thấy ≤ 90 s), <code>late</code> (im lặng &gt; 90 s), <code>offline</code> (thiết bị rớt mạng — broker báo LWT — hoặc im lặng &gt; 240 s), <code>sleeping</code> (chỉ bản pin), <code>unknown</code> (chưa nghe gì). Bản hiện tại chạy adapter nên <strong>luôn thức</strong>, số đo 10 giây/lần. Đừng dùng <code>isActive</code> (luôn <code>true</code>).</p>
 
   <h3>Luồng màn hình gợi ý</h3>
   <ol>
     <li><strong>Đăng nhập / đăng ký</strong>: <code>POST /api/auth/login</code> hoặc <code>/api/auth/register</code>, lưu <code>token</code>. Khi mở lại App, gọi <code>GET /api/auth/me</code>; nếu <code>401</code> thì về màn đăng nhập.</li>
     <li><strong>Danh sách cây</strong>: <code>GET /api/devices</code>.</li>
     <li><strong>Thêm cây</strong>: <code>POST /api/devices/register</code> với <code>deviceId</code> của thiết bị.</li>
-    <li><strong>Chi tiết cây</strong>: <code>GET /api/devices/{deviceId}</code> (chế độ, lastSeen) và <code>GET /api/sensordata/latest/{deviceId}</code>. Khi màn hình đang mở, gọi lại <code>latest</code> mỗi ~10 giây.</li>
+    <li><strong>Chi tiết cây</strong>: <code>GET /api/devices/{deviceId}/status</code> (online, chế độ) và <code>GET /api/sensordata/latest/{deviceId}</code>. Khi màn hình đang mở, gọi lại <code>latest</code> mỗi ~10 giây.</li>
     <li><strong>Biểu đồ</strong>: <code>GET /api/sensordata/history/{deviceId}?limit=N</code>.</li>
-    <li><strong>Điều khiển</strong>: <code>/water</code>, <code>/light</code>, <code>/auto</code>; chuyển manual bằng <code>{"mode":"manual"}</code>.</li>
-    <li><strong>Cài đặt ngưỡng</strong>: <code>GET</code> và <code>PUT /api/control/{deviceId}/config</code>.</li>
+    <li><strong>Điều khiển</strong>: <code>/water</code> (1 liều), <code>/light</code>, <code>/auto</code> (trả về tự động), <code>/show-qr</code> (hiện QR cài đặt WiFi).</li>
+    <li><strong>Cài đặt</strong>: <code>GET</code> và <code>PUT /api/control/{deviceId}/config</code> (25 khoá; đọc <code>rejected</code> sau khi lưu).</li>
     <li><strong>Chia sẻ</strong>: <code>share</code>, <code>members</code>, thu hồi bằng <code>DELETE /api/devices/{deviceId}/share/{memberId}</code>.</li>
     <li><strong>Trợ lý AI</strong>: <code>POST /api/assistant/v1/chat/completions</code>.</li>
   </ol>
 
-  <h3>Tất cả endpoint (27)</h3>
+  <h3>Tất cả endpoint (29)</h3>
   <p>Cột <strong>Dùng cho</strong>: <em>App</em> là endpoint App cần; <em>Test</em> chỉ để test/debug, App không cần.</p>
   <table>
     <tr><th>Nhóm</th><th>Method</th><th>Path</th><th>Mục đích</th><th>Dùng cho</th></tr>
@@ -808,6 +810,7 @@ curl $API/api/control/commands/$DEVICE</pre>
     <tr><td>Devices</td><td><span class="badge post">POST</span></td><td><code>/api/devices/register</code></td><td>Thêm device, người gọi thành owner</td><td>App</td></tr>
     <tr><td>Devices</td><td><span class="badge get">GET</span></td><td><code>/api/devices</code></td><td>Device sở hữu + được chia sẻ</td><td>App</td></tr>
     <tr><td>Devices</td><td><span class="badge get">GET</span></td><td><code>/api/devices/{deviceId}</code></td><td>Chi tiết 1 device</td><td>App</td></tr>
+    <tr><td>Devices</td><td><span class="badge get">GET</span></td><td><code>/api/devices/{deviceId}/status</code></td><td>Online / offline, chế độ, sức khoẻ (<code>xmini/status</code>)</td><td>App</td></tr>
     <tr><td>Devices</td><td><span class="badge delete">DELETE</span></td><td><code>/api/devices/{deviceId}</code></td><td>Xoá device và toàn bộ dữ liệu (owner)</td><td>App</td></tr>
     <tr><td>Devices</td><td><span class="badge post">POST</span></td><td><code>/api/devices/{deviceId}/claim</code></td><td>Nhận device chưa có chủ</td><td>App</td></tr>
     <tr><td>Devices</td><td><span class="badge post">POST</span></td><td><code>/api/devices/{deviceId}/share</code></td><td>Chia sẻ cho user khác qua email (owner)</td><td>App</td></tr>
@@ -819,13 +822,14 @@ curl $API/api/control/commands/$DEVICE</pre>
     <tr><td>Sensor Data</td><td><span class="badge get">GET</span></td><td><code>/api/sensordata/history/{deviceId}</code></td><td>N số đo gần nhất</td><td>App</td></tr>
     <tr><td>Sensor Data</td><td><span class="badge get">GET</span></td><td><code>/api/sensordata/range/{deviceId}</code></td><td>Số đo trong khoảng thời gian (có giới hạn, xem tab Sensor Data)</td><td>App</td></tr>
     <tr><td>Sensor Data</td><td><span class="badge post">POST</span></td><td><code>/api/sensordata/upload</code></td><td>Nạp số đo qua HTTP (thiết bị thật gửi qua MQTT)</td><td>Test</td></tr>
-    <tr><td>Ngưỡng</td><td><span class="badge get">GET</span></td><td><code>/api/control/{deviceId}/config</code></td><td>Ngưỡng auto hiện tại</td><td>App</td></tr>
-    <tr><td>Ngưỡng</td><td><span class="badge put">PUT</span></td><td><code>/api/control/{deviceId}/config</code></td><td>Đổi ngưỡng</td><td>App</td></tr>
-    <tr><td>Ngưỡng</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/config/refresh</code></td><td>Yêu cầu thiết bị gửi lại ngưỡng</td><td>App</td></tr>
-    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/water</code></td><td>Bật/tắt bơm</td><td>App</td></tr>
-    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/light</code></td><td>Bật/tắt đèn, đặt độ sáng</td><td>App</td></tr>
-    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/auto</code></td><td>Về chế độ auto</td><td>App</td></tr>
-    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}</code></td><td>Lệnh tổng quát: manual, tin nhắn màn hình, gộp nhiều lệnh</td><td>App</td></tr>
+    <tr><td>Cấu hình</td><td><span class="badge get">GET</span></td><td><code>/api/control/{deviceId}/config</code></td><td>Cấu hình hiện tại (25 khoá + <code>rejected</code>)</td><td>App</td></tr>
+    <tr><td>Cấu hình</td><td><span class="badge put">PUT</span></td><td><code>/api/control/{deviceId}/config</code></td><td>Đổi cấu hình (server kiểm miền + cặp)</td><td>App</td></tr>
+    <tr><td>Cấu hình</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/config/refresh</code></td><td>Yêu cầu thiết bị gửi lại cấu hình</td><td>App</td></tr>
+    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/water</code></td><td>Tưới 1 liều / dừng (→ manual)</td><td>App</td></tr>
+    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/light</code></td><td>Bật/tắt đèn, đặt độ sáng (→ manual)</td><td>App</td></tr>
+    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/auto</code></td><td>Trả về chế độ auto</td><td>App</td></tr>
+    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}/show-qr</code></td><td>Hiện QR trang cài đặt trên màn thiết bị</td><td>App</td></tr>
+    <tr><td>Control</td><td><span class="badge post">POST</span></td><td><code>/api/control/{deviceId}</code></td><td>Lệnh tổng quát: tin nhắn màn hình, manual, <code>stay_awake_s</code>, gộp nhiều lệnh</td><td>App</td></tr>
     <tr><td>Control</td><td><span class="badge get">GET</span></td><td><code>/api/control/commands/{deviceId}</code></td><td>Nhật ký lệnh đã gửi</td><td>App</td></tr>
     <tr><td>Trợ lý AI</td><td><span class="badge post">POST</span></td><td><code>/api/assistant/v1/chat/completions</code></td><td>Chat (chuẩn OpenAI)</td><td>App</td></tr>
   </table>
@@ -1043,6 +1047,33 @@ $TOKEN = (Invoke-RestMethod -Method Post "$API/api/auth/login" -ContentType "app
     <pre>Device ESP32S3_Zone1 not found</pre>
   </div>
 
+  <div class="endpoint get"><span class="badge get">GET</span> /api/devices/{deviceId}/status</div>
+  <p>Trạng thái kết nối + sức khoẻ. Server tính <code>connection</code> từ topic <code>xmini/status</code> (có LWT khi thiết bị rớt mạng) và giờ số đo cuối: <code>online</code> (≤ 90 s) · <code>late</code> (&gt; 90 s) · <code>offline</code> (LWT hoặc &gt; 240 s) · <code>sleeping</code> (chỉ bản pin) · <code>unknown</code> (chưa nghe gì). <code>status</code> = bản <code>xmini/status</code> gần nhất (<code>null</code> với thiết bị ảo).</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl $API/api/devices/$DEVICE/status -H "Authorization: Bearer $TOKEN"</pre>
+  </div>
+  <div class="response-label">Response — HTTP 200</div>
+  <div class="code-block response-block">
+    <pre>{
+  "deviceId": "ESP32S3_Zone1",
+  "connection": "online",
+  "lastHeardAt": "2026-11-12T04:40:10Z",
+  "expectedBy": "2026-11-12T04:41:40Z",
+  "lastTelemetryAt": "2026-11-12T04:40:10Z",
+  "mode": "auto",
+  "status": {
+    "state": "online", "fw": "2.1.0",
+    "powerSource": "adapter", "powerMode": "auto", "powerState": "awake", "pluggedGuess": true,
+    "nextWakeS": null, "uptimeS": 742, "bootCount": 37, "resetReason": "poweron",
+    "freeHeap": 187432, "minFreeHeap": 151208, "maxAlloc": 110580, "rssi": -61,
+    "wifiFailCount": 0, "wakeMs": 0, "safeMode": false,
+    "retained": false, "receivedAt": "2026-11-12T04:40:01Z"
+  }
+}</pre>
+  </div>
+  <div class="alert info"><code>bootCount</code> tăng / <code>uptimeS</code> giảm = thiết bị vừa reboot (đã về auto). <code>resetReason</code> là <code>panic</code>, <code>*_wdt</code>, <code>brownout</code>… = reset bất thường, nên cảnh báo.</div>
+
   <div class="endpoint delete"><span class="badge delete">DELETE</span> /api/devices/{deviceId}</div>
   <p><strong>Chỉ owner.</strong> Xoá device cùng toàn bộ số đo, ngưỡng và nhật ký lệnh. Không hoàn tác được, App nên hỏi xác nhận trước.</p>
   <div class="code-block">
@@ -1173,17 +1204,25 @@ $TOKEN = (Invoke-RestMethod -Method Post "$API/api/auth/login" -ContentType "app
     <tr><td><code>timestamp</code></td><td>datetime UTC</td><td>Thời điểm server nhận số đo.</td></tr>
     <tr><td><code>temperature</code></td><td>°C</td><td>Nhiệt độ không khí.</td></tr>
     <tr><td><code>humidity</code></td><td>%RH</td><td>Độ ẩm không khí.</td></tr>
-    <tr><td><code>soilPercent</code></td><td>int 0–100</td><td>Độ ẩm đất.</td></tr>
+    <tr><td><code>soilPercent</code></td><td>int 0–100</td><td>Độ ẩm đất. <strong>Vô nghĩa khi <code>soilOk=false</code></strong>.</td></tr>
+    <tr><td><code>soilOk</code></td><td>bool</td><td><code>false</code> = que đất hỏng / rút dây (không phải "đất khô"). Chặn tự tưới.</td></tr>
+    <tr><td><code>soilFault</code></td><td>bool</td><td>Tưới đủ đợt mà đất không ẩm lên. Gỡ bằng <code>/auto</code>.</td></tr>
+    <tr><td><code>safeMode</code></td><td>bool</td><td>≥ 3 lần reset bất thường liên tiếp. Chặn tự tưới.</td></tr>
+    <tr><td><code>dosesToday</code></td><td>int</td><td>Số liều bơm trong 24 h (tay + tự động). Tăng = lệnh tưới đã chạy.</td></tr>
+    <tr><td><code>lightMinToday</code></td><td>int (phút)</td><td>Số phút đèn bật trong ~24 h. Về 0 sau reboot.</td></tr>
+    <tr><td><code>powerSource</code></td><td>"adapter" | "battery"</td><td>Nguồn. Bản hiện tại: <code>"adapter"</code> → ẩn mục pin, dùng <code>supply*</code>.</td></tr>
+    <tr><td><code>supplyVoltageV</code>, <code>supplyCurrentMa</code></td><td>V, mA</td><td>Áp / dòng nguồn vào (adapter ~9 V). <code>null</code> = INA219 lỗi hoặc đang chạy USB.</td></tr>
+    <tr><td><code>powerState</code></td><td>"awake" | "eco"</td><td>Thức liên tục hay đang ngủ theo chu kỳ (chỉ bản pin). Adapter luôn <code>"awake"</code>.</td></tr>
     <tr><td><code>soilDryFlag</code></td><td>bool</td><td><code>true</code> = đất khô (theo cảm biến số).</td></tr>
     <tr><td><code>lightLevel</code></td><td>lux</td><td>Ánh sáng.</td></tr>
     <tr><td><code>pressure</code>, <code>altitude</code></td><td>hPa, m</td><td>Áp suất, độ cao suy từ áp suất.</td></tr>
     <tr><td><code>temperatureBmp</code></td><td>°C</td><td>Nhiệt độ tham chiếu từ cảm biến áp suất.</td></tr>
-    <tr><td><code>batteryPercent</code></td><td>int 0–100</td><td>Pin. <code>null</code> khi đo pin lỗi.</td></tr>
-    <tr><td><code>batteryVoltageV</code>, <code>batteryCurrentMa</code>, <code>batteryPowerMw</code></td><td>V, mA, mW</td><td>Điện áp, dòng, công suất pin.</td></tr>
-    <tr><td><code>pumpOn</code></td><td>bool</td><td>Bơm đang chạy.</td></tr>
-    <tr><td><code>lightOn</code>, <code>lightPwm</code></td><td>bool, int 0–255</td><td>Đèn đang bật, độ sáng đèn.</td></tr>
-    <tr><td><code>mode</code></td><td>"auto" | "manual"</td><td>Chế độ thiết bị báo lên, có thể lệch tạm thời. Hiển thị chế độ theo <code>controlMode</code> của Device.</td></tr>
-    <tr><td><code>waterOk</code></td><td>bool | null</td><td><code>false</code> = bồn hết nước; <code>null</code> = cảm biến nước đang tắt.</td></tr>
+    <tr><td><code>batteryPercent</code></td><td>int 0–100</td><td>Pin (chỉ bản pin). <code>null</code> khi đo pin lỗi hoặc chạy adapter.</td></tr>
+    <tr><td><code>batteryVoltageV</code>, <code>batteryCurrentMa</code>, <code>batteryPowerMw</code></td><td>V, mA, mW</td><td>Điện áp, dòng, công suất pin. Luôn <code>null</code> khi chạy adapter.</td></tr>
+    <tr><td><code>pumpOn</code></td><td>bool</td><td>Đang trong 1 liều (liều 2 s nên hiếm khi thấy <code>true</code> — xem <code>dosesToday</code>).</td></tr>
+    <tr><td><code>lightOn</code>, <code>lightPwm</code></td><td>bool, int 0–255</td><td>Đèn đang bật, độ sáng đã đặt (giữ cả khi đèn tắt).</td></tr>
+    <tr><td><code>mode</code></td><td>"auto" | "manual"</td><td>Chế độ thiết bị đang chạy — <strong>sự thật</strong> cho App hiển thị.</td></tr>
+    <tr><td><code>waterOk</code></td><td>bool | null</td><td><code>false</code> = bồn hết nước; <code>null</code> = chưa lắp cảm biến nước (bản hiện tại luôn <code>null</code>, ẩn mục này).</td></tr>
     <tr><td><code>lowBatt</code></td><td>bool</td><td>Pin yếu (dưới <code>batt_warn_pct</code>).</td></tr>
     <tr><td><code>battFull</code></td><td>bool</td><td>Pin gần đầy.</td></tr>
     <tr><td><code>battCut</code></td><td>bool</td><td>Pin cạn, thiết bị đã cắt tải: bơm và đèn không chạy.</td></tr>
@@ -1212,18 +1251,27 @@ $TOKEN = (Invoke-RestMethod -Method Post "$API/api/auth/login" -ContentType "app
   "lightLevel": 420.5,
   "soilPercent": 62,
   "soilDryFlag": false,
-  "batteryVoltageV": 7.92,
-  "batteryCurrentMa": 120.5,
-  "batteryPowerMw": 954.4,
-  "batteryPercent": 88,
+  "powerSource": "adapter",
+  "supplyVoltageV": 9.12,
+  "supplyCurrentMa": 168.4,
+  "powerState": "awake",
+  "batteryVoltageV": null,
+  "batteryCurrentMa": null,
+  "batteryPowerMw": null,
+  "batteryPercent": null,
   "lightOn": false,
-  "lightPwm": 0,
+  "lightPwm": 255,
   "pumpOn": false,
   "mode": "auto",
-  "waterOk": true,
+  "waterOk": null,
   "lowBatt": false,
   "battFull": false,
   "battCut": false,
+  "soilOk": true,
+  "soilFault": false,
+  "safeMode": false,
+  "dosesToday": 2,
+  "lightMinToday": 0,
   "location": null
 }</pre>
   </div>
@@ -1295,65 +1343,90 @@ Device ESP32S3_Zone1 not found           (không tồn tại hoặc không có q
 </section>
 
 <section id="api-thresholds">
-  <h2>Ngưỡng auto (Device Config)</h2>
-  <p>15 ngưỡng quyết định cách tưới và bật đèn ở chế độ auto. Giá trị thật lưu trên thiết bị; server đọc lại từ những gì thiết bị gửi lên. Đổi ngưỡng nghĩa là gửi lệnh xuống thiết bị: thiết bị kẹp giá trị về dải hợp lệ, lưu lại, rồi gửi giá trị mới lên server sau vài giây.</p>
+  <h2>Cấu hình thiết bị (Device Config)</h2>
+  <p>25 khoá (firmware 2.1.0) quyết định cách thiết bị <strong>tự</strong> tưới, bật đèn, quản lý nguồn và màn hình. Giá trị thật lưu trên thiết bị; server đọc lại từ topic <code>xmini/config</code>. Đổi cấu hình = gửi lệnh xuống thiết bị; thiết bị kiểm từng khoá, lưu khoá hợp lệ, rồi gửi lại toàn bộ cấu hình sau vài giây.</p>
+  <div class="alert danger">
+    <strong>Giá trị sai bị TỪ CHỐI, không kẹp.</strong> Server kiểm trước theo đúng bảng của firmware: sai kiểu, ngoài miền, phá ràng buộc cặp, hoặc dùng khoá đã bỏ (<code>pump_max_run_s</code>, <code>pump_cooldown_s</code>) → <code>400</code> và lệnh <strong>không</strong> được gửi. Thiết bị ảo <code>SIM_*</code> vẫn dùng 15 khoá cũ.
+  </div>
 
-  <h3>15 khoá ngưỡng</h3>
+  <h3>25 khoá cấu hình</h3>
   <table>
-    <tr><th>Khoá gửi lên (PUT)</th><th>Trường trả về (GET)</th><th>Ý nghĩa</th><th>Dải</th><th>Mặc định</th></tr>
-    <tr><td><code>soil_on_pct</code></td><td><code>soilOnPct</code></td><td>Đất dưới mức này (%) thì bắt đầu tưới</td><td>0–100</td><td>30</td></tr>
-    <tr><td><code>soil_off_pct</code></td><td><code>soilOffPct</code></td><td>Đất trên mức này (%) thì ngừng tưới</td><td>0–100</td><td>60</td></tr>
-    <tr><td><code>pump_max_run_s</code></td><td><code>pumpMaxRunS</code></td><td>Thời gian bơm chạy tối đa mỗi lượt (giây)</td><td>0–3600</td><td>20</td></tr>
-    <tr><td><code>pump_cooldown_s</code></td><td><code>pumpCooldownS</code></td><td>Thời gian nghỉ giữa 2 lượt tưới auto (giây)</td><td>0–3600</td><td>300</td></tr>
-    <tr><td><code>lux_on</code></td><td><code>luxOn</code></td><td>Ánh sáng dưới mức này (lux) thì bật đèn</td><td>0–65535</td><td>120</td></tr>
-    <tr><td><code>lux_off</code></td><td><code>luxOff</code></td><td>Ánh sáng trên mức này (lux) thì tắt đèn</td><td>0–65535</td><td>300</td></tr>
-    <tr><td><code>light_auto_pwm</code></td><td><code>lightAutoPwm</code></td><td>Độ sáng đèn khi auto bật</td><td>0–255</td><td>180</td></tr>
-    <tr><td><code>batt_warn_pct</code></td><td><code>battWarnPct</code></td><td>Báo pin yếu khi dưới mức (%)</td><td>0–100</td><td>20</td></tr>
-    <tr><td><code>batt_recover_pct</code></td><td><code>battRecoverPct</code></td><td>Hết báo pin yếu khi trên mức (%)</td><td>0–100</td><td>25</td></tr>
-    <tr><td><code>soil_dry</code></td><td><code>soilDry</code></td><td>Hiệu chuẩn cảm biến đất: giá trị thô khi khô</td><td>0–4095</td><td>2800</td></tr>
-    <tr><td><code>soil_wet</code></td><td><code>soilWet</code></td><td>Hiệu chuẩn cảm biến đất: giá trị thô khi ướt</td><td>0–4095</td><td>1200</td></tr>
-    <tr><td><code>batt_full_on_v</code></td><td><code>battFullOnV</code></td><td>Báo pin đầy khi điện áp từ mức này (V)</td><td>5–9</td><td>8.3</td></tr>
-    <tr><td><code>batt_full_off_v</code></td><td><code>battFullOffV</code></td><td>Hết báo pin đầy khi điện áp xuống mức này (V)</td><td>5–9</td><td>8.1</td></tr>
-    <tr><td><code>batt_crit_v</code></td><td><code>battCritV</code></td><td>Cắt tải khi điện áp xuống mức này (V)</td><td>5–9</td><td>6.4</td></tr>
-    <tr><td><code>batt_crit_recover_v</code></td><td><code>battCritRecoverV</code></td><td>Hết cắt tải khi điện áp lên mức này (V)</td><td>5–9</td><td>6.8</td></tr>
+    <tr><th>Khoá gửi lên (PUT)</th><th>Trường trả về (GET)</th><th>Ý nghĩa</th><th>Kiểu / miền</th><th>Mặc định</th></tr>
+    <tr><td colspan="5"><strong>Tưới theo liều</strong></td></tr>
+    <tr><td><code>soil_on_pct</code></td><td><code>soilOnPct</code></td><td>Đất dưới mức này (%) thì mở đợt tưới</td><td>int 0–100</td><td>30</td></tr>
+    <tr><td><code>soil_off_pct</code></td><td><code>soilOffPct</code></td><td>Đất từ mức này (%) thì đóng đợt tưới</td><td>int 0–100</td><td>60</td></tr>
+    <tr><td><code>pump_dose_ms</code></td><td><code>pumpDoseMs</code></td><td>Thời lượng 1 liều (ms), cho cả tưới tay</td><td>int 200–10000</td><td>2000</td></tr>
+    <tr><td><code>soak_s</code></td><td><code>soakS</code></td><td>Chờ nước ngấm giữa 2 liều (giây)</td><td>int 60–7200</td><td>600</td></tr>
+    <tr><td><code>max_doses_per_cycle</code></td><td><code>maxDosesPerCycle</code></td><td>Số liều tối đa mỗi đợt</td><td>int 1–20</td><td>4</td></tr>
+    <tr><td><code>max_doses_per_day</code></td><td><code>maxDosesPerDay</code></td><td>Liều tự động tối đa / 24 h. <code>0</code> = tắt tự tưới</td><td>int 0–48</td><td>8</td></tr>
+    <tr><td><code>soil_dry</code></td><td><code>soilDry</code></td><td>Hiệu chuẩn: giá trị ADC khi đất khô (0 %)</td><td>int 0–4095</td><td>3200</td></tr>
+    <tr><td><code>soil_wet</code></td><td><code>soilWet</code></td><td>Hiệu chuẩn: giá trị ADC khi đất ẩm (100 %)</td><td>int 0–4095</td><td>1200</td></tr>
+    <tr><td colspan="5"><strong>Đèn tự động</strong> (chỉ chạy ở auto)</td></tr>
+    <tr><td><code>light_auto</code></td><td><code>lightAuto</code></td><td>Cho phép tự bật đèn theo ánh sáng</td><td>bool (hoặc 0/1)</td><td>false</td></tr>
+    <tr><td><code>lux_on</code></td><td><code>luxOn</code></td><td>Ánh sáng dưới mức này (lux) thì tự bật</td><td>số 0–100000</td><td>50</td></tr>
+    <tr><td><code>lux_off</code></td><td><code>luxOff</code></td><td>Ánh sáng trên mức này (lux) thì tự tắt</td><td>số 0–100000</td><td>200</td></tr>
+    <tr><td><code>light_auto_pwm</code></td><td><code>lightAutoPwm</code></td><td>Độ sáng khi tự bật</td><td>int 1–255</td><td>255</td></tr>
+    <tr><td><code>light_min_batt_pct</code></td><td><code>lightMinBattPct</code></td><td>Chỉ bản pin: tự bật khi pin ≥ mức này</td><td>int 0–100</td><td>50</td></tr>
+    <tr><td><code>light_max_min_per_day</code></td><td><code>lightMaxMinPerDay</code></td><td>Tối đa số phút đèn bật / ngày</td><td>int 0–1440</td><td>240</td></tr>
+    <tr><td colspan="5"><strong>Pin</strong> (chỉ có tác dụng ở bản pin)</td></tr>
+    <tr><td><code>batt_warn_pct</code></td><td><code>battWarnPct</code></td><td>Báo pin yếu khi dưới mức (%)</td><td>int 0–100</td><td>15</td></tr>
+    <tr><td><code>batt_recover_pct</code></td><td><code>battRecoverPct</code></td><td>Hết báo pin yếu khi từ mức (%)</td><td>int 0–100</td><td>20</td></tr>
+    <tr><td><code>batt_full_on_v</code></td><td><code>battFullOnV</code></td><td>Báo pin đầy khi điện áp từ mức (V)</td><td>số 4.0–9.0</td><td>8.3</td></tr>
+    <tr><td><code>batt_full_off_v</code></td><td><code>battFullOffV</code></td><td>Hết báo pin đầy khi dưới mức (V)</td><td>số 4.0–9.0</td><td>8.0</td></tr>
+    <tr><td><code>batt_crit_v</code></td><td><code>battCritV</code></td><td>Cắt tải khi điện áp xuống mức (V)</td><td>số 6.0–7.5</td><td>6.8</td></tr>
+    <tr><td><code>batt_crit_recover_v</code></td><td><code>battCritRecoverV</code></td><td>Hết cắt tải khi điện áp lên mức (V)</td><td>số 6.2–8.0</td><td>7.2</td></tr>
+    <tr><td colspan="5"><strong>Nguồn / màn hình</strong></td></tr>
+    <tr><td><code>power_mode</code></td><td><code>powerMode</code></td><td>Chỉ bản pin: <code>eco</code> (ngủ theo chu kỳ), <code>always_on</code>, <code>auto</code> (cắm sạc thì thức)</td><td>chuỗi (hoặc 0/1/2)</td><td>"auto"</td></tr>
+    <tr><td><code>wake_interval_s</code></td><td><code>wakeIntervalS</code></td><td>Chỉ bản pin: chu kỳ thức ở eco (giây)</td><td>int 60–3600</td><td>300</td></tr>
+    <tr><td><code>plugged_on_v</code></td><td><code>pluggedOnV</code></td><td>Chỉ bản pin: áp ≥ mức này coi là đang cắm sạc</td><td>số 7.0–8.6</td><td>8.25</td></tr>
+    <tr><td><code>plugged_off_v</code></td><td><code>pluggedOffV</code></td><td>Chỉ bản pin: áp &lt; mức này (và đang giảm) coi là chạy pin</td><td>số 7.0–8.6</td><td>8.1</td></tr>
+    <tr><td><code>screen_timeout_s</code></td><td><code>screenTimeoutS</code></td><td><code>0</code> = màn luôn sáng; &gt; 0 chỉ khi chạy pin</td><td>int 0–3600</td><td>0</td></tr>
+  </table>
+
+  <h3>Ràng buộc cặp</h3>
+  <p>Muốn đổi một cặp thì <strong>gửi cả hai khoá trong cùng một lệnh</strong>. Server kiểm khi đủ cặp; nếu chỉ gửi 1 khoá, thiết bị kiểm với giá trị đang lưu và có thể từ chối (xem <code>rejected</code>).</p>
+  <table>
+    <tr><th>Cặp</th><th>Điều kiện</th></tr>
+    <tr><td><code>soil_on_pct</code> / <code>soil_off_pct</code></td><td><code>soil_on_pct + 5 ≤ soil_off_pct</code></td></tr>
+    <tr><td><code>lux_on</code> / <code>lux_off</code></td><td><code>lux_on &lt; lux_off</code></td></tr>
+    <tr><td><code>batt_warn_pct</code> / <code>batt_recover_pct</code></td><td><code>batt_warn_pct &lt; batt_recover_pct</code></td></tr>
+    <tr><td><code>batt_full_off_v</code> / <code>batt_full_on_v</code></td><td><code>batt_full_off_v &lt; batt_full_on_v</code></td></tr>
+    <tr><td><code>batt_crit_v</code> / <code>batt_crit_recover_v</code></td><td><code>batt_crit_recover_v ≥ batt_crit_v + 0.2</code> (để dư, vd +0.21)</td></tr>
+    <tr><td><code>soil_dry</code> / <code>soil_wet</code></td><td><code>|soil_dry − soil_wet| ≥ 300</code></td></tr>
+    <tr><td><code>plugged_off_v</code> / <code>plugged_on_v</code></td><td><code>plugged_off_v &lt; plugged_on_v</code></td></tr>
   </table>
   <div class="alert">
     <strong>Tên trường khác nhau giữa 2 chiều</strong>: gửi lên dùng snake_case (<code>soil_on_pct</code>), GET trả về camelCase (<code>soilOnPct</code>).
   </div>
-  <div class="alert info">Màn cài đặt của App thường chỉ cần 7 khoá đầu (tưới và đèn). Các khoá hiệu chuẩn cảm biến và pin nên để người kỹ thuật chỉnh.</div>
+  <div class="alert info">Màn cài đặt của App thường chỉ cần nhóm tưới (6 khoá đầu) và đèn (<code>light_auto</code>, <code>lux_on</code>, <code>lux_off</code>, <code>light_auto_pwm</code>). Hiệu chuẩn đất, pin, nguồn nên để người kỹ thuật chỉnh.</div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/control/{deviceId}/config</div>
-  <p>Ngưỡng thiết bị gửi lên gần nhất. Trường nào thiết bị chưa gửi sẽ là <code>null</code>.</p>
+  <p>Cấu hình thiết bị gửi lên gần nhất. Trường nào thiết bị chưa gửi sẽ là <code>null</code>. <code>rejected</code> / <code>rejectedCount</code> = các khoá thiết bị đã <strong>từ chối</strong> ở lệnh cấu hình gần nhất (<code>null</code> = không có).</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl $API/api/control/$DEVICE/config -H "Authorization: Bearer $TOKEN"</pre>
   </div>
 
-  <div class="response-label">Response — HTTP 200 (đã có ngưỡng)</div>
+  <div class="response-label">Response — HTTP 200 (đã có cấu hình)</div>
   <div class="code-block response-block">
     <pre>{
   "id": "6650b1c2d3e4f5a6b7c8d9e0",
   "deviceId": "ESP32S3_Zone1",
-  "soilOnPct": 30,
-  "soilOffPct": 60,
-  "pumpMaxRunS": 20,
-  "pumpCooldownS": 300,
-  "luxOn": 120,
-  "luxOff": 300,
-  "lightAutoPwm": 180,
-  "battWarnPct": 20,
-  "battRecoverPct": 25,
-  "soilDry": 2800,
-  "soilWet": 1200,
-  "battFullOnV": 8.3,
-  "battFullOffV": 8.1,
-  "battCritV": 6.4,
-  "battCritRecoverV": 6.8,
-  "updatedAt": "2026-11-09T08:10:00Z"
+  "soilOnPct": 30, "soilOffPct": 60, "pumpDoseMs": 2000, "soakS": 600,
+  "maxDosesPerCycle": 4, "maxDosesPerDay": 8, "soilDry": 3200, "soilWet": 1200,
+  "lightAuto": false, "luxOn": 50, "luxOff": 200, "lightAutoPwm": 255,
+  "lightMinBattPct": 50, "lightMaxMinPerDay": 240,
+  "battWarnPct": 15, "battRecoverPct": 20,
+  "battFullOnV": 8.3, "battFullOffV": 8, "battCritV": 6.8, "battCritRecoverV": 7.2,
+  "powerMode": "auto", "wakeIntervalS": 300, "pluggedOnV": 8.25, "pluggedOffV": 8.1,
+  "screenTimeoutS": 0,
+  "pumpMaxRunS": null, "pumpCooldownS": null,
+  "rejected": null, "rejectedCount": null, "rejectedAt": null,
+  "updatedAt": "2026-11-12T04:40:00Z"
 }</pre>
   </div>
 
-  <div class="response-label">Response — HTTP 200 (server chưa nhận được ngưỡng từ thiết bị)</div>
+  <div class="response-label">Response — HTTP 200 (server chưa nhận được cấu hình từ thiết bị)</div>
   <div class="code-block response-block">
     <pre>{
   "deviceId": "ESP32S3_Zone1",
@@ -1361,15 +1434,15 @@ Device ESP32S3_Zone1 not found           (không tồn tại hoặc không có q
   "note": "Chưa nghe được xmini/config. Gọi POST .../config/refresh để yêu cầu thiết bị gửi lại."
 }</pre>
   </div>
-  <p>Phân biệt 2 trường hợp: response có trường <code>config</code> (giá trị <code>null</code>) nghĩa là chưa có ngưỡng. Khi đó gọi <code>config/refresh</code>, đợi vài giây rồi GET lại.</p>
+  <p>Phân biệt 2 trường hợp: response có trường <code>config</code> (giá trị <code>null</code>) nghĩa là chưa có cấu hình. Khi đó gọi <code>config/refresh</code>, đợi vài giây rồi GET lại.</p>
 
   <div class="endpoint put"><span class="badge put">PUT</span> /api/control/{deviceId}/config</div>
-  <p>Body chỉ gồm <strong>các khoá muốn đổi</strong>, giá trị là số. Khoá lạ bị bỏ qua.</p>
+  <p>Body chỉ gồm <strong>các khoá muốn đổi</strong>, đúng kiểu (số là number, bool là <code>true</code>/<code>false</code>, <code>power_mode</code> là chuỗi). <code>null</code> = bỏ qua khoá đó.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X PUT $API/api/control/$DEVICE/config \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"soil_on_pct":25,"soil_off_pct":65,"light_auto_pwm":200}'</pre>
+  -d '{"soil_on_pct":35,"soil_off_pct":65,"pump_dose_ms":2500,"light_auto":true}'</pre>
   </div>
 
   <div class="response-label">Response — HTTP 200</div>
@@ -1377,20 +1450,33 @@ Device ESP32S3_Zone1 not found           (không tồn tại hoặc không có q
     <pre>{
   "message": "Đã gửi lệnh xuống xmini/control",
   "deviceId": "ESP32S3_Zone1",
-  "published": { "config": { "soil_on_pct": 25, "soil_off_pct": 65, "light_auto_pwm": 200 } }
+  "commandId": "c-1762925000123-7",
+  "expectedMode": "auto",
+  "published": { "id": "c-1762925000123-7",
+                 "config": { "soil_on_pct": 35, "soil_off_pct": 65, "pump_dose_ms": 2500, "light_auto": true } }
 }</pre>
   </div>
-  <p>Giá trị mới chỉ hiện ở GET sau khi thiết bị gửi lại (vài giây), và có thể đã bị kẹp về dải hợp lệ. Nếu thiết bị đang offline, lệnh mất và GET vẫn ra giá trị cũ.</p>
+  <p>Giá trị mới chỉ hiện ở GET sau khi thiết bị gửi lại (vài giây). Sau đó đọc <code>rejected</code>: nếu có khoá trong đó thì thiết bị đã từ chối khoá ấy (giữ giá trị cũ). Đổi cấu hình <strong>không</strong> đổi chế độ auto/manual.</p>
 
-  <div class="response-label">Lỗi — HTTP 400 / 503</div>
+  <div class="response-label">Lỗi cấu hình — HTTP 400 (JSON)</div>
   <div class="code-block response-block error">
-    <pre>400  Ngưỡng 'soil_on_pct' phải là số.
-400  Không có khoá ngưỡng hợp lệ. Khoá cho phép: soil_on_pct, soil_off_pct, ...
+    <pre>{
+  "error": "Cấu hình không hợp lệ — lệnh KHÔNG được gửi xuống thiết bị.",
+  "errors": [
+    "'pump_dose_ms' = 50 nằm ngoài miền 200–10000.",
+    "Cần soil_on_pct + 5 ≤ soil_off_pct (đang gửi 25 và 28).",
+    "'pump_max_run_s' đã bỏ ở firmware 2.x: bơm chạy theo liều, dùng pump_dose_ms / max_doses_per_cycle."
+  ]
+}</pre>
+  </div>
+  <div class="response-label">Lỗi khác — HTTP 400 / 503 (text)</div>
+  <div class="code-block response-block error">
+    <pre>400  Không có khoá cấu hình nào để đổi. Muốn hỏi cấu hình hiện tại thì gọi POST .../config/refresh.
 503  MQTT publisher chưa kết nối broker — không gửi được lệnh.</pre>
   </div>
 
   <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}/config/refresh</div>
-  <p>Yêu cầu thiết bị gửi lại toàn bộ ngưỡng hiện tại. Không cần body.</p>
+  <p>Yêu cầu thiết bị gửi lại toàn bộ cấu hình hiện tại (gửi <code>{"config":{}}</code>). Không cần body.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/control/$DEVICE/config/refresh -H "Authorization: Bearer $TOKEN"</pre>
@@ -1401,17 +1487,19 @@ Device ESP32S3_Zone1 not found           (không tồn tại hoặc không có q
     <pre>{
   "message": "Đã gửi lệnh xuống xmini/control",
   "deviceId": "ESP32S3_Zone1",
-  "published": { "config": {} }
+  "commandId": "c-1762925000456-8",
+  "expectedMode": "auto",
+  "published": { "id": "c-1762925000456-8", "config": {} }
 }</pre>
   </div>
 </section>
 
 <section id="api-control">
   <h2>Control — Điều khiển</h2>
-  <p>Server gửi lệnh xuống thiết bị qua MQTT ngay khi nhận request. App nên dùng 3 endpoint gọn <code>/water</code>, <code>/light</code>, <code>/auto</code>. Endpoint tổng quát <code>POST /api/control/{deviceId}</code> dùng để chuyển manual, hiện tin nhắn trên màn hình thiết bị, hoặc gộp nhiều lệnh. Mọi endpoint cần <code>Authorization: Bearer $TOKEN</code>.</p>
+  <p>Server gửi lệnh xuống thiết bị qua MQTT (<code>xmini/control</code>, <strong>QoS 1</strong>, kèm <code>id</code> duy nhất) ngay khi nhận request. App nên dùng các endpoint gọn <code>/water</code>, <code>/light</code>, <code>/auto</code>, <code>/show-qr</code>. Endpoint tổng quát <code>POST /api/control/{deviceId}</code> dùng để hiện tin nhắn trên màn hình thiết bị, chuyển manual, hoặc gộp nhiều lệnh. Mọi endpoint cần <code>Authorization: Bearer $TOKEN</code>.</p>
 
-  <div class="alert info">
-    Lệnh tưới/đèn <strong>không đổi chế độ</strong> auto/manual: server tự gộp chế độ hiện tại vào lệnh, nên <code>published</code> có thêm <code>mode</code>. Ở chế độ auto, lệnh tay có thể bị server ghi đè. Chi tiết ở tab <a href="#" onclick="document.querySelector('[data-target=api-app-start]').click(); return false;">Bắt đầu cho App</a>, mục "Chế độ auto / manual".
+  <div class="alert danger">
+    <strong>Lệnh tưới / đèn đưa thiết bị về MANUAL.</strong> Ở manual thiết bị không tự tưới, không tự bật/tắt đèn, cho tới khi App gọi <code>/auto</code> (hoặc thiết bị reboot). App nên hiện rõ chế độ và có nút "Trả về tự động". Chi tiết ở tab <a href="#" onclick="document.querySelector('[data-target=api-app-start]').click(); return false;">Bắt đầu cho App</a>, mục "Chế độ auto / manual".
   </div>
 
   <h3>Response chung của mọi lệnh</h3>
@@ -1420,26 +1508,29 @@ Device ESP32S3_Zone1 not found           (không tồn tại hoặc không có q
     <pre>{
   "message": "Đã gửi lệnh xuống xmini/control",
   "deviceId": "ESP32S3_Zone1",
-  "published": { "pump": true, "mode": "auto" }
+  "commandId": "c-1762925000123-7",
+  "expectedMode": "manual",
+  "published": { "id": "c-1762925000123-7", "pump": true }
 }</pre>
   </div>
-  <p><code>published</code> là đúng payload đã gửi xuống thiết bị. Lỗi chung: <code>404</code> khi device không tồn tại hoặc không có quyền; <code>503 MQTT publisher chưa kết nối broker — không gửi được lệnh.</code></p>
+  <p><code>published</code> là đúng payload đã gửi xuống thiết bị. <code>commandId</code> = <code>id</code> chống giao lặp (server tự sinh, <code>id</code> App gửi bị bỏ qua). <code>expectedMode</code> = chế độ thiết bị sẽ ở sau lệnh. Lỗi chung: <code>404</code> khi device không tồn tại hoặc không có quyền; <code>503 MQTT publisher chưa kết nối broker — không gửi được lệnh.</code></p>
+  <div class="alert info">Không có ACK từ thiết bị. Xác nhận bằng số đo kế tiếp (~10 s): tưới → <code>dosesToday</code> tăng; đèn → <code>lightOn</code> / <code>lightPwm</code>; chế độ → <code>mode</code>.</div>
 
   <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}/water</div>
-  <p>Bật hoặc tắt bơm: <code>{"on":true}</code> / <code>{"on":false}</code>. Bắt buộc có body; gửi <code>{}</code> sẽ bị hiểu là tắt bơm.</p>
+  <p><code>{"on":true}</code> = tưới <strong>đúng 1 liều</strong> (<code>pump_dose_ms</code>, mặc định 2 giây) rồi bơm tự tắt. <code>{"on":false}</code> = dừng liều đang chạy. Bắt buộc có body; gửi <code>{}</code> sẽ bị hiểu là dừng. Liều bị bỏ qua nếu liều trước chưa xong + 3 giây (vẫn chuyển manual).</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/control/$DEVICE/water \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"on":true}'</pre>
   </div>
-  <div class="response-label"><code>published</code></div>
+  <div class="response-label"><code>published</code> · <code>expectedMode</code></div>
   <div class="code-block response-block">
-    <pre>{ "pump": true, "mode": "auto" }</pre>
+    <pre>{ "id": "c-1762925000123-7", "pump": true }      expectedMode: "manual"</pre>
   </div>
 
   <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}/light</div>
-  <p>Bật/tắt đèn bằng <code>{"on":true|false}</code>, hoặc đặt độ sáng bằng <code>{"pwm":0–255}</code>. Gửi cả hai thì <code>pwm</code> được ưu tiên; giá trị ngoài 0–255 bị kẹp lại.</p>
+  <p>Bật/tắt đèn ở độ sáng hiện tại bằng <code>{"on":true|false}</code>, hoặc đặt độ sáng bằng <code>{"pwm":0–255}</code> (&gt; 0 bật, <code>0</code> tắt). Gửi cả hai thì <code>pwm</code> được ưu tiên; giá trị ngoài 0–255 bị kẹp lại. Ở manual không có gì tự tắt đèn.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/control/$DEVICE/light \
@@ -1447,10 +1538,10 @@ Device ESP32S3_Zone1 not found           (không tồn tại hoặc không có q
 curl -X POST $API/api/control/$DEVICE/light \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"pwm":180}'</pre>
   </div>
-  <div class="response-label"><code>published</code></div>
+  <div class="response-label"><code>published</code> · <code>expectedMode</code></div>
   <div class="code-block response-block">
-    <pre>{ "light": true, "mode": "auto" }
-{ "light_pwm": 180 }</pre>
+    <pre>{ "id": "c-…-8", "light": true }       expectedMode: "manual"
+{ "id": "c-…-9", "light_pwm": 180 }    expectedMode: "manual"</pre>
   </div>
   <div class="response-label">Thiếu cả on và pwm — HTTP 400</div>
   <div class="code-block response-block error">
@@ -1458,63 +1549,82 @@ curl -X POST $API/api/control/$DEVICE/light \
   </div>
 
   <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}/auto</div>
-  <p>Trả device về chế độ auto. Không cần body.</p>
+  <p>Trả device về chế độ auto. Không cần body. Cũng gỡ <code>soilFault</code> / <code>safeMode</code> và kết thúc đợt tưới đang dở. Với <code>light_auto=false</code> (mặc định), đèn đang bật tay sẽ <strong>tắt</strong>.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/control/$DEVICE/auto -H "Authorization: Bearer $TOKEN"</pre>
   </div>
+  <div class="response-label"><code>published</code> · <code>expectedMode</code></div>
+  <div class="code-block response-block">
+    <pre>{ "id": "c-…-10", "mode": "auto" }     expectedMode: "auto"</pre>
+  </div>
+
+  <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}/show-qr</div>
+  <p>Hiện mã QR trang cài đặt của thiết bị (đổi WiFi / broker tại chỗ — màn hình không cảm ứng). Body tuỳ chọn <code>{"seconds":N}</code>: bỏ trống = 300 giây, <code>0</code> = tắt QR, tối đa 3600. Không đổi chế độ. Khi QR đang hiện, tin nhắn <code>message</code> bị che.</p>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/control/$DEVICE/show-qr \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"seconds":120}'</pre>
+  </div>
   <div class="response-label"><code>published</code></div>
   <div class="code-block response-block">
-    <pre>{ "mode": "auto" }</pre>
+    <pre>{ "id": "c-…-11", "show_qr": 120 }</pre>
   </div>
 
   <div class="endpoint post"><span class="badge post">POST</span> /api/control/{deviceId}</div>
-  <p>Lệnh tổng quát. Body là object phẳng, gộp được nhiều khoá trong 1 lần gửi. Khoá lạ bị bỏ qua; không có khoá hợp lệ nào thì trả <code>400</code>.</p>
+  <p>Lệnh tổng quát. Body là object phẳng, gộp được nhiều khoá trong 1 lần gửi (tối đa 1024 byte). Khoá lạ bị bỏ qua; không có khoá hợp lệ nào thì trả <code>400</code>.</p>
   <table>
-    <tr><th>Khoá</th><th>Kiểu</th><th>Ý nghĩa</th></tr>
-    <tr><td><code>pump</code></td><td>bool</td><td>Bật/tắt bơm (giống <code>/water</code>).</td></tr>
-    <tr><td><code>light</code></td><td>bool</td><td>Bật/tắt đèn.</td></tr>
-    <tr><td><code>light_pwm</code></td><td>int 0–255</td><td>Độ sáng đèn, ngoài dải bị kẹp.</td></tr>
-    <tr><td><code>mode</code></td><td>"auto" | "manual"</td><td>Đổi chế độ. Chỉ gửi đúng 2 giá trị này: server chưa kiểm tra giá trị khác.</td></tr>
-    <tr><td><code>auto</code></td><td>bool</td><td><code>true</code> = auto, <code>false</code> = manual (cách viết khác của <code>mode</code>).</td></tr>
-    <tr><td><code>message</code></td><td>string</td><td>Chữ hiện trên màn hình thiết bị, chỉ ASCII (không dấu). <code>""</code> để xoá.</td></tr>
-    <tr><td><code>message_secs</code></td><td>int ≥ 0</td><td>Số giây hiển thị tin nhắn.</td></tr>
-    <tr><td><code>config</code></td><td>object</td><td>Ngưỡng, giống <code>PUT .../config</code>; <code>{}</code> = yêu cầu gửi lại ngưỡng.</td></tr>
+    <tr><th>Khoá</th><th>Kiểu</th><th>Ý nghĩa</th><th>→ manual?</th></tr>
+    <tr><td><code>pump</code></td><td>bool</td><td><code>true</code> = 1 liều, <code>false</code> = dừng (giống <code>/water</code>).</td><td>Có</td></tr>
+    <tr><td><code>light</code></td><td>bool</td><td>Bật/tắt đèn.</td><td>Có</td></tr>
+    <tr><td><code>light_pwm</code></td><td>int 0–255</td><td>Độ sáng đèn, ngoài dải bị kẹp. &gt; 0 bật, 0 tắt.</td><td>Có</td></tr>
+    <tr><td><code>mode</code></td><td>"auto" | "manual"</td><td>Đổi chế độ. Giá trị khác → <code>400</code>.</td><td>—</td></tr>
+    <tr><td><code>auto</code></td><td>bool</td><td><code>true</code> = auto, <code>false</code> = manual. Có cả <code>mode</code> thì <code>auto</code> thắng.</td><td>—</td></tr>
+    <tr><td><code>message</code></td><td>string</td><td>Chữ trên màn hình thiết bị. Server <strong>tự bỏ dấu tiếng Việt, bỏ emoji, cắt ≤ 90 ký tự</strong>. <code>""</code> để xoá.</td><td>Không</td></tr>
+    <tr><td><code>message_secs</code></td><td>int ≥ 0</td><td>Tự ẩn tin nhắn sau N giây (0 = giữ).</td><td>Không</td></tr>
+    <tr><td><code>config</code></td><td>object</td><td>Cấu hình, giống <code>PUT .../config</code>; <code>{}</code> = yêu cầu gửi lại.</td><td>Không</td></tr>
+    <tr><td><code>show_qr</code></td><td>bool | int</td><td>Hiện QR cài đặt: <code>true</code> = 300 s, số = giây (0–3600), <code>false</code>/<code>0</code> = tắt.</td><td>Không</td></tr>
+    <tr><td><code>stay_awake_s</code></td><td>int 0–3600</td><td>Giữ thiết bị thức + online N giây (chỉ cần với bản pin ở eco). <code>0</code> = huỷ.</td><td>Không</td></tr>
   </table>
+  <p>Thứ tự thiết bị xử lý: <code>light_pwm</code> → <code>light</code> → <code>pump</code> → (manual) → <code>mode</code> → <code>auto</code> → <code>config</code> → <code>message</code> → <code>show_qr</code> → <code>stay_awake_s</code>. Vì vậy <code>{"pump":true,"mode":"auto"}</code> = tưới 1 liều mà vẫn ở auto.</p>
+
+  <h4>Hiện tin nhắn trên màn hình thiết bị</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/control/$DEVICE -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"message":"Cảm ơn bạn đã tưới! 🌱","message_secs":30}'
+# published: { "id": "c-…", "message": "Cam on ban da tuoi!", "message_secs": 30 }</pre>
+  </div>
+
+  <h4>Tưới 1 liều nhưng vẫn giữ auto</h4>
+  <div class="code-block">
+    <button class="copy-btn">Copy</button>
+    <pre>curl -X POST $API/api/control/$DEVICE -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"pump":true,"mode":"auto"}'
+# expectedMode: "auto"</pre>
+  </div>
 
   <h4>Chuyển sang manual / về auto</h4>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl -X POST $API/api/control/$DEVICE -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{"mode":"manual"}'
-curl -X POST $API/api/control/$DEVICE -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"mode":"auto"}'</pre>
-  </div>
-
-  <h4>Hiện tin nhắn trên màn hình thiết bị</h4>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/$DEVICE -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"message":"Tuoi cho toi nhe","message_secs":15}'</pre>
-  </div>
-
-  <h4>Gộp nhiều lệnh: chuyển manual và bật bơm</h4>
-  <div class="code-block">
-    <button class="copy-btn">Copy</button>
-    <pre>curl -X POST $API/api/control/$DEVICE -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"mode":"manual","pump":true}'</pre>
+curl -X POST $API/api/control/$DEVICE/auto -H "Authorization: Bearer $TOKEN"</pre>
   </div>
 
   <div class="response-label">Lỗi kiểu dữ liệu — HTTP 400 (ví dụ)</div>
   <div class="code-block response-block error">
     <pre>'pump' phải là boolean.
-'light_pwm' phải là số nguyên 0–255.
-'mode' phải là chuỗi "auto" hoặc "manual".
-Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode, auto, message, message_secs, config.</pre>
+'light_pwm' phải là số 0–255.
+'mode' phải là chuỗi "auto" hoặc "manual" (chữ thường).
+'message' không còn chữ nào sau khi bỏ dấu / emoji (màn hình chỉ hiện ASCII).
+'show_qr' phải là true/false hoặc số giây 0–3600.
+Lệnh dài quá 1024 byte (thiết bị sẽ bỏ im lặng). Tách thành nhiều lệnh nhỏ hơn.
+Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode, auto, message, message_secs, config, show_qr, stay_awake_s.</pre>
   </div>
 
   <div class="endpoint get"><span class="badge get">GET</span> /api/control/commands/{deviceId}?limit=50</div>
-  <p>Nhật ký lệnh đã gửi xuống thiết bị, <strong>mới nhất trước</strong>. Gồm cả lệnh của người dùng (App, trợ lý AI) lẫn lệnh tự động của server; chưa có trường cho biết nguồn lệnh. <code>limit</code> mặc định 50.</p>
+  <p>Nhật ký lệnh đã gửi xuống thiết bị, <strong>mới nhất trước</strong>, mỗi lệnh có <code>id</code>. Gồm lệnh của người dùng (App, trợ lý AI); với thiết bị ảo <code>SIM_*</code> còn có lệnh tự động của server. <code>limit</code> mặc định 50.</p>
   <div class="code-block">
     <button class="copy-btn">Copy</button>
     <pre>curl "$API/api/control/commands/$DEVICE?limit=20" -H "Authorization: Bearer $TOKEN"</pre>
@@ -1526,14 +1636,14 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
   {
     "id": "6650d4e5f6a7b8c9d0e1f2a3",
     "deviceId": "ESP32S3_Zone1",
-    "payload": { "pump": true, "mode": "auto" },
-    "createdAt": "2026-11-09T08:30:00Z"
+    "payload": { "id": "c-1762925000123-7", "pump": true },
+    "createdAt": "2026-11-12T04:30:00Z"
   },
   {
     "id": "6650d4e5f6a7b8c9d0e1f2a2",
     "deviceId": "ESP32S3_Zone1",
-    "payload": { "message": "Tuoi cho toi nhe", "message_secs": 15 },
-    "createdAt": "2026-11-09T08:28:12Z"
+    "payload": { "id": "c-1762924990001-6", "message": "Tuoi cho toi nhe", "message_secs": 15 },
+    "createdAt": "2026-11-12T04:28:12Z"
   }
 ]</pre>
   </div>
@@ -1821,15 +1931,15 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
 </section>
 
 <section id="try-rules">
-  <h2>🧪 Test — Ngưỡng auto (Device Config)</h2>
+  <h2>🧪 Test — Cấu hình thiết bị (Device Config)</h2>
   <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
 
   <div class="alert info">
-    Chế độ auto chạy theo 15 ngưỡng của thiết bị (lưu trong NVS). Bấm <b>Tải cấu hình</b> để GET ngưỡng hiện tại, sửa ô cần đổi rồi <b>Lưu</b> (PUT — chỉ gửi khoá đã đổi). Nếu BE chưa nghe được config, bấm <b>Yêu cầu gửi lại</b>.
+    Thiết bị (fw 2.1.0) tự chạy auto theo 25 khoá cấu hình (lưu trong NVS). Bấm <b>Tải cấu hình</b> để GET giá trị hiện tại, sửa ô cần đổi rồi <b>Lưu</b> (PUT — chỉ gửi khoá đã đổi). Đổi một cặp ngưỡng thì sửa CẢ HAI ô. Giá trị sai → <code>400</code>; khoá bị thiết bị từ chối hiện ở <code>rejected</code> khi Tải lại. Nếu BE chưa nghe được config, bấm <b>Yêu cầu gửi lại</b>.
   </div>
 
   <div class="try-card">
-    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/control/{deviceId}/config</span><span class="title">Ngưỡng auto hiện tại</span></div>
+    <div class="try-head"><span class="badge get">GET</span><span class="path">/api/control/{deviceId}/config</span><span class="title">Cấu hình hiện tại (+ rejected)</span></div>
     <div class="try-body">
       <button class="run-btn" id="run-cfg-load">Tải cấu hình</button>
       <div class="try-result" id="r-cfg-load"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
@@ -1837,27 +1947,37 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
   </div>
 
   <div class="try-card">
-    <div class="try-head"><span class="badge put">PUT</span><span class="path">/api/control/{deviceId}/config</span><span class="title">Đặt ngưỡng (chỉ gửi khoá đã đổi)</span></div>
+    <div class="try-head"><span class="badge put">PUT</span><span class="path">/api/control/{deviceId}/config</span><span class="title">Đặt cấu hình (chỉ gửi khoá đã đổi)</span></div>
     <div class="try-body">
       <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Để trống = không đổi khoá đó. Bấm <b>Tải cấu hình</b> trước để prefill giá trị hiện tại rồi chỉ sửa ô cần thay.</p>
       <div class="try-grid">
         <div class="try-field"><label>soil_on_pct</label><input id="cfg-soil_on_pct" type="number" step="1" placeholder="30"></div>
         <div class="try-field"><label>soil_off_pct</label><input id="cfg-soil_off_pct" type="number" step="1" placeholder="60"></div>
-        <div class="try-field"><label>pump_max_run_s</label><input id="cfg-pump_max_run_s" type="number" step="1" placeholder="30"></div>
-        <div class="try-field"><label>pump_cooldown_s</label><input id="cfg-pump_cooldown_s" type="number" step="1" placeholder="300"></div>
+        <div class="try-field"><label>pump_dose_ms</label><input id="cfg-pump_dose_ms" type="number" step="1" placeholder="2000"></div>
+        <div class="try-field"><label>soak_s</label><input id="cfg-soak_s" type="number" step="1" placeholder="600"></div>
+        <div class="try-field"><label>max_doses_per_cycle</label><input id="cfg-max_doses_per_cycle" type="number" step="1" placeholder="4"></div>
+        <div class="try-field"><label>max_doses_per_day</label><input id="cfg-max_doses_per_day" type="number" step="1" placeholder="8"></div>
+        <div class="try-field"><label>soil_dry</label><input id="cfg-soil_dry" type="number" step="1" placeholder="3200"></div>
+        <div class="try-field"><label>soil_wet</label><input id="cfg-soil_wet" type="number" step="1" placeholder="1200"></div>
+        <div class="try-field"><label>light_auto</label><select id="cfg-light_auto"><option value="">(không đổi)</option><option value="true">true</option><option value="false">false</option></select></div>
         <div class="try-field"><label>lux_on</label><input id="cfg-lux_on" type="number" step="0.1" placeholder="50"></div>
         <div class="try-field"><label>lux_off</label><input id="cfg-lux_off" type="number" step="0.1" placeholder="200"></div>
-        <div class="try-field"><label>light_auto_pwm</label><input id="cfg-light_auto_pwm" type="number" step="1" placeholder="180"></div>
-        <div class="try-field"><label>batt_warn_pct</label><input id="cfg-batt_warn_pct" type="number" step="1" placeholder="20"></div>
-        <div class="try-field"><label>batt_recover_pct</label><input id="cfg-batt_recover_pct" type="number" step="1" placeholder="30"></div>
-        <div class="try-field"><label>soil_dry</label><input id="cfg-soil_dry" type="number" step="1" placeholder="3200"></div>
-        <div class="try-field"><label>soil_wet</label><input id="cfg-soil_wet" type="number" step="1" placeholder="1400"></div>
-        <div class="try-field"><label>batt_full_on_v</label><input id="cfg-batt_full_on_v" type="number" step="0.01" placeholder="4.15"></div>
-        <div class="try-field"><label>batt_full_off_v</label><input id="cfg-batt_full_off_v" type="number" step="0.01" placeholder="4.05"></div>
-        <div class="try-field"><label>batt_crit_v</label><input id="cfg-batt_crit_v" type="number" step="0.01" placeholder="3.30"></div>
-        <div class="try-field"><label>batt_crit_recover_v</label><input id="cfg-batt_crit_recover_v" type="number" step="0.01" placeholder="3.50"></div>
+        <div class="try-field"><label>light_auto_pwm</label><input id="cfg-light_auto_pwm" type="number" step="1" placeholder="255"></div>
+        <div class="try-field"><label>light_min_batt_pct</label><input id="cfg-light_min_batt_pct" type="number" step="1" placeholder="50"></div>
+        <div class="try-field"><label>light_max_min_per_day</label><input id="cfg-light_max_min_per_day" type="number" step="1" placeholder="240"></div>
+        <div class="try-field"><label>batt_warn_pct</label><input id="cfg-batt_warn_pct" type="number" step="1" placeholder="15"></div>
+        <div class="try-field"><label>batt_recover_pct</label><input id="cfg-batt_recover_pct" type="number" step="1" placeholder="20"></div>
+        <div class="try-field"><label>batt_full_on_v</label><input id="cfg-batt_full_on_v" type="number" step="0.01" placeholder="8.3"></div>
+        <div class="try-field"><label>batt_full_off_v</label><input id="cfg-batt_full_off_v" type="number" step="0.01" placeholder="8.0"></div>
+        <div class="try-field"><label>batt_crit_v</label><input id="cfg-batt_crit_v" type="number" step="0.01" placeholder="6.8"></div>
+        <div class="try-field"><label>batt_crit_recover_v</label><input id="cfg-batt_crit_recover_v" type="number" step="0.01" placeholder="7.2"></div>
+        <div class="try-field"><label>power_mode</label><select id="cfg-power_mode"><option value="">(không đổi)</option><option value="eco">eco</option><option value="always_on">always_on</option><option value="auto">auto</option></select></div>
+        <div class="try-field"><label>wake_interval_s</label><input id="cfg-wake_interval_s" type="number" step="1" placeholder="300"></div>
+        <div class="try-field"><label>plugged_on_v</label><input id="cfg-plugged_on_v" type="number" step="0.01" placeholder="8.25"></div>
+        <div class="try-field"><label>plugged_off_v</label><input id="cfg-plugged_off_v" type="number" step="0.01" placeholder="8.1"></div>
+        <div class="try-field"><label>screen_timeout_s</label><input id="cfg-screen_timeout_s" type="number" step="1" placeholder="0"></div>
       </div>
-      <button class="run-btn" id="run-cfg-save">Lưu ngưỡng (PUT)</button>
+      <button class="run-btn" id="run-cfg-save">Lưu cấu hình (PUT)</button>
       <div class="try-result" id="r-cfg-save"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
   </div>
@@ -1865,7 +1985,7 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
   <div class="try-card">
     <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}/config/refresh</span><span class="title">Yêu cầu thiết bị gửi lại cấu hình</span></div>
     <div class="try-body">
-      <p style="font-size:13px;color:#94a3b8;margin-bottom:10px">Publish <code>{"config":{}}</code> xuống <code>xmini/control</code> — thiết bị sẽ publish lại 15 ngưỡng lên <code>xmini/config</code>.</p>
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:10px">Publish <code>{"config":{}}</code> xuống <code>xmini/control</code> — thiết bị sẽ publish lại 25 khoá lên <code>xmini/config</code>.</p>
       <button class="run-btn" id="run-cfg-refresh">Yêu cầu gửi lại cấu hình</button>
       <div class="try-result" id="r-cfg-refresh"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
@@ -1877,12 +1997,12 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
   <div class="conn-status" style="margin:0 0 12px">Target: <b class="conn-echo">—</b></div>
 
   <div class="try-card" style="border-color:#3b82f6">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}/water · /light · /auto</span><span class="title">App — điều khiển nhanh (endpoint chuyên dụng)</span></div>
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}/water · /light · /auto · /show-qr</span><span class="title">App — điều khiển nhanh (endpoint chuyên dụng)</span></div>
     <div class="try-body">
-      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Endpoint gọn cho App. Lệnh <strong>Tưới</strong>/<strong>Đèn</strong> <strong>không đổi chế độ</strong> (server gộp chế độ hiện tại vào lệnh — xem <code>published</code>); đang auto thì server có thể ghi đè ở lần telemetry sau. <strong>Về Auto</strong> chuyển thiết bị về chế độ tự động.</p>
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Endpoint gọn cho App. <strong>Tưới BẬT</strong> = đúng 1 liều. Lệnh <strong>Tưới</strong>/<strong>Đèn</strong> đưa thiết bị thật về <strong>MANUAL</strong> (xem <code>expectedMode</code>); <strong>Về Auto</strong> trả quyền lại cho thiết bị. Thiết bị ảo <code>SIM_*</code> vẫn giữ chế độ (server gộp <code>mode</code> vào lệnh).</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-        <button class="run-btn" id="run-c-water-on">💧 Tưới BẬT — /water {"on":true}</button>
-        <button class="run-btn" id="run-c-water-off" style="background:#334155;color:#e2e8f0">Tưới TẮT — /water {"on":false}</button>
+        <button class="run-btn" id="run-c-water-on">💧 Tưới 1 liều — /water {"on":true}</button>
+        <button class="run-btn" id="run-c-water-off" style="background:#334155;color:#e2e8f0">Dừng liều — /water {"on":false}</button>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <button class="run-btn" id="run-c-lite-on">💡 Đèn BẬT — /light {"on":true}</button>
@@ -1894,13 +2014,14 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="run-btn" id="run-c-lite-pwm">Đặt PWM đèn</button>
         <button class="run-btn" id="run-c-return-auto" style="background:#16a34a">🔄 Về Auto — /auto</button>
+        <button class="run-btn" id="run-c-show-qr" style="background:#334155;color:#e2e8f0">🔳 Hiện QR 2 phút — /show-qr {"seconds":120}</button>
       </div>
       <div class="try-result" id="r-c-app"><div class="status-line"><span class="status-pill"></span><span class="ms"></span></div><div class="code-block response-block"><pre></pre></div></div>
     </div>
   </div>
 
   <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Máy bơm (giữ nguyên chế độ)</span></div>
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Máy bơm (1 liều, → manual)</span></div>
     <div class="try-body">
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="run-btn" id="run-c-pump-on">Bật bơm — {"pump":true}</button>
@@ -1911,7 +2032,7 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
   </div>
 
   <div class="try-card">
-    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Đèn + PWM (giữ nguyên chế độ)</span></div>
+    <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Đèn + PWM (→ manual)</span></div>
     <div class="try-body">
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <button class="run-btn" id="run-c-light-on">Bật đèn — {"light":true}</button>
@@ -1939,7 +2060,7 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
   <div class="try-card">
     <div class="try-head"><span class="badge post">POST</span><span class="path">/api/control/{deviceId}</span><span class="title">Tin nhắn màn hình TFT</span></div>
     <div class="try-body">
-      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Chuỗi ASCII hiển thị lên màn TFT. Để trống <code>message</code> = xoá. <code>message_secs</code> = số giây hiển thị (để trống = không gửi khoá này).</p>
+      <p style="font-size:13px;color:#94a3b8;margin-bottom:12px">Chữ hiển thị lên màn TFT — gõ tiếng Việt có dấu cũng được, server tự bỏ dấu / emoji và cắt ≤ 90 ký tự. Để trống <code>message</code> = xoá. <code>message_secs</code> = số giây hiển thị (để trống = không gửi khoá này).</p>
       <div class="try-grid">
         <div class="try-field full"><label>message</label><input id="c-msg" placeholder="Tuoi cho toi nhe"></div>
         <div class="try-field"><label>message_secs</label><input id="c-msg-secs" type="number" step="1" placeholder="15"></div>
@@ -2011,7 +2132,7 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
     <tr><td>Username</td><td><code>nod-iot-plant</code></td><td>Có thể khác credentials firmware đang dùng — miễn là <strong>cùng broker</strong> HiveMQ ở trên</td></tr>
     <tr><td>Password</td><td><code>Nod-iot-plant1234</code></td><td>—</td></tr>
     <tr><td>Client ID</td><td>tự do</td><td>ESP32 nên đặt <code>esp32-&lt;mac-suffix&gt;</code> để dễ debug</td></tr>
-    <tr><td>QoS</td><td>0 (AtMostOnce)</td><td>Không retained. Server publish lệnh với QoS 0</td></tr>
+    <tr><td>QoS</td><td>Lệnh: <strong>1</strong> · Thiết bị gửi: 0</td><td>Server publish <code>xmini/control</code> với <strong>QoS 1, retain = false</strong>, luôn kèm <code>id</code>. Thiết bị publish QoS 0; <code>xmini/status</code> và <code>xmini/config</code> là <strong>retained</strong></td></tr>
     <tr><td>Keep-alive</td><td>60s</td><td>Default PubSubClient</td></tr>
   </table>
 
@@ -2025,23 +2146,32 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
   </div>
 
   <h3>Topics MQTT</h3>
-  <p>Chỉ <strong>3 topic</strong>, đều dùng chung tiền tố <code>xmini/</code>. QoS <strong>0</strong>, không retained.</p>
+  <p><strong>4 topic</strong>, đều dùng chung tiền tố <code>xmini/</code> (firmware 2.1.0).</p>
   <table>
-    <tr><th>Topic</th><th>Hướng</th><th>Mô tả</th></tr>
+    <tr><th>Topic</th><th>Hướng</th><th>QoS / retained</th><th>Mô tả</th></tr>
+    <tr>
+      <td><code>xmini/status</code></td>
+      <td>Thiết bị → Server</td>
+      <td>0 / <strong>có</strong></td>
+      <td><code>"online"</code> lúc nối + mỗi 60 s (kèm fw, nguồn, uptime, boot_count, heap, rssi…); <code>"sleeping"</code> + <code>next_wake_s</code> (chỉ bản pin); <code>"offline"</code> = LWT do broker phát khi thiết bị rớt mạng</td>
+    </tr>
     <tr>
       <td><code>xmini/sensor_data</code></td>
       <td>Thiết bị → Server</td>
-      <td>Publish telemetry ~10s, payload <strong>snake_case phẳng</strong> (<code>device_id</code>, <code>soil_percent</code>…)</td>
+      <td>0 / không</td>
+      <td>Telemetry 10 s, payload <strong>snake_case phẳng</strong> 30 trường (<code>device_id</code>, <code>soil_percent</code>, <code>power_source</code>, <code>doses_today</code>…)</td>
     </tr>
     <tr>
       <td><code>xmini/config</code></td>
       <td>Thiết bị → Server</td>
-      <td>Publish 15 ngưỡng auto hiện tại (khi kết nối + sau mỗi lần đổi), bọc trong khoá <code>config</code></td>
+      <td>0 / <strong>có</strong></td>
+      <td>25 khoá cấu hình hiện tại (lần nối đầu + sau mỗi lệnh config), bọc trong khoá <code>config</code>; kèm <code>rejected</code> khi có khoá bị từ chối</td>
     </tr>
     <tr>
       <td><code>xmini/control</code></td>
       <td>Server → Thiết bị</td>
-      <td>Subscribe để nhận lệnh — 1 JSON object <strong>phẳng</strong> (pump/light/light_pwm/mode/config/message)</td>
+      <td><strong>1</strong> / không</td>
+      <td>Lệnh — 1 JSON object <strong>phẳng</strong>, luôn có <code>id</code> (pump/light/light_pwm/mode/auto/config/message/show_qr/stay_awake_s)</td>
     </tr>
   </table>
 
@@ -2052,18 +2182,15 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
     <button class="copy-btn">Copy</button>
     <pre>{
   "device_id": "ESP32S3_Zone1",
-  "temperature_c": 28,
-  "humidity_percent": 65,
-  "pressure_hpa": 1014.28,
-  "altitude_m": 38.2,
-  "light_lux": 57.5,
-  "soil_percent": 45,
-  "battery_voltage_v": 4.02,
-  "battery_percent": 88,
-  "mode": "auto",
-  "pump_on": false,
-  "light_on": false,
-  "light_pwm": 0
+  "temperature_c": 28.61523, "humidity_percent": 71.2318, "pressure_hpa": 1008.42, "altitude_m": 41.27,
+  "light_lux": 320.83, "soil_percent": 44,
+  "power_source": "adapter", "supply_voltage_v": 9.12, "supply_current_ma": 168.4,
+  "battery_voltage_v": null, "battery_current_ma": null, "battery_power_mw": null, "battery_percent": -1,
+  "temperature_bmp_c": 29.14, "soil_dry_flag": false,
+  "light_on": false, "light_pwm": 255, "pump_on": false, "mode": "auto",
+  "low_batt": false, "batt_full": false, "batt_cut": false, "water_ok": null,
+  "soil_ok": true, "soil_fault": false, "safe_mode": false,
+  "doses_today": 2, "light_min_today": 0, "power_state": "awake"
 }</pre>
   </div>
   <div class="alert">
@@ -2075,26 +2202,31 @@ Không có khoá điều khiển hợp lệ. Dùng: pump, light, light_pwm, mode
     <button class="copy-btn">Copy</button>
     <pre>{
   "config": {
-    "soil_on_pct": 30, "soil_off_pct": 60,
-    "pump_max_run_s": 30, "pump_cooldown_s": 300,
-    "lux_on": 50, "lux_off": 200, "light_auto_pwm": 180,
-    "batt_warn_pct": 20, "batt_recover_pct": 30,
-    "soil_dry": 3200, "soil_wet": 1400,
-    "batt_full_on_v": 4.15, "batt_full_off_v": 4.05,
-    "batt_crit_v": 3.30, "batt_crit_recover_v": 3.50
-  }
+    "soil_on_pct": 30, "soil_off_pct": 60, "pump_dose_ms": 2000, "soak_s": 600,
+    "max_doses_per_cycle": 4, "max_doses_per_day": 8,
+    "lux_on": 50, "lux_off": 200, "light_auto": false, "light_auto_pwm": 255,
+    "light_min_batt_pct": 50, "light_max_min_per_day": 240,
+    "batt_warn_pct": 15, "batt_recover_pct": 20,
+    "batt_full_on_v": 8.3, "batt_full_off_v": 8, "batt_crit_v": 6.8, "batt_crit_recover_v": 7.2,
+    "soil_dry": 3200, "soil_wet": 1200,
+    "power_mode": "auto", "plugged_on_v": 8.25, "plugged_off_v": 8.1,
+    "wake_interval_s": 300, "screen_timeout_s": 0
+  },
+  "rejected": ["pump_dose_ms"]
 }</pre>
   </div>
 
   <h4>Subscribe command (server publish tới <code>xmini/control</code>)</h4>
   <p>Thiết bị subscribe <code>xmini/control</code> nhận <strong>1 JSON object phẳng</strong> — chỉ các khoá dưới đây (khoá lạ bị bỏ qua):</p>
   <div class="code-block response-block">
-    <pre>{"pump": true}                        // bật/tắt bơm (ép MANUAL)
-{"light": true}                       // bật/tắt đèn (ép MANUAL)
-{"light_pwm": 180}                    // độ sáng đèn 0–255 (ép MANUAL)
-{"mode": "auto"}                      // hoặc {"auto": true} — đổi chế độ
-{"config": { "soil_on_pct": 25 }}     // đặt ngưỡng (lưu NVS); {"config":{}} = yêu cầu gửi lại
-{"message": "Tuoi cho toi nhe", "message_secs": 15}   // hiển thị TFT ("" để xoá)</pre>
+    <pre>{"id":"c-1762590000000-1", "pump": true}          // đúng 1 liều (→ MANUAL); false = dừng
+{"id":"c-1762590000000-2", "light": true}         // bật/tắt đèn (→ MANUAL)
+{"id":"c-1762590000000-3", "light_pwm": 180}      // độ sáng 0–255 (→ MANUAL)
+{"id":"c-1762590000000-4", "mode": "auto"}        // hoặc {"auto": true} — trả AUTO
+{"id":"c-1762590000000-5", "config": {"soil_on_pct":35,"soil_off_pct":65}}   // {"config":{}} = hỏi lại
+{"id":"c-1762590000000-6", "message": "Cam on ban!", "message_secs": 30}     // ASCII, "" để xoá
+{"id":"c-1762590000000-7", "show_qr": true}       // hiện QR cài đặt 300 s; false = tắt
+{"id":"c-1762590000000-8", "stay_awake_s": 600}   // giữ thức (chỉ cần bản pin ở eco)</pre>
   </div>
   <p><strong>TUYỆT ĐỐI KHÔNG</strong> dùng <code>{"command":"WATER_ON",...}</code> hay bọc <code>{"command":...,"parameters":...}</code> — thiết bị không hiểu (no-op). Không có quạt (FAN).</p>
 
@@ -2134,14 +2266,14 @@ mosquitto_pub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --c
   -t 'xmini/sensor_data' \
   -m '{"device_id":"ESP32S3_Zone1","temperature_c":28,"humidity_percent":65,"light_lux":57.5,"soil_percent":45,"battery_percent":88,"mode":"auto","pump_on":false}'
 
-# Gửi lệnh thủ công xuống thiết bị (khoá phẳng) — QoS 0
+# Gửi lệnh thủ công xuống thiết bị (khoá phẳng) — LUÔN -q 1, KHÔNG -r, kèm id duy nhất
 mosquitto_pub -h ba4fbc53bce842ffb0fcd51178d78414.s1.eu.hivemq.cloud -p 8883 --capath /etc/ssl/certs \
   -u nod-iot-plant -P Nod-iot-plant1234 \
-  -t 'xmini/control' \
-  -m '{"pump":true}'</pre>
+  -q 1 -t 'xmini/control' \
+  -m '{"id":"t-0001","pump":true}'</pre>
   </div>
 
-  <p><strong>App/MCP gửi lệnh</strong> qua <code>POST /api/control/{deviceId}</code> — server publish khoá phẳng xuống <code>xmini/control</code>, terminal subscribe sẽ thấy: <code>{"pump":true}</code>. Thiết bị TỰ chạy auto theo ngưỡng nên server KHÔNG tự sinh lệnh tưới/đèn.</p>
+  <p><strong>App/MCP gửi lệnh</strong> qua <code>POST /api/control/{deviceId}</code> — server publish khoá phẳng xuống <code>xmini/control</code>, terminal subscribe sẽ thấy: <code>{"id":"c-…","pump":true}</code>. Thiết bị TỰ chạy auto theo cấu hình nên server KHÔNG tự sinh lệnh tưới/đèn cho thiết bị thật.</p>
 
   <h3>Code ESP32 mẫu (PubSubClient)</h3>
 
@@ -2497,20 +2629,23 @@ Xu hướng đất khô dần là bình thường lúc sáng nắng lên.
 Chưa cần tưới vì còn trên ngưỡng 25%.</pre>
   </div>
 
-  <h3>Danh sách 12 MCP tools</h3>
+  <h3>Danh sách 15 MCP tools</h3>
   <table>
     <tr><th>Tool</th><th>HTTP tương ứng</th><th>Mô tả</th></tr>
     <tr><td><code>list_devices</code></td><td><code>GET /api/devices</code></td><td>Liệt kê tất cả thiết bị</td></tr>
     <tr><td><code>get_device_info</code></td><td><code>GET /api/devices/{id}</code></td><td>Thông tin 1 thiết bị</td></tr>
+    <tr><td><code>get_device_status</code></td><td><code>GET /api/devices/{id}/status</code></td><td>Online / offline, chế độ, sức khoẻ</td></tr>
     <tr><td><code>get_latest_sensor</code></td><td><code>GET /api/sensordata/latest/{id}</code></td><td>Sensor mới nhất</td></tr>
     <tr><td><code>get_sensor_history</code></td><td><code>GET /api/sensordata/history/{id}</code></td><td>Lịch sử sensor</td></tr>
-    <tr><td><code>set_pump</code></td><td><code>POST /api/control/{id}</code> · <code>{"pump":bool}</code></td><td>Bật/tắt bơm (ép MANUAL)</td></tr>
-    <tr><td><code>set_light</code></td><td><code>POST /api/control/{id}</code> · <code>{"light":bool}</code> / <code>{"light_pwm":N}</code></td><td>Bật/tắt đèn hoặc đặt PWM</td></tr>
+    <tr><td><code>set_pump</code></td><td><code>POST /api/control/{id}</code> · <code>{"pump":bool}</code></td><td>Tưới 1 liều / dừng (→ MANUAL)</td></tr>
+    <tr><td><code>set_light</code></td><td><code>POST /api/control/{id}</code> · <code>{"light":bool}</code> / <code>{"light_pwm":N}</code></td><td>Bật/tắt đèn hoặc đặt PWM (→ MANUAL)</td></tr>
     <tr><td><code>set_mode</code></td><td><code>POST /api/control/{id}</code> · <code>{"mode":"auto|manual"}</code></td><td>Đổi chế độ auto/manual</td></tr>
-    <tr><td><code>show_message</code></td><td><code>POST /api/control/{id}</code> · <code>{"message":...}</code></td><td>Hiển thị tin nhắn TFT</td></tr>
+    <tr><td><code>show_message</code></td><td><code>POST /api/control/{id}</code> · <code>{"message":...}</code></td><td>Hiển thị tin nhắn TFT (server tự bỏ dấu)</td></tr>
+    <tr><td><code>show_qr</code></td><td><code>POST /api/control/{id}/show-qr</code> · <code>{"seconds":N}</code></td><td>Hiện QR trang cài đặt</td></tr>
+    <tr><td><code>stay_awake</code></td><td><code>POST /api/control/{id}</code> · <code>{"stay_awake_s":N}</code></td><td>Giữ thiết bị thức (bản pin)</td></tr>
     <tr><td><code>get_recent_commands</code></td><td><code>GET /api/control/commands/{id}</code></td><td>Nhật ký lệnh đã gửi</td></tr>
-    <tr><td><code>get_device_config</code></td><td><code>GET /api/control/{id}/config</code></td><td>Xem 15 ngưỡng auto</td></tr>
-    <tr><td><code>set_device_config</code></td><td><code>PUT /api/control/{id}/config</code></td><td>Đặt ngưỡng auto (khoá đã đổi)</td></tr>
+    <tr><td><code>get_device_config</code></td><td><code>GET /api/control/{id}/config</code></td><td>Xem 25 khoá cấu hình (+ rejected)</td></tr>
+    <tr><td><code>set_device_config</code></td><td><code>PUT /api/control/{id}/config</code></td><td>Đặt cấu hình (khoá đã đổi)</td></tr>
     <tr><td><code>refresh_device_config</code></td><td><code>POST /api/control/{id}/config/refresh</code></td><td>Yêu cầu gửi lại cấu hình</td></tr>
   </table>
 
@@ -2682,7 +2817,7 @@ Get-Command python | Select-Object -ExpandProperty Source
 }</pre>
   </div>
 
-  <p>Restart Claude Desktop. Khi mở chat, có icon 🔌 ở góc dưới chat box — click vào sẽ thấy <strong>12 tools</strong> của <code>plant-tree</code>.</p>
+  <p>Restart Claude Desktop. Khi mở chat, có icon 🔌 ở góc dưới chat box — click vào sẽ thấy <strong>15 tools</strong> của <code>plant-tree</code>.</p>
 
   <h4>4b. Msty (free, cross-platform)</h4>
   <ol>
@@ -2799,10 +2934,10 @@ Cách setup MCP server (xem demo-dashboard.html chi tiết):
   4. Sửa config.py: API_BASE_URL = "&lt;tunnel-url&gt;"
   5. Config AI client (Claude Desktop / Msty) trỏ tới venv python + server.py
 
-12 MCP tools sẵn có:
-  - Devices:  list_devices, get_device_info
+15 MCP tools sẵn có:
+  - Devices:  list_devices, get_device_info, get_device_status
   - Sensors:  get_latest_sensor, get_sensor_history
-  - Control:  set_pump, set_light, set_mode, show_message, get_recent_commands
+  - Control:  set_pump, set_light, set_mode, show_message, show_qr, stay_awake, get_recent_commands
   - Config:   get_device_config, set_device_config, refresh_device_config
 
 Test endpoint thuần HTTP (không cần MCP):
@@ -3320,12 +3455,15 @@ node --test "tests-js/*.test.mjs"</pre>
       run('r-s-range', 'GET', `/api/sensordata/range/${encodeURIComponent(d)}?startDate=${encodeURIComponent(start.toISOString())}&endDate=${encodeURIComponent(end.toISOString())}`);
     });
 
-    // --- Device Config (ngưỡng auto) ---
+    // --- Device Config (25 khoá) ---
+    // 25 khoá firmware 2.1.0 (đúng thứ tự xmini/config). light_auto là bool, power_mode là chuỗi, còn lại là số.
     const CFG_KEYS = [
-      'soil_on_pct','soil_off_pct','pump_max_run_s','pump_cooldown_s',
-      'lux_on','lux_off','light_auto_pwm','batt_warn_pct','batt_recover_pct',
-      'soil_dry','soil_wet','batt_full_on_v','batt_full_off_v','batt_crit_v','batt_crit_recover_v'
+      'soil_on_pct','soil_off_pct','pump_dose_ms','soak_s','max_doses_per_cycle','max_doses_per_day','soil_dry','soil_wet',
+      'light_auto','lux_on','lux_off','light_auto_pwm','light_min_batt_pct','light_max_min_per_day',
+      'batt_warn_pct','batt_recover_pct','batt_full_on_v','batt_full_off_v','batt_crit_v','batt_crit_recover_v',
+      'power_mode','wake_interval_s','plugged_on_v','plugged_off_v','screen_timeout_s'
     ];
+    const cfgValue = (k, raw) => k === 'light_auto' ? raw === 'true' : k === 'power_mode' ? raw : Number(raw);
     let cfgLoaded = {};  // ngưỡng đã load gần nhất — để chỉ gửi khoá đã đổi
 
     on('run-cfg-load', async () => {
@@ -3355,7 +3493,7 @@ node --test "tests-js/*.test.mjs"</pre>
         }
         CFG_KEYS.forEach(k => {
           const el = document.getElementById('cfg-' + k);
-          if (el) el.value = (cfgLoaded[k] !== undefined && cfgLoaded[k] !== null) ? cfgLoaded[k] : '';
+          if (el) el.value = (cfgLoaded[k] !== undefined && cfgLoaded[k] !== null) ? String(cfgLoaded[k]) : '';
         });
       } catch (err) {
         const dur = Math.round(performance.now() - started);
@@ -3372,8 +3510,8 @@ node --test "tests-js/*.test.mjs"</pre>
         if (!el) return;
         const raw = el.value.trim();
         if (raw === '') return;                                          // để trống = không đổi khoá này
-        const v = Number(raw);
-        if (cfgLoaded[k] === undefined || Number(cfgLoaded[k]) !== v) body[k] = v;  // chỉ gửi khoá đã đổi
+        const v = cfgValue(k, raw);
+        if (cfgLoaded[k] === undefined || String(cfgLoaded[k]) !== String(v)) body[k] = v;  // chỉ gửi khoá đã đổi
       });
       if (Object.keys(body).length === 0) {
         const box = document.getElementById('r-cfg-save');
@@ -3429,6 +3567,7 @@ node --test "tests-js/*.test.mjs"</pre>
       appControl('r-c-app', 'light', { pwm: v === null ? 0 : Math.max(0, Math.min(255, Math.round(v))) });
     });
     on('run-c-return-auto', () => appControl('r-c-app', 'auto', undefined));
+    on('run-c-show-qr',     () => appControl('r-c-app', 'show-qr', { seconds: 120 }));
 
     // --- Trợ lý AI (chat) — OpenAI-compatible, STATELESS: trang giữ messages[] và gửi lại mỗi lượt ---
     const chatLog = document.getElementById('chat-log');

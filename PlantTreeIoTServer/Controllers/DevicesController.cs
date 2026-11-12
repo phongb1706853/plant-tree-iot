@@ -14,12 +14,15 @@ public class DevicesController : ControllerBase
     private readonly MongoDbService _mongoDbService;
     private readonly NotifyClient _notifyClient;
     private readonly ILogger<DevicesController> _logger;
+    private readonly int _offlineThresholdS;
 
-    public DevicesController(MongoDbService mongoDbService, NotifyClient notifyClient, ILogger<DevicesController> logger)
+    public DevicesController(MongoDbService mongoDbService, NotifyClient notifyClient, ILogger<DevicesController> logger,
+        IConfiguration configuration)
     {
         _mongoDbService = mongoDbService;
         _notifyClient = notifyClient;
         _logger = logger;
+        _offlineThresholdS = OfflineMonitor.ResolveThresholdSeconds(configuration);
     }
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -88,6 +91,41 @@ public class DevicesController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting device {DeviceId}", deviceId);
+            return StatusCode(500, "Internal server error");
+        }
+    }
+
+    /// <summary>
+    /// Trạng thái kết nối + sức khoẻ của device: bản xmini/status gần nhất (fw, power_source / power_mode / power_state,
+    /// uptime, boot_count, reset_reason, heap, rssi...), mode hiện tại, và 'connection' do server tính theo
+    /// backend-api.md mục 7.4: online | sleeping | late | offline | unknown. Thiết bị ảo không gửi status (status = null).
+    /// </summary>
+    [HttpGet("{deviceId}/status")]
+    public async Task<IActionResult> GetStatus(string deviceId)
+    {
+        try
+        {
+            var device = await _mongoDbService.GetAccessibleDeviceAsync(deviceId, UserId);
+            if (device == null) return NotFound($"Device {deviceId} not found");
+
+            var status = await _mongoDbService.GetDeviceStatusAsync(deviceId);
+            var lastTelemetryAt = (await _mongoDbService.GetLatestSensorDataAsync(deviceId))?.Timestamp;
+            var connection = ConnectionStateResolver.Resolve(status, lastTelemetryAt, DateTime.UtcNow, _offlineThresholdS);
+
+            return Ok(new
+            {
+                deviceId,
+                connection = connection.State,
+                lastHeardAt = connection.LastHeardAt,
+                expectedBy = connection.ExpectedBy,
+                lastTelemetryAt,
+                mode = device.ControlMode ?? DeviceModeStore.Auto,
+                status,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting status for device {DeviceId}", deviceId);
             return StatusCode(500, "Internal server error");
         }
     }
@@ -188,7 +226,7 @@ public class DevicesController : ControllerBase
         }
     }
 
-    /// <summary>Xoá device (kèm sensor/config/command log). Chỉ owner.</summary>
+    /// <summary>Xoá device (kèm sensor/config/status/command log). Chỉ owner.</summary>
     [HttpDelete("{deviceId}")]
     public async Task<IActionResult> DeleteDevice(string deviceId)
     {

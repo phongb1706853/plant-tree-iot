@@ -91,7 +91,7 @@ Gửi cho IoT team:
 4. **Lưu ý**:
    - URL là tạm thời (Quick Tunnel), production sẽ đổi sang domain riêng
    - MQTT dùng HiveCloud (quản lý cloud) → hoạt động everywhere, không phụ thuộc LAN
-   - ESP32 dùng MQTT (QoS 0, không retained) với 3 topic: `xmini/sensor_data` (telemetry), `xmini/config` (ngưỡng auto), `xmini/control` (lệnh thủ công). Thiết bị TỰ chạy auto theo ngưỡng lưu NVS; endpoint `/api/control/commands/{deviceId}` chỉ là nhật ký lệnh đã gửi
+   - ESP32 (fw 2.1.0) dùng MQTT với 4 topic: `xmini/status` (online / LWT offline, retained), `xmini/sensor_data` (telemetry 10 s), `xmini/config` (25 khoá cấu hình, retained), `xmini/control` (lệnh, QoS 1, luôn có `id`). Thiết bị TỰ chạy auto theo cấu hình lưu NVS; endpoint `/api/control/commands/{deviceId}` chỉ là nhật ký lệnh đã gửi
 
 ---
 
@@ -269,15 +269,16 @@ curl "$API/api/sensordata/range/$DEVICE?startDate=2026-05-24T00:00:00Z&endDate=2
 # Xem ngưỡng auto hiện tại BE nghe được từ thiết bị (topic xmini/config)
 curl $API/api/control/$DEVICE/config
 
-# Đặt ngưỡng tưới: bật bơm khi soil <= 30%, tắt khi >= 70%, chạy tối đa 5s, cooldown 30 phút
+# Đặt ngưỡng tưới: mở đợt khi soil < 30%, đóng khi >= 70%; mỗi liều 3 s, chờ ngấm 10 phút, tối đa 4 liều/đợt
+# (pump_max_run_s / pump_cooldown_s đã bỏ ở fw 2.x -> server trả 400)
 curl -X PUT $API/api/control/$DEVICE/config \
   -H "Content-Type: application/json" \
-  -d '{"soil_on_pct":30,"soil_off_pct":70,"pump_max_run_s":5,"pump_cooldown_s":1800}'
+  -d '{"soil_on_pct":30,"soil_off_pct":70,"pump_dose_ms":3000,"soak_s":600,"max_doses_per_cycle":4}'
 
-# Đổi ngưỡng nhạy hơn (tưới sớm hơn khi soil <= 25%)
+# Đổi ngưỡng nhạy hơn (tưới sớm hơn khi soil < 25%) — đổi một cặp thì gửi CẢ HAI khoá
 curl -X PUT $API/api/control/$DEVICE/config \
   -H "Content-Type: application/json" \
-  -d '{"soil_on_pct":25}'
+  -d '{"soil_on_pct":25,"soil_off_pct":70}'
 
 # Yêu cầu thiết bị gửi lại toàn bộ cấu hình ngưỡng hiện tại
 curl -X POST $API/api/control/$DEVICE/config/refresh
@@ -288,12 +289,12 @@ curl -X POST $API/api/control/$DEVICE/config/refresh
 > Cũng chỉnh qua config; thiết bị TỰ bật/tắt đèn theo ngưỡng lux lưu NVS.
 
 ```bash
-# Đặt ngưỡng đèn: bật khi lux <= 25 (lux_on), tắt khi >= 60 (lux_off), PWM auto 180
+# Bật đèn tự động (mặc định TẮT ở fw 2.x): bật khi lux < 25 (lux_on), tắt khi > 60 (lux_off), PWM auto 180
 curl -X PUT $API/api/control/$DEVICE/config \
   -H "Content-Type: application/json" \
-  -d '{"lux_on":25,"lux_off":60,"light_auto_pwm":180}'
+  -d '{"light_auto":true,"lux_on":25,"lux_off":60,"light_auto_pwm":180}'
 
-# Đổi độ sáng đèn auto (PWM 0–255)
+# Đổi độ sáng đèn auto (PWM 1–255)
 curl -X PUT $API/api/control/$DEVICE/config \
   -H "Content-Type: application/json" \
   -d '{"light_auto_pwm":220}'
@@ -302,10 +303,10 @@ curl -X PUT $API/api/control/$DEVICE/config \
 curl $API/api/control/$DEVICE/config
 ```
 
-### 9.5 Control — Điều khiển thủ công (khoá phẳng → publish `xmini/control`, QoS 0)
+### 9.5 Control — Điều khiển thủ công (khoá phẳng → publish `xmini/control`, QoS 1)
 
-> Lệnh chấp hành (`pump`/`light`/`light_pwm`) sẽ ép thiết bị sang chế độ MANUAL.
-> Có thể GỘP nhiều khoá trong 1 body. Response: `{message, deviceId, published:{...}}`.
+> Lệnh chấp hành (`pump`/`light`/`light_pwm`) đưa thiết bị về MANUAL; `{"pump":true}` = đúng 1 liều. Về AUTO: `POST .../auto`.
+> Có thể GỘP nhiều khoá trong 1 body. Server tự thêm `id`. Response: `{message, deviceId, commandId, expectedMode, published:{...}}`.
 
 ```bash
 # Bật máy bơm (thủ công)

@@ -10,20 +10,23 @@ using System.Text.Json;
 namespace PlantTreeIoTServer.Services;
 
 /// <summary>
-/// Nghe MQTT theo hợp đồng firmware Xmini (mqtt-api.md):
-///   - xmini/sensor_data : telemetry ~10s (21 trường phẳng)  -> lưu SensorData
-///   - xmini/config      : ngưỡng auto thiết bị đang dùng      -> upsert DeviceConfig
-/// QoS 0, không retained. Ngoài việc lưu telemetry, BE còn TỰ ĐỘNG TƯỚI: xét soil_percent theo
-/// ngưỡng (DeviceConfig, fallback mặc định) rồi publish {"pump":..., "mode":"auto"} xuống xmini/control
-/// khi cờ mode do server giữ (DeviceModeStore) đang "auto" (logic ở AutoWateringDecider). Kèm mode:"auto"
-/// để firmware không rớt khỏi auto khi nhận pump. Điều khiển tay vẫn qua ControlController.
-/// Thiết bị ẢO (SIM_*, giả lập trong demo-dashboard) dùng xmini-sim/{id}/sensor_data|config — cùng
-/// pipeline, chỉ khác cách lấy deviceId (từ topic) và phải đã đăng ký trên server này. Xem SimTopics.
+/// Nghe MQTT theo hợp đồng firmware Xmini 2.1.0 (backend-api.md):
+///   - xmini/status      : online / sleeping (+ next_wake_s) / offline (LWT), retained -> upsert DeviceStatus
+///   - xmini/sensor_data : telemetry 10 s (bản adapter luôn thức)                    -> lưu SensorData
+///   - xmini/config      : 25 khoá thiết bị đang dùng (+ rejected), retained         -> upsert DeviceConfig
+/// Thiết bị publish QoS 0. Bản tin retained (cờ retain = 1, nhận lúc vừa subscribe) có tuổi không rõ: được LƯU
+/// nhưng KHÔNG dùng để bắn thông báo, tính hạn chót, hay đọc 'rejected'.
+///
+/// Thiết bị THẬT tự chạy auto (tưới theo liều, đèn tự động) — server KHÔNG gửi lệnh auto, chỉ đồng bộ mode từ
+/// telemetry. Thiết bị ẢO (SIM_*, giả lập trong demo-dashboard) giữ luật cũ: server tự tưới / tự bật đèn
+/// (AutoWateringDecider / AutoLightDecider) và làm chủ mode. Thiết bị ảo dùng xmini-sim/{id}/sensor_data|config —
+/// cùng pipeline, chỉ khác cách lấy deviceId (từ topic) và phải đã đăng ký trên server này. Xem SimTopics.
 /// </summary>
 public class MqttBackgroundService : BackgroundService
 {
     public const string TopicSensorData = "xmini/sensor_data";
     public const string TopicConfig = "xmini/config";
+    public const string TopicStatus = "xmini/status";
 
     private readonly MongoDbService _mongoDbService;
     private readonly MqttPublisherService _mqttPublisher;
@@ -34,9 +37,12 @@ public class MqttBackgroundService : BackgroundService
     private readonly int _offlineThresholdS;
     private IMqttClient? _mqttClient;
 
-    // Topic dùng chung không mang device_id. Payload xmini/config CŨNG không có device_id
-    // (mqtt-api.md mục 3) nên gán cấu hình cho thiết bị telemetry gần nhất vừa thấy.
+    // Payload xmini/config KHÔNG có device_id nên gán cấu hình cho thiết bị gần nhất vừa thấy trên xmini/status hoặc
+    // xmini/sensor_data. Config retained có thể tới TRƯỚC cả hai (lúc vừa subscribe) -> giữ tạm bản cuối, áp khi biết id.
     private volatile string? _lastSeenDeviceId;
+    private PendingConfig? _pendingConfig;
+
+    private sealed record PendingConfig(string Payload, bool Retained);
 
     // Trạng thái auto tưới theo từng thiết bị (đọc/ghi trong _stateLock).
     // _lastPumpOn: trạng thái bơm ở telemetry trước (phát hiện chuyển BẬT->TẮT để mở cooldown).
@@ -55,10 +61,12 @@ public class MqttBackgroundService : BackgroundService
     // Trạng thái phát hiện sự kiện Notify (đọc/ghi trong _stateLock).
     // _lastHealth: ảnh chụp cờ sức khỏe telemetry trước (để so edge).
     // _lastSeenUtc: mốc telemetry gần nhất mỗi thiết bị (để quét mất kết nối).
-    // _offlineNotified: đã báo device.offline chưa (chặn báo lặp; xoá khi telemetry trở lại).
+    // _offlineNotified: đã báo device.offline chưa (chặn báo lặp; xoá khi telemetry / status online trở lại).
+    // _quietUntil: thiết bị bản pin báo "sleeping" -> không báo offline trước mốc này (3 × chu kỳ dự kiến, §7.4).
     private readonly Dictionary<string, DeviceHealthSnapshot> _lastHealth = new();
     private readonly Dictionary<string, DateTime> _lastSeenUtc = new();
     private readonly HashSet<string> _offlineNotified = new();
+    private readonly Dictionary<string, DateTime> _quietUntil = new();
 
     public MqttBackgroundService(
         MongoDbService mongoDbService,
@@ -76,9 +84,7 @@ public class MqttBackgroundService : BackgroundService
         _configuration = configuration;
 
         // Ngưỡng im lặng để coi là mất kết nối (giây). Telemetry ~10s -> mặc định 240s (4 phút).
-        _offlineThresholdS = int.TryParse(
-            Environment.GetEnvironmentVariable("NOTIFY_OFFLINE_SECONDS") ?? configuration["Notify:OfflineSeconds"],
-            out var s) && s > 0 ? s : 240;
+        _offlineThresholdS = OfflineMonitor.ResolveThresholdSeconds(configuration);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -144,9 +150,10 @@ public class MqttBackgroundService : BackgroundService
                     await _mqttClient.ConnectAsync(options, stoppingToken);
                     _logger.LogInformation("Connected to MQTT broker: {Broker}:{Port}", broker, port);
 
-                    // QoS 0 cho subscribe (hợp đồng). BE nên subscribe TRƯỚC khi thiết bị connect
-                    // vì broker không giữ giá trị cuối (không retained).
+                    // Thiết bị publish QoS 0 nên QoS hiệu dụng là 0. xmini/status đứng ĐẦU để status retained (mang
+                    // device_id) tới trước config retained (không có device_id).
                     var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
+                        .WithTopicFilter(TopicStatus, MqttQualityOfServiceLevel.AtMostOnce)
                         .WithTopicFilter(TopicSensorData, MqttQualityOfServiceLevel.AtMostOnce)
                         .WithTopicFilter(TopicConfig, MqttQualityOfServiceLevel.AtMostOnce)
                         // Thiết bị ảo SIM_* (namespace riêng theo từng thiết bị, xem SimTopics).
@@ -154,8 +161,8 @@ public class MqttBackgroundService : BackgroundService
                         .WithTopicFilter(SimTopics.ConfigFilter, MqttQualityOfServiceLevel.AtMostOnce)
                         .Build();
                     await _mqttClient.SubscribeAsync(subscribeOptions, stoppingToken);
-                    _logger.LogInformation("Subscribed to {S}, {C}, {SimS}, {SimC} (QoS 0)",
-                        TopicSensorData, TopicConfig, SimTopics.SensorDataFilter, SimTopics.ConfigFilter);
+                    _logger.LogInformation("Subscribed to {St}, {S}, {C}, {SimS}, {SimC} (QoS 0)",
+                        TopicStatus, TopicSensorData, TopicConfig, SimTopics.SensorDataFilter, SimTopics.ConfigFilter);
                 }
             }
             catch (Exception ex)
@@ -186,11 +193,14 @@ public class MqttBackgroundService : BackgroundService
         try
         {
             var payload = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
+            var retained = e.ApplicationMessage.Retain;
 
             if (topic == TopicSensorData)
                 await HandleSensorDataAsync(payload);
+            else if (topic == TopicStatus)
+                await HandleStatusAsync(payload, retained);
             else if (topic == TopicConfig)
-                await HandleConfigAsync(payload);
+                await HandleConfigAsync(payload, retained);
             else if (SimTopics.TryParse(topic, out var simDeviceId, out var simKind))
             {
                 if (simKind == SimTopics.KindSensorData)
@@ -217,6 +227,7 @@ public class MqttBackgroundService : BackgroundService
         }
 
         _lastSeenDeviceId = telemetry.DeviceId;
+        await ApplyPendingConfigAsync();
         await ProcessTelemetryAsync(telemetry);
     }
 
@@ -242,7 +253,8 @@ public class MqttBackgroundService : BackgroundService
         await ProcessTelemetryAsync(telemetry!);
     }
 
-    // Pipeline chung cho telemetry thật và ảo: lưu, lastSeen, Notify, tự tưới.
+    // Pipeline chung cho telemetry thật và ảo: lưu, lastSeen, Notify; rồi thiết bị ảo -> server tự tưới / tự đèn,
+    // thiết bị thật -> chỉ đồng bộ mode (thiết bị tự chạy auto).
     private async Task ProcessTelemetryAsync(XminiTelemetry telemetry)
     {
         var sensorData = telemetry.ToSensorData();
@@ -250,13 +262,36 @@ public class MqttBackgroundService : BackgroundService
         await _mongoDbService.UpdateDeviceLastSeenAsync(telemetry.DeviceId!);
 
         _logger.LogInformation(
-            "Telemetry from {DeviceId}: mode={Mode} soil={Soil}% light={Lux}lux batt={Batt}% pump={Pump} lightOn={Light}",
-            telemetry.DeviceId, telemetry.Mode, telemetry.SoilPercent, telemetry.LightLux,
-            sensorData.BatteryPercent, telemetry.PumpOn, telemetry.LightOn);
+            "Telemetry from {DeviceId}: mode={Mode} soil={Soil}% light={Lux}lux power={Source} supply={SupplyV}V batt={Batt}% pump={Pump} lightOn={Light} doses={Doses}",
+            telemetry.DeviceId, telemetry.Mode, telemetry.SoilPercent, telemetry.LightLux, telemetry.PowerSource,
+            telemetry.SupplyVoltageV, sensorData.BatteryPercent, telemetry.PumpOn, telemetry.LightOn, telemetry.DosesToday);
 
         await EvaluateNotifyEventsAsync(telemetry, sensorData);
-        await EvaluateAutoWateringAsync(telemetry);
-        await EvaluateAutoLightAsync(telemetry);
+
+        if (SimTopics.IsSimDevice(telemetry.DeviceId))
+        {
+            await EvaluateAutoWateringAsync(telemetry);
+            await EvaluateAutoLightAsync(telemetry);
+        }
+        else
+        {
+            await SyncModeFromTelemetryAsync(telemetry);
+        }
+    }
+
+    // Thiết bị thật làm chủ mode (lệnh tay -> MANUAL, reboot -> AUTO): mode server lưu đi theo telemetry.
+    // Chỉ ghi khi khác, để không ghi Mongo mỗi 10 s.
+    private async Task SyncModeFromTelemetryAsync(XminiTelemetry telemetry)
+    {
+        if (telemetry.Mode is not (ControlModeResolver.Auto or ControlModeResolver.Manual))
+            return;
+
+        var deviceId = telemetry.DeviceId!;
+        if (await _modeStore.GetAsync(deviceId) == telemetry.Mode)
+            return;
+
+        await _modeStore.SetAsync(deviceId, telemetry.Mode);
+        _logger.LogInformation("Device {DeviceId} reports mode={Mode} (synced from telemetry)", deviceId, telemetry.Mode);
     }
 
     // Phát hiện sự kiện thông báo theo EDGE rồi đẩy sang Notify (best-effort). Cập nhật mốc lastSeen
@@ -281,6 +316,7 @@ public class MqttBackgroundService : BackgroundService
             _lastHealth[deviceId] = snapshot;
 
             _lastSeenUtc[deviceId] = DateTime.UtcNow;
+            _quietUntil.Remove(deviceId); // có telemetry = đang thức
             cameOnline = _offlineNotified.Remove(deviceId);
         }
 
@@ -289,6 +325,74 @@ public class MqttBackgroundService : BackgroundService
 
         foreach (var evt in events)
             await DispatchNotifyAsync(evt);
+    }
+
+    // xmini/status: lưu bản mới nhất (cả retained), rồi với bản LIVE: LWT "offline" -> báo offline ngay; "sleeping" ->
+    // mở cửa sổ im lặng tới 3 × chu kỳ dự kiến; "online" -> coi như vừa nghe thấy thiết bị. Status mang device_id
+    // nên cũng dùng để gán xmini/config (không có device_id) cho đúng thiết bị.
+    private async Task HandleStatusAsync(string payload, bool retained)
+    {
+        var status = JsonSerializer.Deserialize<XminiStatus>(payload, JsonOpts);
+        if (string.IsNullOrEmpty(status?.DeviceId) || string.IsNullOrEmpty(status.State))
+        {
+            _logger.LogWarning("xmini/status without device_id/state, skipping");
+            return;
+        }
+
+        var deviceId = status.DeviceId;
+        var now = DateTime.UtcNow;
+        await _mongoDbService.UpsertDeviceStatusAsync(status.ToDeviceStatus(retained, now));
+        _logger.LogInformation(
+            "Status from {DeviceId}: state={State} fw={Fw} power={Source}/{PowerMode}/{PowerState} nextWake={NextWake}s retained={Retained}",
+            deviceId, status.State, status.Fw, status.PowerSource, status.PowerMode, status.PowerState, status.NextWakeS, retained);
+
+        _lastSeenDeviceId = deviceId;
+        await ApplyPendingConfigAsync();
+
+        // Bản retained có tuổi không rõ (§7.4): không bắn thông báo, không tính hạn chót.
+        if (retained)
+            return;
+
+        var fireOffline = false;
+        var cameOnline = false;
+        lock (_stateLock)
+        {
+            switch (status.State)
+            {
+                case ConnectionStateResolver.Offline:
+                    _quietUntil.Remove(deviceId);
+                    fireOffline = _offlineNotified.Add(deviceId);
+                    break;
+
+                case ConnectionStateResolver.Sleeping:
+                    _lastSeenUtc[deviceId] = now;
+                    if (status.NextWakeS.HasValue)
+                        _quietUntil[deviceId] = ConnectionStateResolver.SleepLostAfter(now, status.NextWakeS.Value);
+                    cameOnline = _offlineNotified.Remove(deviceId);
+                    break;
+
+                case ConnectionStateResolver.Online:
+                    _lastSeenUtc[deviceId] = now;
+                    _quietUntil.Remove(deviceId);
+                    cameOnline = _offlineNotified.Remove(deviceId);
+                    break;
+            }
+        }
+
+        if (cameOnline)
+            _logger.LogInformation("Thiết bị {DeviceId} báo {State} trở lại", deviceId, status.State);
+
+        if (fireOffline)
+        {
+            _logger.LogWarning("Thiết bị {DeviceId} offline (LWT do broker phát)", deviceId);
+            int? silenceS = null;
+            lock (_stateLock)
+                if (_lastSeenUtc.TryGetValue(deviceId, out var lastSeen))
+                    silenceS = (int)(now - lastSeen).TotalSeconds;
+
+            await DispatchNotifyAsync(new NotifyEvent(deviceId, "device.offline", NotifySeverity.Warning,
+                new Dictionary<string, object?> { ["lastSeenSecondsAgo"] = silenceS, ["source"] = "lwt" }));
+        }
     }
 
     // Thiết bị ảo: luôn đi khung "🔔 Thông báo" (MQTT); chỉ gửi Notify thật khi người dùng bật forward trên
@@ -311,7 +415,8 @@ public class MqttBackgroundService : BackgroundService
             foreach (var (deviceId, lastSeen) in _lastSeenUtc)
             {
                 var already = _offlineNotified.Contains(deviceId);
-                if (OfflineMonitor.ShouldFireOffline(lastSeen, now, already, _offlineThresholdS))
+                DateTime? quietUntil = _quietUntil.TryGetValue(deviceId, out var q) ? q : null;
+                if (OfflineMonitor.ShouldFireOffline(lastSeen, now, already, _offlineThresholdS, quietUntil))
                 {
                     _offlineNotified.Add(deviceId);
                     toNotify.Add((deviceId, (int)(now - lastSeen).TotalSeconds));
@@ -327,7 +432,8 @@ public class MqttBackgroundService : BackgroundService
         }
     }
 
-    // Tự động tưới: dựa trên telemetry vừa nhận, quyết định bật/tắt bơm rồi publish xuống xmini/control.
+    // CHỈ THIẾT BỊ ẢO (thiết bị thật tự tưới theo liều).
+    // Tự động tưới: dựa trên telemetry vừa nhận, quyết định bật/tắt bơm rồi publish xuống xmini-sim/{id}/control.
     // Ngưỡng lấy từ DeviceConfig đã lưu (fallback mặc định). Cooldown mở khi bơm chuyển BẬT->TẮT
     // (do server tắt, đủ ẩm, hay firmware tự tắt an toàn — đều thấy qua telemetry pump_on).
     private async Task EvaluateAutoWateringAsync(XminiTelemetry telemetry)
@@ -389,6 +495,7 @@ public class MqttBackgroundService : BackgroundService
             deviceId, telemetry.SoilPercent, telemetry.Mode, pump, onPct, offPct);
     }
 
+    // CHỈ THIẾT BỊ ẢO (thiết bị thật tự bật đèn theo light_auto / lux_on / lux_off).
     // Tự bật/tắt đèn theo ánh sáng — SERVER ra lệnh như tự tưới (thiết bị chỉ làm theo). Ngưỡng lux_on / lux_off /
     // light_auto_pwm lấy từ DeviceConfig (fallback mặc định). Logic thuần ở AutoLightDecider.
     private async Task EvaluateAutoLightAsync(XminiTelemetry telemetry)
@@ -442,7 +549,7 @@ public class MqttBackgroundService : BackgroundService
             deviceId, telemetry.LightLux, prevLux, recheck, on, luxOn, luxOff);
     }
 
-    private async Task HandleConfigAsync(string payload)
+    private async Task HandleConfigAsync(string payload, bool retained)
     {
         var envelope = JsonSerializer.Deserialize<XminiConfigEnvelope>(payload, JsonOpts);
         if (envelope?.Config == null)
@@ -451,16 +558,45 @@ public class MqttBackgroundService : BackgroundService
             return;
         }
 
-        // Payload config không mang device_id -> gán cho thiết bị telemetry gần nhất.
+        // Payload config không mang device_id -> gán cho thiết bị gần nhất (status / telemetry). Chưa biết thì giữ tạm.
         var deviceId = _lastSeenDeviceId;
         if (string.IsNullOrEmpty(deviceId))
         {
-            _logger.LogWarning("Received xmini/config but no device seen yet; cannot attribute config, skipping");
+            Interlocked.Exchange(ref _pendingConfig, new PendingConfig(payload, retained));
+            _logger.LogInformation("Received xmini/config before any device_id is known; holding it until status/telemetry arrives");
             return;
         }
 
-        await _mongoDbService.UpsertDeviceConfigAsync(envelope.Config.ToDeviceConfig(deviceId));
-        _logger.LogInformation("Stored device config for {DeviceId} from xmini/config", deviceId);
+        await StoreConfigAsync(deviceId, envelope, retained);
+    }
+
+    private async Task StoreConfigAsync(string deviceId, XminiConfigEnvelope envelope, bool retained)
+    {
+        // 'rejected' chỉ đúng là của lệnh vừa gửi khi bản tin LIVE (retain = 0) — bản retained có thể mang rejected cũ.
+        var live = !retained;
+        await _mongoDbService.UpsertDeviceConfigAsync(envelope.ToDeviceConfig(deviceId, live, DateTime.UtcNow), updateRejected: live);
+
+        if (live && envelope.HasRejections)
+            _logger.LogWarning("Device {DeviceId} rejected config keys: {Rejected} (count={Count})",
+                deviceId, envelope.Rejected == null ? "(only count)" : string.Join(", ", envelope.Rejected), envelope.RejectedCount ?? envelope.Rejected?.Count);
+        else
+            _logger.LogInformation("Stored device config for {DeviceId} from xmini/config (retained={Retained})", deviceId, retained);
+    }
+
+    // Áp config đã giữ tạm (nhận trước khi biết device_id), đúng 1 lần.
+    private async Task ApplyPendingConfigAsync()
+    {
+        var deviceId = _lastSeenDeviceId;
+        if (string.IsNullOrEmpty(deviceId) || Volatile.Read(ref _pendingConfig) == null)
+            return;
+
+        var pending = Interlocked.Exchange(ref _pendingConfig, null);
+        if (pending == null)
+            return;
+
+        var envelope = JsonSerializer.Deserialize<XminiConfigEnvelope>(pending.Payload, JsonOpts);
+        if (envelope?.Config != null)
+            await StoreConfigAsync(deviceId, envelope, pending.Retained);
     }
 
     // Config thiết bị ảo: deviceId lấy TỪ TOPIC (không đoán theo telemetry gần nhất như xmini/config thật).
@@ -479,7 +615,7 @@ public class MqttBackgroundService : BackgroundService
             return;
         }
 
-        await _mongoDbService.UpsertDeviceConfigAsync(envelope.Config.ToDeviceConfig(deviceId));
+        await _mongoDbService.UpsertDeviceConfigAsync(envelope.Config.ToDeviceConfig(deviceId, DateTime.UtcNow));
         _logger.LogInformation("Stored device config for {DeviceId} from {Topic}", deviceId,
             $"{SimTopics.Prefix}/{deviceId}/{SimTopics.KindConfig}");
     }

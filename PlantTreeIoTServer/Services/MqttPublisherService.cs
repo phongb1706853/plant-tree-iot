@@ -107,16 +107,23 @@ public class MqttPublisherService
     }
 
     /// <summary>
-    /// Publish một object JSON PHẲNG xuống topic điều khiển (QoS 0, không retained) — đúng hợp đồng
-    /// firmware. Thiết bị thật: xmini/control (dùng chung). Thiết bị ảo SIM_*: xmini-sim/{id}/control
+    /// Publish một object JSON PHẲNG xuống topic điều khiển với QoS 1, retain = false — đúng hợp đồng firmware 2.1.0
+    /// (thiết bị subscribe QoS 1 + persistent session; QoS 0 gửi lúc thiết bị ngủ sẽ mất, lệnh retained bị giao lại
+    /// mỗi lần nối). Thiết bị thật: xmini/control (dùng chung). Thiết bị ảo SIM_*: xmini-sim/{id}/control
     /// (xem SimTopics) — nên lệnh cho thiết bị ảo KHÔNG BAO GIỜ tới ESP32 thật. Payload y hệt nhau.
-    /// Theo hợp đồng
-    /// firmware. Thiết bị chỉ hiểu các khoá phẳng: pump / light / light_pwm / mode / auto / config /
-    /// message / message_secs. Khoá lạ bị bỏ qua. KHÔNG bọc trong {"command":...,"parameters":...}.
+    /// Thiết bị chỉ hiểu khoá phẳng (pump / light / light_pwm / mode / auto / config / message / message_secs /
+    /// show_qr / stay_awake_s / id). Khoá lạ bị bỏ qua. KHÔNG bọc trong {"command":...,"parameters":...}.
+    /// Mọi lệnh phải có "id" duy nhất (chống giao lặp QoS 1): thiếu thì hàm này THÊM vào <paramref name="flatKeys"/>.
     /// </summary>
     /// <returns>true nếu đã gửi được lên broker.</returns>
     public Task<bool> PublishControlAsync(string deviceId, IDictionary<string, object?> flatKeys)
-        => PublishAsync(SimTopics.ControlTopicFor(deviceId), JsonSerializer.Serialize(flatKeys), deviceId, "control");
+    {
+        if (!flatKeys.ContainsKey("id"))
+            flatKeys["id"] = CommandId.Next();
+
+        return PublishAsync(SimTopics.ControlTopicFor(deviceId), JsonSerializer.Serialize(flatKeys), deviceId, "control",
+            MqttQualityOfServiceLevel.AtLeastOnce);
+    }
 
     /// <summary>
     /// Publish sự kiện thông báo của thiết bị ẢO lên xmini-sim/{id}/notify — đúng payload gửi team Notify
@@ -132,11 +139,12 @@ public class MqttPublisherService
         }
 
         var payload = JsonSerializer.Serialize(NotifyPayload.Build(evt, DateTime.UtcNow));
-        return PublishAsync(SimTopics.NotifyTopicFor(evt.DeviceId), payload, evt.DeviceId, "notify");
+        return PublishAsync(SimTopics.NotifyTopicFor(evt.DeviceId), payload, evt.DeviceId, "notify",
+            MqttQualityOfServiceLevel.AtMostOnce);
     }
 
-    /// <returns>true nếu đã gửi được lên broker.</returns>
-    private async Task<bool> PublishAsync(string topic, string payload, string deviceId, string what)
+    /// <returns>true nếu đã gửi được lên broker (QoS 1: broker đã PUBACK).</returns>
+    private async Task<bool> PublishAsync(string topic, string payload, string deviceId, string what, MqttQualityOfServiceLevel qos)
     {
         if (_mqttClient == null || _options == null)
         {
@@ -156,8 +164,8 @@ public class MqttPublisherService
             var message = new MqttApplicationMessageBuilder()
                 .WithTopic(topic)
                 .WithPayload(payload)
-                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce) // QoS 0 theo hợp đồng
-                .WithRetainFlag(false)
+                .WithQualityOfServiceLevel(qos)
+                .WithRetainFlag(false) // KHÔNG BAO GIỜ retained: lệnh retained bị giao lại mỗi lần thiết bị nối
                 .Build();
 
             await _mqttClient.PublishAsync(message);

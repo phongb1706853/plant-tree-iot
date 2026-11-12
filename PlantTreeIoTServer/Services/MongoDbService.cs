@@ -37,6 +37,15 @@ public class MongoDbService
                 new CreateIndexOptions { Unique = true }));
         }
         catch { /* ignore */ }
+
+        // Mỗi thiết bị chỉ giữ 1 bản trạng thái xmini/status gần nhất (upsert theo deviceId).
+        try
+        {
+            DeviceStatuses.Indexes.CreateOne(new CreateIndexModel<DeviceStatus>(
+                Builders<DeviceStatus>.IndexKeys.Ascending(s => s.DeviceId),
+                new CreateIndexOptions { Unique = true }));
+        }
+        catch { /* ignore */ }
     }
 
     // Collections
@@ -44,6 +53,7 @@ public class MongoDbService
     public IMongoCollection<Device> Devices => _database.GetCollection<Device>("Devices");
     public IMongoCollection<ControlCommand> ControlCommands => _database.GetCollection<ControlCommand>("ControlCommands");
     public IMongoCollection<DeviceConfig> DeviceConfigs => _database.GetCollection<DeviceConfig>("DeviceConfigs");
+    public IMongoCollection<DeviceStatus> DeviceStatuses => _database.GetCollection<DeviceStatus>("DeviceStatuses");
     public IMongoCollection<User> Users => _database.GetCollection<User>("Users");
 
     // User Operations
@@ -129,6 +139,7 @@ public class MongoDbService
         var s = await SensorData.DeleteManyAsync(x => x.DeviceId == deviceId);
         var cfg = await DeviceConfigs.DeleteManyAsync(x => x.DeviceId == deviceId);
         var c = await ControlCommands.DeleteManyAsync(x => x.DeviceId == deviceId);
+        await DeviceStatuses.DeleteManyAsync(x => x.DeviceId == deviceId);
         return (s.DeletedCount, cfg.DeletedCount, c.DeletedCount);
     }
 
@@ -160,10 +171,11 @@ public class MongoDbService
         => await DeviceConfigs.Find(c => c.DeviceId == deviceId).FirstOrDefaultAsync();
 
     /// <summary>
-    /// Ghi/hợp nhất cấu hình ngưỡng auto của thiết bị. Chỉ set các trường KHÁC null
-    /// (echo đầy đủ từ topic xmini/config sẽ ghi cả 15 trường; PUT một phần sẽ chỉ merge trường được gửi).
+    /// Ghi/hợp nhất cấu hình của thiết bị. Chỉ set các trường KHÁC null (echo đầy đủ từ xmini/config ghi cả 25
+    /// trường; thiết bị ảo chỉ gửi 15 khoá cũ). <paramref name="updateRejected"/> = bản tin LIVE: ghi đè thông tin
+    /// từ chối (null = lần này không có khoá bị từ chối -> xoá). Bản retained thì giữ nguyên thông tin từ chối cũ.
     /// </summary>
-    public async Task UpsertDeviceConfigAsync(DeviceConfig config)
+    public async Task UpsertDeviceConfigAsync(DeviceConfig config, bool updateRejected = false)
     {
         var b = Builders<DeviceConfig>.Update;
         var updates = new List<UpdateDefinition<DeviceConfig>>
@@ -174,22 +186,87 @@ public class MongoDbService
 
         if (config.SoilOnPct.HasValue) updates.Add(b.Set(c => c.SoilOnPct, config.SoilOnPct));
         if (config.SoilOffPct.HasValue) updates.Add(b.Set(c => c.SoilOffPct, config.SoilOffPct));
-        if (config.PumpMaxRunS.HasValue) updates.Add(b.Set(c => c.PumpMaxRunS, config.PumpMaxRunS));
-        if (config.PumpCooldownS.HasValue) updates.Add(b.Set(c => c.PumpCooldownS, config.PumpCooldownS));
+        if (config.PumpDoseMs.HasValue) updates.Add(b.Set(c => c.PumpDoseMs, config.PumpDoseMs));
+        if (config.SoakS.HasValue) updates.Add(b.Set(c => c.SoakS, config.SoakS));
+        if (config.MaxDosesPerCycle.HasValue) updates.Add(b.Set(c => c.MaxDosesPerCycle, config.MaxDosesPerCycle));
+        if (config.MaxDosesPerDay.HasValue) updates.Add(b.Set(c => c.MaxDosesPerDay, config.MaxDosesPerDay));
+        if (config.SoilDry.HasValue) updates.Add(b.Set(c => c.SoilDry, config.SoilDry));
+        if (config.SoilWet.HasValue) updates.Add(b.Set(c => c.SoilWet, config.SoilWet));
+        if (config.LightAuto.HasValue) updates.Add(b.Set(c => c.LightAuto, config.LightAuto));
         if (config.LuxOn.HasValue) updates.Add(b.Set(c => c.LuxOn, config.LuxOn));
         if (config.LuxOff.HasValue) updates.Add(b.Set(c => c.LuxOff, config.LuxOff));
         if (config.LightAutoPwm.HasValue) updates.Add(b.Set(c => c.LightAutoPwm, config.LightAutoPwm));
+        if (config.LightMinBattPct.HasValue) updates.Add(b.Set(c => c.LightMinBattPct, config.LightMinBattPct));
+        if (config.LightMaxMinPerDay.HasValue) updates.Add(b.Set(c => c.LightMaxMinPerDay, config.LightMaxMinPerDay));
         if (config.BattWarnPct.HasValue) updates.Add(b.Set(c => c.BattWarnPct, config.BattWarnPct));
         if (config.BattRecoverPct.HasValue) updates.Add(b.Set(c => c.BattRecoverPct, config.BattRecoverPct));
-        if (config.SoilDry.HasValue) updates.Add(b.Set(c => c.SoilDry, config.SoilDry));
-        if (config.SoilWet.HasValue) updates.Add(b.Set(c => c.SoilWet, config.SoilWet));
         if (config.BattFullOnV.HasValue) updates.Add(b.Set(c => c.BattFullOnV, config.BattFullOnV));
         if (config.BattFullOffV.HasValue) updates.Add(b.Set(c => c.BattFullOffV, config.BattFullOffV));
         if (config.BattCritV.HasValue) updates.Add(b.Set(c => c.BattCritV, config.BattCritV));
         if (config.BattCritRecoverV.HasValue) updates.Add(b.Set(c => c.BattCritRecoverV, config.BattCritRecoverV));
+        if (config.PowerMode != null) updates.Add(b.Set(c => c.PowerMode, config.PowerMode));
+        if (config.WakeIntervalS.HasValue) updates.Add(b.Set(c => c.WakeIntervalS, config.WakeIntervalS));
+        if (config.PluggedOnV.HasValue) updates.Add(b.Set(c => c.PluggedOnV, config.PluggedOnV));
+        if (config.PluggedOffV.HasValue) updates.Add(b.Set(c => c.PluggedOffV, config.PluggedOffV));
+        if (config.ScreenTimeoutS.HasValue) updates.Add(b.Set(c => c.ScreenTimeoutS, config.ScreenTimeoutS));
+        if (config.PumpMaxRunS.HasValue) updates.Add(b.Set(c => c.PumpMaxRunS, config.PumpMaxRunS));
+        if (config.PumpCooldownS.HasValue) updates.Add(b.Set(c => c.PumpCooldownS, config.PumpCooldownS));
+
+        if (updateRejected)
+        {
+            updates.Add(b.Set(c => c.Rejected, config.Rejected));
+            updates.Add(b.Set(c => c.RejectedCount, config.RejectedCount));
+            updates.Add(b.Set(c => c.RejectedAt, config.RejectedAt));
+        }
 
         await DeviceConfigs.UpdateOneAsync(
             c => c.DeviceId == config.DeviceId,
+            b.Combine(updates),
+            new UpdateOptions { IsUpsert = true });
+    }
+
+    // Device Status (xmini/status) Operations
+    public async Task<DeviceStatus?> GetDeviceStatusAsync(string deviceId)
+        => await DeviceStatuses.Find(s => s.DeviceId == deviceId).FirstOrDefaultAsync();
+
+    /// <summary>
+    /// Ghi trạng thái xmini/status gần nhất. LWT "offline" chỉ có state + device_id nên chỉ cập nhật state/giờ nhận
+    /// (giữ fw, power_*... của bản tin trước). online/sleeping thì ghi đủ mọi trường (kể cả null: next_wake_s chỉ có
+    /// khi sleeping, plugged_guess chỉ có khi power_mode = auto — không được giữ giá trị cũ).
+    /// </summary>
+    public async Task UpsertDeviceStatusAsync(DeviceStatus status)
+    {
+        var b = Builders<DeviceStatus>.Update;
+        var updates = new List<UpdateDefinition<DeviceStatus>>
+        {
+            b.SetOnInsert(s => s.DeviceId, status.DeviceId),
+            b.Set(s => s.State, status.State),
+            b.Set(s => s.NextWakeS, status.NextWakeS),
+            b.Set(s => s.Retained, status.Retained),
+            b.Set(s => s.ReceivedAt, status.ReceivedAt),
+        };
+
+        if (status.State != ConnectionStateResolver.Offline)
+        {
+            updates.Add(b.Set(s => s.Fw, status.Fw));
+            updates.Add(b.Set(s => s.PowerSource, status.PowerSource));
+            updates.Add(b.Set(s => s.PowerMode, status.PowerMode));
+            updates.Add(b.Set(s => s.PowerState, status.PowerState));
+            updates.Add(b.Set(s => s.PluggedGuess, status.PluggedGuess));
+            updates.Add(b.Set(s => s.UptimeS, status.UptimeS));
+            updates.Add(b.Set(s => s.BootCount, status.BootCount));
+            updates.Add(b.Set(s => s.ResetReason, status.ResetReason));
+            updates.Add(b.Set(s => s.FreeHeap, status.FreeHeap));
+            updates.Add(b.Set(s => s.MinFreeHeap, status.MinFreeHeap));
+            updates.Add(b.Set(s => s.MaxAlloc, status.MaxAlloc));
+            updates.Add(b.Set(s => s.Rssi, status.Rssi));
+            updates.Add(b.Set(s => s.WifiFailCount, status.WifiFailCount));
+            updates.Add(b.Set(s => s.WakeMs, status.WakeMs));
+            updates.Add(b.Set(s => s.SafeMode, status.SafeMode));
+        }
+
+        await DeviceStatuses.UpdateOneAsync(
+            s => s.DeviceId == status.DeviceId,
             b.Combine(updates),
             new UpdateOptions { IsUpsert = true });
     }

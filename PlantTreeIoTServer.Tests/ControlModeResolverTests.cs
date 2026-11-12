@@ -140,3 +140,57 @@ public class ControlModeResolverTests
         Assert.Equal("manual", flat["mode"]); // không bị gộp về currentMode="auto"
     }
 }
+
+// Thiết bị THẬT (firmware 2.1.0) làm chủ auto: light / light_pwm / pump -> MANUAL, chỉ mode:"auto" / auto:true trả
+// lại AUTO; thứ tự xử lý actuator -> mode -> auto (backend-api.md mục 5.3). Server KHÔNG gộp khoá nào vào payload.
+public class ControlModeResolverRealDeviceTests
+{
+    [Theory]
+    [InlineData("pump")]
+    [InlineData("light")]
+    [InlineData("light_pwm")]
+    public void Actuator_moves_real_device_to_manual_without_touching_payload(string key)
+    {
+        var flat = new Dictionary<string, object?> { [key] = key == "light_pwm" ? 180 : true };
+        var mode = ControlModeResolver.Resolve("ESP32S3_Zone1", flat, currentMode: "auto");
+
+        Assert.Equal("manual", mode);
+        Assert.False(flat.ContainsKey("mode"));
+    }
+
+    [Fact]
+    public void Pump_with_mode_auto_ends_in_auto()
+    {
+        // Ví dụ tài liệu: {"pump":true,"mode":"auto"} -> 1 liều, MANUAL ở bước 4, về AUTO ở bước 5.
+        var flat = new Dictionary<string, object?> { ["pump"] = true, ["mode"] = "auto" };
+        Assert.Equal("auto", ControlModeResolver.ExpectedMode(flat, "manual"));
+    }
+
+    [Fact]
+    public void Auto_key_wins_over_mode_key()
+    {
+        var flat = new Dictionary<string, object?> { ["mode"] = "auto", ["auto"] = false };
+        Assert.Equal("manual", ControlModeResolver.ExpectedMode(flat, "auto"));
+    }
+
+    [Fact]
+    public void Config_message_qr_keep_the_current_mode()
+    {
+        var flat = new Dictionary<string, object?>
+        {
+            ["config"] = new Dictionary<string, object?>(), ["message"] = "hi", ["show_qr"] = 300, ["stay_awake_s"] = 600,
+        };
+        Assert.Equal("manual", ControlModeResolver.ExpectedMode(flat, "manual"));
+        Assert.Equal("auto", ControlModeResolver.ExpectedMode(flat, "auto"));
+    }
+
+    [Fact]
+    public void Sim_device_keeps_the_old_merge()
+    {
+        var flat = new Dictionary<string, object?> { ["pump"] = true };
+        var mode = ControlModeResolver.Resolve("SIM_Zone1", flat, currentMode: "auto");
+
+        Assert.Equal("auto", mode);
+        Assert.Equal("auto", flat["mode"]);
+    }
+}
